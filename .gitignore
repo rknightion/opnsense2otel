@@ -99,8 +99,3 @@ docs/fonts/
 # load-bearing regardless of which harness runs the wave: codex-sync.sh mirrors
 # run artefacts between machines by matching this exact directory name.
 codex/
-
-# graft: local, regenerable code graph, and the .ignore graft writes beside it so ripgrep
-# still reaches the cards. Both are generated on every build. Never committed.
-/graft/
-/.ignore

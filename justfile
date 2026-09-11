@@ -21,9 +21,6 @@ govulncheck_version := "v1.8.0"
 # renovate: datasource=go depName=github.com/goreleaser/goreleaser/v2
 goreleaser_version := "v2.18.0"
 
-# renovate: datasource=npm depName=@nanonets/graft
-graft_version := "0.16.0"
-
 # show the task surface
 default:
     @just --list
@@ -338,14 +335,3 @@ print-go-licenses-version:
 [private]
 print-go-licenses-module:
     @echo {{ go_licenses_module }}
-
-# Install and patch the graft CLI (re-run after a version bump)
-[group('dev')]
-graft-setup:
-    npm i -g @nanonets/graft@{{ graft_version }}
-    ~/.agents/bin/graft-postinstall
-
-# Build the local code graph
-[group('dev')]
-graft-build:
-    DO_NOT_TRACK=1 graft build .
