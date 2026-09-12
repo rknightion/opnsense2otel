@@ -1,5 +1,53 @@
 # Changelog
 
+## [5.1.0](https://github.com/rknightion/opnsense2otel/compare/v5.0.0...v5.1.0) (2026-09-12)
+
+
+### Features
+
+* **logs:** add --log.console=quiet so self-logs over OTLP are the only copy ([6bab250](https://github.com/rknightion/opnsense2otel/commit/6bab25008f9cb7715564ec2ee0d06d3ececd96f7))
+* **syslog:** classify captured events and preserve known pass-through ([22a903c](https://github.com/rknightion/opnsense2otel/commit/22a903c4bde60cf0d21ce9e85dfb6e994dd50971))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.6.0 ([#740](https://github.com/rknightion/opnsense2otel/issues/740)) ([fb25a84](https://github.com/rknightion/opnsense2otel/commit/fb25a8465e5e71c174860e8aea1385b391f800ce))
+* **geoip:** skip the startup fetch when the database was checked inside the interval ([015a2f1](https://github.com/rknightion/opnsense2otel/commit/015a2f106e4784028ea2258baa001b36b934d726))
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.217 ([#738](https://github.com/rknightion/opnsense2otel/issues/738)) ([ef8805f](https://github.com/rknightion/opnsense2otel/commit/ef8805f5de5f72953dc96cf1289d52136d44befc))
+* **deps:** update anthropics/claude-code-action action to v1.0.218 ([#741](https://github.com/rknightion/opnsense2otel/issues/741)) ([fef5fcf](https://github.com/rknightion/opnsense2otel/commit/fef5fcf195579d7291187aa8382bb0219c41b3f4))
+* **deps:** update anthropics/claude-code-action action to v1.0.219 ([#743](https://github.com/rknightion/opnsense2otel/issues/743)) ([c3c070b](https://github.com/rknightion/opnsense2otel/commit/c3c070b56707e6ace3771991ad48d8e288e14ff6))
+* **deps:** update anthropics/claude-code-action action to v1.0.220 ([#744](https://github.com/rknightion/opnsense2otel/issues/744)) ([bdfe6e5](https://github.com/rknightion/opnsense2otel/commit/bdfe6e5ce8bca123d75e168dd43b6a6b25a0dfb5))
+* **deps:** update anthropics/claude-code-action action to v1.0.221 ([#745](https://github.com/rknightion/opnsense2otel/issues/745)) ([e7b0aaf](https://github.com/rknightion/opnsense2otel/commit/e7b0aaf37741d94bb45031c45a5b6b3c4bc0f6b5))
+* **deps:** update anthropics/claude-code-action action to v1.0.222 ([#746](https://github.com/rknightion/opnsense2otel/issues/746)) ([57841c9](https://github.com/rknightion/opnsense2otel/commit/57841c91f3b3fa73cb2ce24ec452b4123a8554da))
+* **deps:** update module golang.org/x/vuln to v1.8.0 ([#742](https://github.com/rknightion/opnsense2otel/issues/742)) ([35b1331](https://github.com/rknightion/opnsense2otel/commit/35b1331ef92f3975ab5cffb6733d66c3c5e8e699))
+* **deps:** update rknightion/.github action to v1.21.0 ([#739](https://github.com/rknightion/opnsense2otel/issues/739)) ([78100f9](https://github.com/rknightion/opnsense2otel/commit/78100f9ca981a0969c2ed0d042b7cb340cc07ec1))
+* remove graft code graph wiring ([157857e](https://github.com/rknightion/opnsense2otel/commit/157857ec497166c2a80a421e09392f255195ad58))
+* wire graft code graph via MCP ([525ba8c](https://github.com/rknightion/opnsense2otel/commit/525ba8c2935d56b23f93188289c594d533649063))
+
+
+### Documentation
+
+* **agents:** name the OTEL_EXPORTER_OTLP_* exceptions to the OPN2OTEL_ prefix rule ([df0fffc](https://github.com/rknightion/opnsense2otel/commit/df0fffcda406925b25a693dbe07ad084cc13d66a))
+* **agents:** opnsense2otel to AGENTS.md standard ([e7eda18](https://github.com/rknightion/opnsense2otel/commit/e7eda180fef0883b74e02ebfd0afb6b1b484f9dc))
+* **agents:** restore docgen-owned sub-collector count in AGENTS.md ([59e68e5](https://github.com/rknightion/opnsense2otel/commit/59e68e563695227f6ad3ed8169fcb6f1b2a4fdd6))
+* **agents:** review fix - restore the [#656](https://github.com/rknightion/opnsense2otel/issues/656) issue-number boundary ([6406f35](https://github.com/rknightion/opnsense2otel/commit/6406f359195b2a1768933d682ba0d2269fdd4106))
+* align recovery contracts and compaction evidence ([0bad79b](https://github.com/rknightion/opnsense2otel/commit/0bad79be38cc64c2328e5995903690a4b8c5d65c))
+* **backlog:** close OPN-0102 and OPN-0103 with their landing SHAs ([e63a8ce](https://github.com/rknightion/opnsense2otel/commit/e63a8ce7453cea3c3d5b53ac28fe5a968fc1a452))
+* **backlog:** file OPN-0102 geoip startup fetch, OPN-0103 console quiet mode, OPN-0104 capture-mount retirement ([c59f2f0](https://github.com/rknightion/opnsense2otel/commit/c59f2f0ffb843386fc0f43fd3720a61e8b3b95f1))
+* **backlog:** record OPN-0104 live parser proof and observation window ([09a0bf5](https://github.com/rknightion/opnsense2otel/commit/09a0bf5236bf0641432a27a714b472f4d1d5436a))
+* review Camden captures for parser coverage (OPN-0104) ([fd34d78](https://github.com/rknightion/opnsense2otel/commit/fd34d78094e7dd26cf6517e76dcfccfd608f75bd))
+* sync authorised Astra root judgement ([735a8d0](https://github.com/rknightion/opnsense2otel/commit/735a8d08209713485e6789bec331f8c8a9675f52))
+* sync authorised Astra root judgement ([6f44e44](https://github.com/rknightion/opnsense2otel/commit/6f44e44f5dfe4aeef396a3c7d087c2df502305c5))
+* sync fan-out protocol from agent-docs ad7abd2 ([75fcdeb](https://github.com/rknightion/opnsense2otel/commit/75fcdeb73564b9764f2145559a9c7e77d4cd66ed))
+* sync fan-out protocol, delegated root authority for unattended runs ([d6db185](https://github.com/rknightion/opnsense2otel/commit/d6db185f20234da8d45d793322356bc068df9aac))
+* sync fan-out protocol, explicit add does not bound the commit ([75b5098](https://github.com/rknightion/opnsense2otel/commit/75b509878f17f0e47e9aa61480c9ea78c092eaec))
+* sync root async question policy ([c8b14d1](https://github.com/rknightion/opnsense2otel/commit/c8b14d1b3ced67f6a1e0f431461e54a906800f91))
+* sync same-session fan-out recovery contract ([a0635fa](https://github.com/rknightion/opnsense2otel/commit/a0635fa0d9328274214a5b8d18aae7964be48093))
+
 ## [5.0.0](https://github.com/rknightion/opnsense2otel/compare/v4.2.0...v5.0.0) (2026-09-06)
 
 
