@@ -35,3 +35,10 @@ reviews:
       Web UI handlers read metricsnap, collector status and cached API views. They must not Gather the
       live registry or cause independent firewall scrapes. Bound any route that can reach upstream work
       and preserve passive snapshot semantics.
+knowledge_base:
+  linked_repositories:
+  - repository: m7kni/m7kni-net-site
+    instructions: >-
+      Documentation hub. This repository dispatches documentation changes to the hub, which clones the
+      docs source and builds it. Check docs_path, config_file and the dispatch payload against this
+      repository's entry in the hub's docs-repos.json manifest.
