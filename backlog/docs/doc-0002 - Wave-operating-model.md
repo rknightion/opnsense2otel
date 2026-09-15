@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-06 13:19'
+updated_date: '2026-09-15 16:53'
 ---
 This document carries **only what is specific to opnsense2otel**. The campaign model itself — run
 modes, the routing contract, authority and the thread pool, child lane briefs, external-contract
@@ -107,22 +107,25 @@ against the real tree before acting on it.
 
 ## Exclusive resources — serialise these, never fan out across them
 
-**The testbed is a single physical resource on a power window.** Six guests on `oli`, up 06:00–08:30
-UTC only (#625, to reclaim idle draw). `opnsense-testbed-canary.timer` fires at 06:05 UTC, dispatches
-`live-canary.yml` and **holds the lab up for the duration**, releasing only a hold it took itself.
+**The testbed is a single physical resource, powered on demand.** Six guests on `oli`, off by
+default. Nothing raises the lab on a schedule and nothing dispatches `live-canary.yml` on a schedule:
+`opnsense-testbed-up.timer` and `opnsense-testbed-canary.timer` are installed on `oli` but
+**deliberately disabled**. Do not re-enable them. When a change needs validating against a live API
+surface, the main session raises the lab, dispatches the canary and takes the lab down again.
+`opnsense-testbed-down.timer` stays enabled as a backstop: at 08:30 UTC daily it powers the lab off
+unless a hold is live.
 
 Consequences for a wave:
 
-- **At most one lane may use the testbed at a time.** There is no locking; two lanes will interleave
-  API writes against the same firewall and produce results neither can trust.
-- **An ad-hoc `testbed up <seconds>` is left alone by the canary's hold**, which is deliberate — but
-  it also means a lane that takes a hold and dies leaves the lab powered on. A lane touching the
-  testbed owns releasing it.
-- **Outside the window the box is simply down.** A pre-flight probe failure at 09:00 UTC is not drift,
-  not a box fault and not a regression. Do not open a task for it.
+- **Raising the lab is a main-thread action.** A lane never powers the testbed; it reports that it
+  needs live evidence and stops.
+- **At most one consumer may use the testbed at a time.** There is no locking; two runs will
+  interleave API writes against the same firewall and produce results neither can trust.
+- **The box is down unless someone raised it.** A pre-flight probe failure on a run nobody raised the
+  lab for is not drift, not a box fault and not a regression. Do not open a task for it.
 
-**Bringing the lab up out of hours.** Authorised, including for an unattended run. `oli` is reachable
-over the tailnet as `root` and carries the power scheduler:
+**Raising the lab.** Authorised, including for an unattended run. `oli` is reachable over the tailnet
+as `root` and carries the power scheduler:
 
 ```bash
 ssh oli '/usr/local/bin/opnsense-testbed-power.sh status'      # hold state + every guest
@@ -131,9 +134,10 @@ ssh oli '/usr/local/bin/opnsense-testbed-power.sh release'     # clear the hold
 ssh oli '/usr/local/bin/opnsense-testbed-power.sh down'        # refuses while a hold is live
 ```
 
-`up` blocks until **both** firewalls serve `:443`, so its return is the readiness signal — never poll
-for it yourself. Take a hold no longer than the work needs; the default is 8h and it lapses on its
-own. Whoever takes a hold owns releasing it, and `down` will not run until they do.
+Always pass `up` a hold sized to the work: without a live hold the 08:30 UTC backstop powers the lab
+off mid-run. `up` blocks until **both** firewalls serve `:443`, so its return is the readiness signal;
+never poll for it yourself. The session that raised the lab owns `release` then `down` when it is
+finished; a forgotten hold lapses on its own and the next 08:30 backstop takes the lab down.
 
 **Never call `qm` or `pct` on `oli` directly.** The scheduler's hardcoded allowlist (102, 106, 105,
 110, 111, 112) is the only thing standing between a typo and powering off home automation (100), the
@@ -142,8 +146,8 @@ always, and never derive an id from `qm list`.
 
 **The testbed firewalls' API credentials are not on any laptop** — they live only in the repository's
 `tailnet` GitHub environment (`DEVBOX_API_KEY`/`DEVBOX2_API_KEY`, and the DEVBOX2 pair for the release
-box). So local `just capture` and `just run` cannot reach the testbed, and the only unattended route
-to live evidence is to power the lab up and dispatch the canary, which holds those secrets:
+box). So local `just capture` and `just run` cannot reach the testbed, and the only route to live
+evidence is to raise the lab and dispatch the canary, which holds those secrets:
 
 ```bash
 gh workflow run live-canary.yml --ref main

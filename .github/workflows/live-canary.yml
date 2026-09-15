@@ -14,7 +14,12 @@ name: OPNsense Live-Box Canary
 # Reports and logs carry key paths + JSON type names only — never payload
 # values (the box's data must not leak into a public repo).
 
-# DISPATCH ONLY — the daily trigger lives on `oli`, not here.
+# DISPATCH ONLY, and ON DEMAND. The testbed is off by default. When a change
+# needs live validation, the main session raises the lab on `oli`
+# (opnsense-testbed-power.sh up <hold>), dispatches this workflow, then releases
+# the hold and takes the lab down. oli's opnsense-testbed-up.timer and
+# opnsense-testbed-canary.timer, which used to do this every morning, are
+# deliberately disabled; do not re-enable them.
 #
 # This used to carry `cron: '47 6 * * *'`, sized against the 06:00-08:30 UTC
 # testbed power window #625 introduced. GitHub does not run scheduled workflows
@@ -26,11 +31,8 @@ name: OPNsense Live-Box Canary
 # it and no window width short of most of the day, which is the cost #625 exists to
 # avoid.
 #
-# `oli` raises the lab and knows the exact moment both firewalls serve :443, so it
-# now POSTs the dispatch itself (scripts/testbed/opnsense-testbed-canary-dispatch.sh
-# + opnsense-testbed-canary.timer) and holds the lab up until the run finishes. Do
-# NOT add a `schedule:` back as a second trigger — a delayed copy would fire against
-# a lab that is already down, or race the real run, and report either as drift.
+# Do NOT add a `schedule:` back: it would fire against a lab nobody raised, or
+# race an on-demand run, and report either as drift.
 on:
   workflow_dispatch: {}
 

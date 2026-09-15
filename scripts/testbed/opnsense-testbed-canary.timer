@@ -1,3 +1,6 @@
+# DISABLED ON oli, DELIBERATELY. live-canary.yml is dispatched on demand by the
+# main session after it raises the lab; see the Wave operating model doc. Kept
+# so the schedule can be restored with `systemctl enable --now`, not as a live unit.
 [Unit]
 Description=Daily live-canary dispatch, after the testbed warm-up
 

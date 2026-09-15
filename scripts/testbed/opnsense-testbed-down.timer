@@ -1,11 +1,11 @@
 [Unit]
-Description=Stop the OPNsense testbed after the daily canary window
+Description=Daily backstop shutdown of the OPNsense testbed
 
 [Timer]
-# 08:30 UTC — after the dispatched live-canary run (06:05) and camden's prod
-# canary (07:20),
-# with slack for a slow or retried run. The down is skipped entirely while a
-# hold is active, so ad-hoc work is never fighting this.
+# 08:30 UTC. STAYS ENABLED although the up and canary timers are disabled: the
+# lab is now raised on demand, and this is what takes it down if a session
+# forgets to. The down is skipped entirely while a hold is active, so on-demand
+# work that took a hold is never fighting this.
 OnCalendar=*-*-* 08:30:00 UTC
 # TRUE here, unlike the up timer. All six guests are onboot:0, so an oli reboot
 # leaves them down and this is normally a no-op — it is kept as the backstop for

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # OPNsense testbed power scheduler for `oli` (#625).
 #
-# The six testbed guests are only needed for the daily live-canary run and
-# for ad-hoc work, but they run 24/7 costing ~0.38 of a core and 24 GB of
-# allocated RAM. This brings them up before the canary and takes them down
-# after, so they are off ~90% of a quiet day.
+# The six testbed guests are only needed for on-demand live validation, but
+# they would otherwise run 24/7 costing ~0.38 of a core and 24 GB of allocated
+# RAM. The main session raises them with `up <hold>` when it needs a live API
+# surface and takes them down after; opnsense-testbed-down.timer is the daily
+# backstop for a lab left running.
 #
 # WHY THIS RUNS ON THE HOST AND NOT IN GITHUB ACTIONS: powering the lab from
 # `live-canary.yml` would need a Proxmox API token and a `tag:ci -> oli:8006`
