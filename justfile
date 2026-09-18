@@ -13,7 +13,7 @@ version := env('VERSION', `git describe --tags --always --dirty 2>/dev/null || e
 go_licenses_version := "v2.0.1"
 go_licenses_module := "github.com/google/go-licenses/v2"
 # renovate: datasource=go depName=github.com/anchore/syft
-syft_version := "v1.51.1"
+syft_version := "v1.52.0"
 # renovate: datasource=github-releases depName=yannh/kubeconform
 kubeconform_version := "v0.8.0"
 # renovate: datasource=go depName=golang.org/x/vuln
