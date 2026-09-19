@@ -205,9 +205,19 @@ def build(b: Builder):
              "is OFF by default from OPNsense 26.7 and Unbound does not compute the data at all "
              "in that state, so no data here means not enabled, not zero latency.",
     )
+    recursion_heatmap = b.heatmap(
+        "Recursion Latency Heatmap",
+        f'sum {grp("le")} '
+        f'(rate({sel("opnsense_unbound_dns_recursion_time_seconds_bucket")}[{RATE}]))',
+        unit="s", w=12, h=8,
+        desc="Full Unbound recursion-time histogram. The heatmap shows multimodal or shifting "
+             "latency populations that three percentile lines cannot expose; it has the same "
+             "extended-statistics availability contract as the adjacent quantile panel.",
+    )
 
     row_cache = b.row("Cache & Recursion",
-                      [cache_activity, recursion_ts, recursion_times, req_list_ts, recursion_quantiles])
+                      [cache_activity, recursion_ts, recursion_times, req_list_ts,
+                       recursion_quantiles, recursion_heatmap])
 
     # =====================================================================
     # Row 3: DNSSEC & Anomalies

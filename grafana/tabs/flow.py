@@ -104,6 +104,18 @@ def build(b: Builder):
              "as structured metadata on the shipped log record, so drill down there.",
     )
 
+    category_bar = b.barchart(
+        "Application Categories by Throughput",
+        [(f'topk {grp()} (20, sum {grp(BY_SOURCE, "category")} '
+          f'(rate({sel("opnsense_flow_bytes_total")}[{RATE}])) * 8)',
+          "{{category}} ({{source}})")],
+        unit="bps",
+        category_field="category",
+        desc="Current ranked comparison of the same bounded application-category rollup shown in "
+             "the adjacent history panel. The bar view makes the relative size of categories "
+             "legible without removing the time series used for trend and incident timing.",
+    )
+
     transport = b.piechart(
         "Bytes by Transport",
         [(f'sum {grp("transport")} (rate({sel("opnsense_flow_bytes_total")}[{RATE}]))', "{{transport}}")],
@@ -240,6 +252,15 @@ def build(b: Builder):
              "comparison (summed NetFlow bytes over summed Zenarmor bytes on merged records) rather "
              "than a percentile of per-flow ratios; byte-weighted, the reference box reads 1.22-1.36.",
     )
+    delta_heatmap = b.heatmap(
+        "Source Byte-Delta Ratio Distribution",
+        f'sum {grp("le", "interface")} '
+        f'(rate({sel("opnsense_flow_source_byte_delta_ratio_bucket")}[{RATE}]))',
+        unit="short",
+        desc="Full NetFlow-to-Zenarmor byte-ratio histogram by interface. This preserves the "
+             "population shape beside the percentile summary, making the header-overhead cluster "
+             "and a genuine high-ratio tail visually distinguishable.",
+    )
 
     # ---- drilldowns (#419) ------------------------------------------------
     # Flow's `interface` label is description space, not device space: live values on
@@ -278,6 +299,19 @@ def build(b: Builder):
              "are never labels at any setting — they are on the flow LOG records, as "
              "<src|dst>.geo.asn and <src|dst>.geo.city. Pin `source` in any query of your own or the "
              "two lanes' measurements of the same traffic are summed.",
+    )
+
+    country_map = b.geomap(
+        "Remote Traffic Geography",
+        f'topk {grp()} (50, sum {grp(BY_SOURCE, "country")} '
+        f'(rate({sel("opnsense_flow_bytes_total", "country!=\"\"")}[{RATE}])) * 8)',
+        location_field="country",
+        value_field="Value",
+        unit="bps",
+        desc="Current traffic rate by ISO alpha-2 country. This uses Grafana's built-in country "
+             "gazetteer and is gated by the same opt-in country metric dimension as the adjacent "
+             "time series. The instance and source labels remain in the query result so selecting "
+             "multiple appliances never silently fuses them.",
     )
 
     # ---- flow-log drilldown (#592 item 1 / #591 item 5) -------------------
@@ -353,18 +387,69 @@ def build(b: Builder):
              "NetFlow's bytes, so a chatty app and a heavy one rank differently.",
     )
 
+    relationship_transforms = [
+        {"kind": "Transformation", "group": "labelsToFields",
+         "spec": {"options": {"mode": "columns"}}},
+        {"kind": "Transformation", "group": "merge", "spec": {"options": {}}},
+        {"kind": "Transformation", "group": "organize", "spec": {"options": {
+            "excludeByName": {"Time": True, "service_instance_id": True},
+            "renameByName": {"source": "Source", "target": "Target",
+                             "Value #A": "Value", "Value": "Value"},
+            "indexByName": {"source": 0, "target": 1, "Value #A": 2, "Value": 2},
+        }}},
+    ]
+    traffic_paths = b.sankey(
+        "Traffic Paths by Scope",
+        f'topk {loki_grp()} (50, sum {loki_grp("source", "target")} '
+        f'(sum_over_time({FLOW_LOG_STREAM} | src_scope!="" | dst_scope!="" '
+        f'| label_format source=`{{{{.service_instance_id}}}} / {{{{.src_scope}}}}`, '
+        f'target=`{{{{.service_instance_id}}}} / {{{{.dst_scope}}}}` '
+        f'| unwrap {NF_BYTES} [{UNBOUNDED_LABEL_WINDOW}])))',
+        datasource="loki",
+        transformations=relationship_transforms,
+        desc="NetFlow bytes flowing from source scope to destination scope over a fixed one-hour "
+             "window. Each node is prefixed with the appliance identity, the query ranks at most "
+             "50 edges per appliance, and the adjacent raw-record panel remains available when "
+             "the optional NetSage Sankey plugin is not installed.",
+    )
+
+    app_transforms = [
+        {"kind": "Transformation", "group": "labelsToFields",
+         "spec": {"options": {"mode": "columns"}}},
+        {"kind": "Transformation", "group": "merge", "spec": {"options": {}}},
+        {"kind": "Transformation", "group": "organize", "spec": {"options": {
+            "excludeByName": {"Time": True, "service_instance_id": True},
+            "renameByName": {"application": "Application", "Value #A": "Bytes",
+                             "Value": "Bytes"},
+            "indexByName": {"application": 0, "Value #A": 1, "Value": 1},
+        }}},
+    ]
+    applications_treemap = b.treemap(
+        "Applications by Bytes",
+        f'topk {loki_grp()} (50, sum {loki_grp("application")} '
+        f'(sum_over_time({FLOW_LOG_STREAM} | app_name!="" '
+        f'| label_format application=`{{{{.service_instance_id}}}} / {{{{.app_name}}}}` '
+        f'| unwrap {NF_BYTES} [{UNBOUNDED_LABEL_WINDOW}])))',
+        datasource="loki",
+        transformations=app_transforms,
+        desc="Byte-weighted application names over a fixed one-hour window. The appliance identity "
+             "is embedded in every tile and the query is capped at 50 tiles per appliance. The "
+             "adjacent table remains the exact-value fallback if the Treemap plugin is absent.",
+    )
+
     b.tab("Flow Volume", [
         b.row("Volume", [iface, direction], present="has_flow_volume"),
-        b.row("Breakdown", [category, transport, scope], present="has_flow_volume"),
+        b.row("Breakdown", [category, category_bar, transport, scope], present="has_flow_volume"),
         b.row("Records & Packets", [action, packets], present="has_flow_volume"),
         b.row("Domain & Destinations", [dnscache, uniquedest], present="has_flow_volume"),
-        b.row("Talkers & Source Delta", [toptalkers, delta],
+        b.row("Talkers & Source Delta", [toptalkers, delta, delta_heatmap],
               present=["has_flow_top_talkers", "has_flow_delta_ratio"]),
-        b.row("Geography", [country], present="has_flow_country"),
+        b.row("Geography", [country, country_map], present="has_flow_country"),
         # Collapsed (#422): four round-trips against a per-connection stream on every
         # cold load, and this row is by definition opened AFTER a volume panel above
         # has raised the question it answers.
         b.row("Flow Record Drilldown",
-              [flow_raw_logs, flow_records_rate, flow_top_dst, flow_top_apps],
+              [traffic_paths, flow_raw_logs, flow_records_rate, flow_top_dst,
+               applications_treemap, flow_top_apps],
               present="has_flow_logs", collapse=True),
     ], present="has_flow_volume")

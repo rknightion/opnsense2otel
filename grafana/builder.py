@@ -269,7 +269,7 @@ class Builder:
 
     def _query(self, expr: str, ref: str = "A", instant: bool = False,
                legend: str | None = None, dedupe: bool = True,
-               fmt: str = "table") -> dict:
+               fmt: str = "table", range_fmt: str | None = None) -> dict:
         """`fmt` only matters when `instant=True` — it is inert on a range query.
 
         Chosen by the CALLING VIZ, not derived from `instant` (#661). A Prometheus
@@ -299,6 +299,8 @@ class Builder:
             spec.update({"instant": True, "range": False, "format": fmt})
         else:
             spec.update({"instant": False, "range": True})
+            if range_fmt is not None:
+                spec["format"] = range_fmt
         return {
             "kind": "PanelQuery",
             "spec": {
@@ -772,6 +774,184 @@ class Builder:
         n = self._panel(title, "piechart", spec, queries, desc=desc)
         self.size[n] = (w, h)
         return n
+
+    def _rich_queries(self, series, *, datasource="prometheus", instant=False,
+                      dedupe=True, table=False, range_fmt=None):
+        """Build queries for visualizations whose field shape is owned by the panel.
+
+        ``series`` is a list of ``(expression, legend)`` pairs.  Table-shaped
+        visualizations request table frames; per-series visualizations request time
+        series frames.  Loki's query model does not expose Grafana's Prometheus
+        ``format`` switch, so its frame shape is selected by the LogQL result.
+        """
+        if datasource not in {"prometheus", "loki"}:
+            raise ValueError(f"unsupported datasource {datasource!r}")
+        queries = []
+        for i, (expr, legend) in enumerate(series):
+            ref = chr(65 + i)
+            if datasource == "loki":
+                queries.append(self._loki_query(
+                    expr, ref=ref, instant=instant, legend=legend
+                ))
+            else:
+                queries.append(self._query(
+                    expr, ref=ref, instant=instant, legend=legend,
+                    dedupe=dedupe, fmt="table" if table else "time_series",
+                    range_fmt=range_fmt,
+                ))
+        return queries
+
+    def barchart(self, title, series, unit="short", desc="", w=12, h=8,
+                 orient="horizontal", stack="none", datasource="prometheus",
+                 instant=True, dedupe=True, category_field=None) -> str:
+        """Categorical comparison; ``series`` is ``[(expression, legend), ...]``."""
+        spec = {"fieldConfig": {"defaults": {"unit": unit, "custom": {
+                    "axisCenteredZero": False, "axisColorMode": "text",
+                    "axisPlacement": "auto", "fillOpacity": 80,
+                    "gradientMode": "hue", "lineWidth": 1,
+                    "scaleDistribution": {"type": "linear"},
+                    "hideFrom": {"legend": False, "tooltip": False, "viz": False},
+                    "thresholdsStyle": {"mode": "off"}}}, "overrides": []},
+                "options": {"orientation": orient, "stacking": stack,
+                            "barRadius": 0, "barWidth": 0.9, "groupWidth": 0.7,
+                            "showValue": "auto", "fullHighlight": False,
+                            "legend": {"displayMode": "list", "placement": "bottom",
+                                       "showLegend": True},
+                            "tooltip": {"mode": "single", "sort": "desc"}}}
+        table = instant and datasource == "prometheus"
+        queries = self._rich_queries(series, datasource=datasource, instant=instant,
+                                     dedupe=dedupe, table=table)
+        transformations = None
+        if table:
+            index = {category_field: 0} if category_field else {}
+            transformations = [
+                {"kind": "Transformation", "group": "merge", "spec": {"options": {}}},
+                {"kind": "Transformation", "group": "organize", "spec": {"options": {
+                    "excludeByName": {"Time": True, "__name__": True},
+                    "renameByName": {"opnsense_instance": "Instance"},
+                    "indexByName": index,
+                }}},
+            ]
+        n = self._panel(title, "barchart", spec, queries, desc=desc,
+                        transformations=transformations)
+        self.size[n] = (w, h)
+        return n
+
+    def heatmap(self, title, expr, unit="short", desc="", w=12, h=8,
+                datasource="prometheus", legend=None, dedupe=True) -> str:
+        """Time-bucket heatmap. Prometheus callers pass a histogram bucket query."""
+        spec = {"fieldConfig": {"defaults": {"unit": unit, "custom": {
+                    "scaleDistribution": {"type": "linear"}}}, "overrides": []},
+                "options": {"calculate": False, "cellGap": 1,
+                            "color": {"mode": "scheme", "scheme": "Oranges",
+                                      "steps": 64},
+                            "legend": {"show": True},
+                            "tooltip": {"mode": "single", "showColorScale": True},
+                            "yAxis": {"axisPlacement": "left", "reverse": False}}}
+        queries = self._rich_queries([(expr, legend)], datasource=datasource,
+                                     instant=False, dedupe=dedupe,
+                                     range_fmt="heatmap" if datasource == "prometheus" else None)
+        n = self._panel(title, "heatmap", spec, queries, desc=desc)
+        self.size[n] = (w, h)
+        return n
+
+    def histogram(self, title, series, unit="short", desc="", w=12, h=8,
+                  datasource="prometheus", bucket_count=30, dedupe=True) -> str:
+        """Distribution of sample values over the selected dashboard range."""
+        spec = {"fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
+                "options": {"bucketCount": bucket_count, "combine": False,
+                            "legend": {"displayMode": "list", "placement": "bottom",
+                                       "showLegend": True}}}
+        queries = self._rich_queries(series, datasource=datasource, instant=False,
+                                     dedupe=dedupe)
+        n = self._panel(title, "histogram", spec, queries, desc=desc)
+        self.size[n] = (w, h)
+        return n
+
+    def geomap(self, title, expr, *, location_field, value_field="Value",
+               location_mode="lookup", unit="short", desc="", w=12, h=10,
+               datasource="prometheus", transformations=None, dedupe=True) -> str:
+        """Spatial values keyed by a gazetteer field such as ISO country code."""
+        layer = {"type": "markers", "name": title,
+                 "location": {"mode": location_mode, "lookup": location_field},
+                 "config": {"style": {"size": {"field": value_field, "min": 4,
+                                                "max": 30},
+                                      "color": {"field": value_field,
+                                                "fixed": "dark-green"}}}}
+        spec = {"fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
+                "options": {"basemap": {"type": "default", "name": "Layer 0"},
+                            "controls": {"showZoom": True, "showAttribution": True},
+                            "layers": [layer], "view": {"id": "fit", "allLayers": True}}}
+        queries = self._rich_queries([(expr, None)], datasource=datasource,
+                                     instant=True, dedupe=dedupe, table=True)
+        n = self._panel(title, "geomap", spec, queries, desc=desc,
+                        transformations=transformations)
+        self.size[n] = (w, h)
+        return n
+
+    def xychart(self, title, series, unit="short", desc="", w=12, h=8,
+                datasource="prometheus", dedupe=True) -> str:
+        """Relationship between numeric fields produced by the query frames."""
+        spec = {"fieldConfig": {"defaults": {"unit": unit, "custom": {
+                    "axisCenteredZero": False, "axisColorMode": "text",
+                    "axisPlacement": "auto", "fillOpacity": 20,
+                    "pointShape": "circle", "pointSize": {"fixed": 5},
+                    "pointStrokeWidth": 1, "scaleDistribution": {"type": "linear"},
+                    "show": "points"}}, "overrides": []},
+                "options": {"legend": {"displayMode": "list", "placement": "bottom",
+                                       "showLegend": True},
+                            "tooltip": {"mode": "single", "sort": "none"}}}
+        queries = self._rich_queries(series, datasource=datasource, instant=False,
+                                     dedupe=dedupe)
+        n = self._panel(title, "xychart", spec, queries, desc=desc)
+        self.size[n] = (w, h)
+        return n
+
+    def _table_plugin(self, title, group, expr, *, datasource, desc, w, h,
+                      transformations=None, options=None, dedupe=True) -> str:
+        queries = self._rich_queries([(expr, None)], datasource=datasource,
+                                     instant=True, dedupe=dedupe, table=True)
+        spec = {"fieldConfig": {"defaults": {}, "overrides": []},
+                "options": options or {}}
+        n = self._panel(title, group, spec, queries, desc=desc,
+                        transformations=transformations)
+        self.size[n] = (w, h)
+        return n
+
+    def sankey(self, title, expr, *, datasource="prometheus", desc="", w=24, h=10,
+               transformations=None, options=None, dedupe=True) -> str:
+        """NetSage Sankey panel; input table must expose source, target and value."""
+        return self._table_plugin(title, "netsage-sankey-panel", expr,
+                                  datasource=datasource, desc=desc, w=w, h=h,
+                                  transformations=transformations, options=options,
+                                  dedupe=dedupe)
+
+    def treemap(self, title, expr, *, datasource="prometheus", desc="", w=12, h=10,
+                transformations=None, options=None, dedupe=True) -> str:
+        """Marcus Olsson Treemap panel; input is a categorical value table."""
+        return self._table_plugin(title, "marcusolsson-treemap-panel", expr,
+                                  datasource=datasource, desc=desc, w=w, h=h,
+                                  transformations=transformations, options=options,
+                                  dedupe=dedupe)
+
+    def polystat(self, title, series, unit="short", desc="", w=12, h=8,
+                 datasource="prometheus", options=None, dedupe=True) -> str:
+        """Grafana Polystat panel for dense, independently labelled status values."""
+        queries = self._rich_queries(series, datasource=datasource, instant=True,
+                                     dedupe=dedupe)
+        spec = {"fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
+                "options": options or {}}
+        n = self._panel(title, "grafana-polystat-panel", spec, queries, desc=desc)
+        self.size[n] = (w, h)
+        return n
+
+    def nodegraph(self, title, expr, *, datasource="prometheus", desc="", w=24, h=10,
+                  transformations=None, options=None, dedupe=True) -> str:
+        """Built-in Node Graph; input table must expose Grafana's node/edge fields."""
+        return self._table_plugin(title, "nodeGraph", expr, datasource=datasource,
+                                  desc=desc, w=w, h=h,
+                                  transformations=transformations, options=options,
+                                  dedupe=dedupe)
 
     # ---- Loki viz helpers (return element name) --------------------------
     def logs(self, title, expr, desc="", w=24, h=10) -> str:

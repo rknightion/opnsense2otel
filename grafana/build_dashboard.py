@@ -1176,6 +1176,12 @@ def build_diagnostics(b: Builder):
                      f'(rate({api_p95_buckets}[{RATE}])))', "{{endpoint}}")],
                    unit="s", w=12, h=7,
                    desc="p95 of opnsense_exporter_api_request_duration_seconds by endpoint.")
+    api_latency_heatmap = b.heatmap(
+        "API Request Latency Distribution",
+        f'sum {grp("le", "endpoint")} (rate({api_p95_buckets}[{RATE}]))',
+        unit="s", w=12, h=8,
+        desc="Full request-latency histogram by endpoint. This keeps the distribution visible "
+             "beside p95 so a broad slowdown and a narrow tail are not mistaken for one another.")
 
     # Response cache (#196). A cache hit issues no API request, so it is invisible to
     # api_requests_total above — that absence is by design (it is what makes the request
@@ -1337,6 +1343,12 @@ def build_diagnostics(b: Builder):
              "admission to response completion, by outcome status. Excludes requests the "
              "admission cap rejected outright (they never do enough work to be worth "
              "timing) - a rejection shows up on the Rejections panel instead.")
+    server_latency_heatmap = b.heatmap(
+        "Metrics Handler Latency Distribution",
+        f'sum {grp("le", "status")} (rate({server_p95_buckets}[{RATE}]))',
+        unit="s", w=12, h=8,
+        desc="Full request-duration histogram by response status, complementing the p95 panel "
+             "with the shape and density of the serving-path latency distribution.")
 
     # #523 split what was one eleven-row "Diagnostics" tab into four, along the
     # question each row answers. The panels are unchanged and still built together,
@@ -1350,14 +1362,15 @@ def build_diagnostics(b: Builder):
         b.row("Per-Collector Data Freshness", [snapshot_age, success_age]),
     ])
     b.tab("OPNsense API", [
-        b.row("API Requests (per endpoint)", [api_rate, api_p95]),
+        b.row("API Requests (per endpoint)", [api_rate, api_p95, api_latency_heatmap]),
         b.row("API Response Cache", [cache_hit_ratio, cache_hits, cache_by_ep, cache_age]),
     ])
     b.tab("Metrics & OTLP", [
         b.row("OTLP Delivery Health", [otlp_on, otlp_fails, otlp_age, otlp_rate],
               present="has_otlp"),
         b.row("Metrics Handler Serving Path",
-              [server_inflight, server_req_rate, server_rejected, server_gather_err, server_p95]),
+              [server_inflight, server_req_rate, server_rejected, server_gather_err,
+               server_p95, server_latency_heatmap]),
         b.row("Grafana Annotation Writing", [ann_rate, ann_age], present="has_annotations"),
     ])
     b.tab("Exporter Runtime", [

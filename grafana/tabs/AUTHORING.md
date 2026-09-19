@@ -19,6 +19,29 @@ then moves every leaf into one top-level domain through `TAB_GROUPS`. Add a new 
 map or the build fails as unassigned. The canonical worked examples are `build_overview()` and
 `build_diagnostics()` in `build_dashboard.py` — mirror their style. The full API is in `builder.py`.
 
+## Rich visualization helpers
+
+Choose these by data shape, and keep an adjacent built-in table, stat, or time series when a
+catalogue plugin is additive rather than essential:
+
+- `barchart()` ranks categorical series; it is instant by default. `heatmap()` consumes a range
+  histogram-bucket expression. `histogram()` bins ordinary range samples. `xychart()` compares
+  numeric fields. All accept `(expression, legend)` series except the single-expression heatmap.
+- `geomap()` consumes an instant table and requires `location_field=` plus an optional
+  `value_field=`. ISO alpha-2 country fields use `location_mode="lookup"`; do not infer a location
+  from free-form host or interface labels.
+- `sankey()` (`netsage-sankey-panel`) consumes a three-column source/target/value table.
+  `treemap()` (`marcusolsson-treemap-panel`) consumes categorical values. `polystat()`
+  (`grafana-polystat-panel`) consumes independently labelled instant series. Their exact plugin IDs
+  are part of the dashboard contract; absence may break only that additive panel.
+- `nodegraph()` is Grafana's built-in `nodeGraph` visualization and requires real source and target
+  fields. Do not synthesize topology from labels that do not encode an edge.
+
+Pass `datasource="loki"` for LogQL; otherwise Prometheus is used. Table-shaped helpers accept
+`transformations=` so call sites can rename and organize fields without embedding domain knowledge
+in `builder.py`. Every expression must still use `sel()`/`grp()` or `loki_sel()`/`loki_grp()`, and
+ranked Loki expressions must remain instant and explicitly bounded.
+
 ## Hard rules
 
 1. **Instance filter on every query.** Use `sel("opnsense_metric")` →

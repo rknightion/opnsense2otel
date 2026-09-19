@@ -34,6 +34,20 @@ datasource carrying the exporter's shipped logs is selected.
   build that emits `opnsense_exporter_build_info` and `opnsense_exporter_collector_enabled` (added in
   this fork). Older builds simply leave those two panels empty.
 
+### Optional panel plugins
+
+The dashboards use built-in Grafana panels for all essential views. Two catalogue plugins add
+specialised Flow Volume views:
+
+- `netsage-sankey-panel` renders bounded source-scope to destination-scope traffic paths.
+- `marcusolsson-treemap-panel` renders the byte-weighted application hierarchy.
+
+Install those exact plugin IDs from the Grafana plugin catalogue. If either is unavailable, Grafana
+shows its standard missing-plugin message only in that additive panel; the same conditional row keeps
+the built-in raw-log or exact-value table that exposes the underlying data. The builder also supports
+`grafana-polystat-panel` for dense status sets, but the generated dashboards do not currently depend
+on it because no adopted status view improved on the existing mapped status-history panels.
+
 ## The dashboard
 
 Two dashboards, 57 tabs grouped by feature (generated list, do not hand-edit). The operational dashboard runs from the first `Overview` to `Siproxd`; the health companion starts at the SECOND `Overview` and runs to `Recording rules`:
