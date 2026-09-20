@@ -967,10 +967,10 @@ cmd_up() {
 
 cmd_down() {
   local now expiry
-  # Do not queue. This is the verb the watchdog timer fires, and a watchdog that
-  # blocks for twenty minutes behind a running update would pile up one waiting
-  # instance per tick. Stepping aside costs nothing: the next tick tries again,
-  # and the hold would have made it a no-op anyway.
+  # Do not queue. This is the verb the scheduled down timer fires, and a timer
+  # that blocks for twenty minutes behind a running update would pile up one
+  # waiting instance per tick. Stepping aside costs nothing: the next firing
+  # tries again, and the hold would have made it a no-op anyway.
   if ! acquire_lock 0; then
     log "another testbed operation is in progress — skipping shutdown"
     return 0
