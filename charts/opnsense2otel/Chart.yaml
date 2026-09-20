@@ -16,6 +16,8 @@ sources:
   - https://github.com/rknightion/opnsense2otel
 maintainers:
   - name: rknightion
+    email: rob@m7kni.io
+    url: https://github.com/rknightion
 annotations:
   artifacthub.io/category: monitoring-logging
   artifacthub.io/license: Apache-2.0
@@ -31,4 +33,4 @@ annotations:
       url: https://github.com/rknightion/opnsense2otel
   artifacthub.io/maintainers: |
     - name: rknightion
-      email: rob@rob-knight.com
+      email: rob@m7kni.io
