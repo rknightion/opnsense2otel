@@ -1,17 +1,36 @@
 [Unit]
-Description=Daily backstop shutdown of the OPNsense testbed
+Description=Watchdog shutdown of the OPNsense testbed when no hold is live
 
 [Timer]
-# 08:30 UTC. STAYS ENABLED although the up and canary timers are disabled: the
-# lab is now raised on demand, and this is what takes it down if a session
-# forgets to. The down is skipped entirely while a hold is active, so on-demand
-# work that took a hold is never fighting this.
-OnCalendar=*-*-* 08:30:00 UTC
-# TRUE here, unlike the up timer. All six guests are onboot:0, so an oli reboot
-# leaves them down and this is normally a no-op — it is kept as the backstop for
-# the case that actually costs money: a hold, a manual `up`, or a failed earlier
-# down leaving the lab running while oli happens to reboot past 08:30.
-# It is safe to fire spuriously because down is idempotent on a stopped guest.
+# EVERY 5 MINUTES, not daily (OPN-0109). live-canary.yml now raises the lab,
+# takes a hold sized to the run and drops it in an always() step, so the
+# question this timer answers has changed: it used to be "did a session forget
+# to take the lab down overnight", and it is now "is the lab up with nobody
+# holding it right now".
+#
+# The old 08:30 UTC backstop meant a run that died mid-flight - a cancelled
+# workflow, a lost runner, a crashed session - left six guests running until the
+# next morning. Five minutes bounds that to five minutes, which is what makes
+# "the lab is up only for the run" true rather than aspirational.
+#
+# Safe to fire this often because `down` is a no-op in both directions that
+# matter: it takes the flock non-blocking and steps aside if an update is
+# running, it REFUSES while a hold is live so it never fights a run, and it is
+# idempotent on an already-stopped guest - so the overwhelmingly common case,
+# lab already down, costs one lock attempt and one hold-file read.
+OnCalendar=*:0/5
+# Without this the bound above is a lie: systemd defaults AccuracySec to 1
+# minute and coalesces timers within it, so *:0/5 alone can fire up to six
+# minutes after the lab was abandoned. oli is always on, so precise wakeups cost
+# nothing here.
+AccuracySec=1s
+# Small and deliberate. The unit is cheap and idempotent, but firing it in step
+# with oli's other timers is pointless contention.
+RandomizedDelaySec=30
+# TRUE, as before: all six guests are onboot:0, so an oli reboot normally leaves
+# them down and this is a no-op. Kept for the case that actually costs money - a
+# hold, a manual `up`, or a failed earlier down leaving the lab running while
+# oli happens to reboot.
 Persistent=true
 
 [Install]

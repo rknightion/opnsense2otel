@@ -65,6 +65,17 @@ jobs:
       # Never cancel the sibling target because one box is down or drifting -
       # the whole point is reading the two generations against each other.
       fail-fast: false
+      # ONE AT A TIME. The lab is a single physical resource and each job now
+      # raises and lowers it, so two in parallel would have one calling `down`
+      # while the other is mid-probe. The power script's flock would refuse the
+      # loser rather than corrupt anything, but a refused teardown still leaves
+      # the lab up, so serialise here instead of relying on the lock.
+      #
+      # Each job owns a complete cycle rather than sharing one raise. That costs
+      # a second boot, about three minutes, and buys a job that is correct on
+      # its own: if the first dies, the watchdog reclaims the lab and the second
+      # raises it fresh with no shared state to get out of step.
+      max-parallel: 1
       matrix:
         include:
           - target: nightly
@@ -109,6 +120,48 @@ jobs:
           # which kills api.github.com resolution after the join. The box is
           # dialled by raw tailnet IP, so MagicDNS is not needed here.
           args: --accept-dns=false
+
+      - name: Raise the lab
+        id: raise
+        env:
+          OLI_HOST: ${{ secrets.OLI_TESTBED_HOST }}
+          # Sized to one target's cycle: boot, update, probe, smoke. The hold is
+          # what stops the scheduled down reclaiming the lab underneath a
+          # running job, and it lapses on its own if this job dies.
+          LAB_HOLD_SECONDS: '3600'
+        run: |
+          set -euo pipefail
+          # NO KEY, DELIBERATELY. Tailscale SSH terminates :22 on oli and
+          # authenticates this runner by its tailnet identity as tag:ci, so
+          # there is no private key to mint, store or rotate. The tailnet policy
+          # pins tag:ci to the opn-ci account on tag:testbed-power, and that
+          # account's login shell allows four verbs and refuses everything
+          # else, including an interactive session.
+          #
+          # Dialled by IP because the join above sets --accept-dns=false, so
+          # MagicDNS names do not resolve here.
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            "opn-ci@${OLI_HOST}" "up ${LAB_HOLD_SECONDS}"
+
+      - name: Bring both firewalls to their channel heads
+        env:
+          OLI_HOST: ${{ secrets.OLI_TESTBED_HOST }}
+        run: |
+          set -euo pipefail
+          # Currency is a property of the run, not of a timer. Both boxes sat 54
+          # and 56 days stale under the old arrangement because nothing ever
+          # pulled, and nothing in the canary output could have revealed it.
+          #
+          # A non-zero exit here is NEVER drift: the power script reserves 3, 4,
+          # 5 and 6 for update outcomes precisely so they cannot be confused
+          # with apidrift's 1 and 2. Probe anyway - a stale box's payloads are
+          # still worth checking, and the generation stamp on the report says
+          # which build it actually was.
+          if ! ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+              "opn-ci@${OLI_HOST}" update; then
+            echo "::warning::Firmware update did not confirm both boxes at their channel heads; probing anyway" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Schema canary (apidrift)
         id: drift
@@ -363,6 +416,31 @@ jobs:
             gh issue comment "$existing" --body "Live-box canary clean on the latest ${CANARY_TARGET} run. Closing."
             gh issue close "$existing"
           fi
+
+      - name: Lower the lab
+        # ALWAYS, and this is what makes CI-owned power honest: a job that fails
+        # or is cancelled mid-probe must not leave six guests running.
+        # if: always() covers failure and cancellation; the hold plus the
+        # scheduled down cover what this step never reaches at all, such as a
+        # lost runner.
+        #
+        # UNCONDITIONAL, and the guard that used to be here was wrong. Keying
+        # on steps.raise.outcome skips teardown exactly when it matters most:
+        # if the raise brought the lab up and THEN the ssh call timed out or the
+        # connection dropped, the step reads as failed while six guests are
+        # running, and nothing would take them down until the watchdog noticed.
+        #
+        # Running it when the lab was never raised costs one failed ssh, which
+        # is harmless and visible. Skipping it when the lab IS up is not.
+        if: always()
+        env:
+          OLI_HOST: ${{ secrets.OLI_TESTBED_HOST }}
+        run: |
+          set -euo pipefail
+          # The wrapper releases CI's own hold before powering down - `down`
+          # refuses while a hold is live, and CI is the holder.
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            "opn-ci@${OLI_HOST}" down
 
       - name: Fail the job on drift or smoke failure
         if: steps.drift.outputs.drift == 'true' || steps.smoke.outputs.failed == '1'
