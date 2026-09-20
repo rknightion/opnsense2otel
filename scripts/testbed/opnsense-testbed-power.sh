@@ -85,7 +85,34 @@ GUEST_EXEC_TIMEOUT=300          # qm guest-agent command timeout
 # eth0 is its TESTLAN address (leased by VM 102, and the jump path to both
 # firewalls); eth1 is VLAN 90. eth2 is CPORTAL, whose captive portal means a
 # lease there is not required and not waited for.
-CT_REQUIRED_IFACES=(eth0 eth1)
+#
+# eth3 is on the RELEASE firewall's client segment and exists for one reason:
+# to be a DHCP client of 106 so keaLeases4 there has a row to report. Retiring
+# guest 111 (OPN-0110) took the only client on that segment with it, and a lease
+# needs L2 presence - the container could already ROUTE to 172.16.40.0/24 over
+# OSPF, which is precisely why the gap was invisible until the canary reported
+# six required keaLeases4 paths unverified.
+#
+# It is waited for like the others because a silently absent lease here is
+# indistinguishable, downstream, from upstream having removed the field.
+# /etc/dhcp/dhclient.conf pins it to request neither routers nor DNS, so it
+# cannot take over the container's default route - verified: the default stays
+# via 172.16.9.1 on eth0 with eth3 up.
+CT_REQUIRED_IFACES=(eth0 eth1 eth3)
+
+# Interfaces that must hold a DHCPv6 IA_NA lease, not merely a SLAAC address.
+# keaLeases6 only ever reports leases Kea itself handed out, so an autoconfigured
+# address - which the container gets from the RA regardless - puts nothing in the
+# lease table and leaves rows[].address unverified.
+#
+# This is asserted rather than declared because ifupdown will not do it. The
+# container's /etc/network/interfaces carries `iface eth0 inet6 dhcp`, correctly
+# placed under its `auto eth0`, and a cold boot still comes up with no global v6
+# address at all. Running dhclient -6 by hand against the same box works and is
+# answered immediately, so the server is willing and the client config is right;
+# ifupdown simply does not bring the inet6 family up here. Asserting the outcome
+# is the same answer settle_containers already gives for v4.
+CT_REQUIRED_IFACES6=(eth0)
 
 # Both firewalls' TESTLAN addresses. 102 and 106 each put an UNTAGGED interface
 # on vmbr9, so TESTLAN is ONE broadcast domain shared by both boxes rather than
@@ -586,9 +613,20 @@ settle_containers() {
       if [ -n "$addr" ]; then
         log "ct $id $iface recovered with $addr"
       else
-        log "ERROR: ct $id $iface still has no address — the traffgen is not feeding the box" >&2
+        # Name the consequence, per interface. Raised in review: eth3 exists
+        # only to restore keaLeases4 coverage on the release box, so a silent
+        # failure here puts the lab straight back in the state that made the
+        # gap invisible in the first place.
+        #
+        # Deliberately NOT fatal, and the asymmetry with
+        # assert_client_reaches_firewalls is the point: an unreachable firewall
+        # hollows out a whole profile, while a missing lease costs ONE collector
+        # family that the report then names as unverified coverage. Failing the
+        # raise would forfeit all 202 endpoints to save one of them.
+        log "ERROR: ct $id $iface still has no address — $(iface_consequence "$iface")" >&2
       fi
     done
+    settle_container_v6 "$id"
     assert_client_reaches_firewalls "$id"
     restart_address_dependent_services "$id"
   done
@@ -613,6 +651,54 @@ assert_client_reaches_firewalls() {
       die "ct $id cannot reach firewall $addr on TESTLAN — the shared traffgen feeds both profiles, so probing now would report one of them as empty rather than as broken"
     fi
   done
+}
+
+# settle_container_v6 makes sure the container holds a real DHCPv6 lease.
+#
+# Not fatal. A missing v6 lease costs keaLeases6 coverage and nothing else - the
+# container routes and resolves over v4 - so it is worth a warning and not worth
+# failing a raise that would otherwise probe 200 endpoints successfully.
+settle_container_v6() {
+  local id=$1 iface addr
+  assert_allowed "$id"
+  for iface in "${CT_REQUIRED_IFACES6[@]}"; do
+    addr=$(ct_iface_address6 "$id" "$iface")
+    if [ -n "$addr" ]; then
+      log "ct $id $iface holds v6 lease $addr"
+      continue
+    fi
+    pct exec "$id" -- dhclient -6 -1 "$iface" >/dev/null 2>&1 || true
+    addr=$(ct_iface_address6 "$id" "$iface")
+    if [ -n "$addr" ]; then
+      log "ct $id $iface took v6 lease $addr"
+    else
+      log "WARNING: ct $id $iface has no DHCPv6 lease — keaLeases6 will read unverified" >&2
+    fi
+  done
+}
+
+# ct_iface_address6 prints a DHCPv6-assigned global address, and deliberately
+# matches only /128. Kea hands out IA_NA addresses as /128 while the RA-derived
+# SLAAC address arrives as /64, so the prefix length is what distinguishes "Kea
+# gave us a lease" from "the router advertised a prefix" - and only the former
+# puts a row in the lease table.
+ct_iface_address6() {
+  local id=$1 iface=$2
+  assert_allowed "$id"
+  pct exec "$id" -- ip -6 -o addr show dev "$iface" scope global 2>/dev/null \
+    | awk '$4 ~ /\/128$/ {print $4; exit}'
+}
+
+# iface_consequence says what a missing lease on each interface actually costs,
+# so a failure in the log names the coverage it takes with it rather than
+# leaving the reader to work it out from the interface number.
+iface_consequence() {
+  case "$1" in
+    eth0) printf 'the traffgen is not feeding the box, and the canary cannot reach either firewall over TESTLAN' ;;
+    eth1) printf 'the traffgen has no VLAN 90 address' ;;
+    eth3) printf 'the release firewall has no DHCP client, so every keaLeases4 path on it will read unverified' ;;
+    *)    printf 'the traffgen is not feeding the box' ;;
+  esac
 }
 
 # restart_address_dependent_services re-starts the container units that need an
