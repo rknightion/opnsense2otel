@@ -386,3 +386,221 @@ class TestGuestRoutes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpdateVerdict(unittest.TestCase):
+    """The firmware-check verdict (OPN-0108).
+
+    Shapes here are taken from real /tmp/pkg_upgrade.json files read off guests
+    102 and 106 on 2026-09-20, not invented: both boxes were 54-56 days stale
+    and reported base/kernel 26.7 -> 26.7.4 plus ~126 package upgrades.
+    """
+
+    def verdict_for(self, payload) -> str:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            if isinstance(payload, str):
+                handle.write(payload)
+            else:
+                import json
+
+                json.dump(payload, handle)
+            path = handle.name
+        try:
+            return decide("verdict", path)
+        finally:
+            os.unlink(path)
+
+    def healthy(self, **overrides):
+        base = {
+            "connection": "ok",
+            "repository": "ok",
+            "product_id": "opnsense",
+            "product_version": "26.7.1_1",
+            "new_packages": [],
+            "upgrade_packages": [],
+            "downgrade_packages": [],
+            "reinstall_packages": [],
+            "remove_packages": [],
+        }
+        base.update(overrides)
+        return base
+
+    def test_a_box_at_its_channel_head_is_current(self):
+        self.assertEqual(self.verdict_for(self.healthy()), "current")
+
+    def test_pending_base_and_kernel_upgrades_are_pending(self):
+        # The exact shape both lab boxes reported on 2026-09-20.
+        payload = self.healthy(upgrade_packages=[
+            {"name": "base", "current_version": "26.7", "new_version": "26.7.4"},
+            {"name": "kernel", "current_version": "26.7", "new_version": "26.7.4"},
+        ])
+        self.assertEqual(self.verdict_for(payload), "pending")
+
+    def test_every_work_list_counts_as_pending(self):
+        for key in (
+            "new_packages",
+            "upgrade_packages",
+            "downgrade_packages",
+            "reinstall_packages",
+            "remove_packages",
+        ):
+            with self.subTest(key=key):
+                self.assertEqual(
+                    self.verdict_for(self.healthy(**{key: [{"name": "x"}]})),
+                    "pending",
+                )
+
+    def test_a_failed_fetch_is_unusable_not_current(self):
+        """The case that must never read as current.
+
+        A box that cannot reach the mirror reports empty package lists and is
+        otherwise indistinguishable from an up-to-date one. Calling that
+        'current' would let the canary certify a box as fresh precisely when it
+        has no idea, which is the failure this whole task exists to fix.
+        """
+        for broken in ({"connection": "error"}, {"repository": "error"},
+                       {"connection": "", "repository": "ok"}):
+            with self.subTest(broken=broken):
+                self.assertEqual(self.verdict_for(self.healthy(**broken)), "unusable")
+
+    def test_missing_and_malformed_files_are_unusable(self):
+        self.assertEqual(decide("verdict", "/nonexistent/pkg_upgrade.json"), "unusable")
+        self.assertEqual(self.verdict_for("this is not json"), "unusable")
+
+    def test_identity_reports_what_the_box_is_running(self):
+        payload = self.healthy(product_id="opnsense-devel", product_version="27.1.a_40")
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            import json
+
+            json.dump(payload, handle)
+            path = handle.name
+        try:
+            self.assertEqual(decide("identity", path), "opnsense-devel 27.1.a_40")
+        finally:
+            os.unlink(path)
+
+    def test_identity_is_silent_rather_than_guessing(self):
+        self.assertEqual(decide("identity", "/nonexistent/pkg_upgrade.json"), "")
+
+    def test_snapshot_name_is_stable_per_guest(self):
+        """One name per guest, reused.
+
+        A timestamped name would leave a snapshot behind on every run until the
+        store filled, and nothing in the canary would report it.
+        """
+        self.assertEqual(decide("snapname", "102"), "preupdate-102")
+        self.assertEqual(decide("snapname", "102"), decide("snapname", "102"))
+        self.assertNotEqual(decide("snapname", "102"), decide("snapname", "106"))
+
+
+class NeedsRebootIsNotCurrent(UpdateVerdict):
+    """A pending reboot means the box is still running the OLD base and kernel.
+
+    Found by review before this shipped. `opnsense-update -bkp` installs base
+    and kernel but they only take effect on boot, so between the install and the
+    reboot the package lists are empty while the box is demonstrably not at its
+    channel head. Reporting that as current is how a reboot that silently failed
+    gets certified as a completed update: the box keeps serving, nothing is
+    pending, and no other signal in the run would notice.
+    """
+
+    def test_a_pending_reboot_is_not_current(self):
+        for flag in ("1", 1, "true", "True", "yes"):
+            with self.subTest(flag=flag):
+                self.assertEqual(
+                    self.verdict_for(self.healthy(needs_reboot=flag)), "pending"
+                )
+
+    def test_no_pending_reboot_is_current(self):
+        for flag in ("0", 0, "", "false", None):
+            with self.subTest(flag=flag):
+                self.assertEqual(
+                    self.verdict_for(self.healthy(needs_reboot=flag)), "current"
+                )
+
+    def test_an_absent_needs_reboot_key_is_current(self):
+        payload = self.healthy()
+        payload.pop("needs_reboot", None)
+        self.assertEqual(self.verdict_for(payload), "current")
+
+
+class EmptyProbeResultIsUnusable(UpdateVerdict):
+    """probe_check empties its destination on every failure path.
+
+    The destination is truncated before the guest is touched, and the guest's
+    previous /tmp/pkg_upgrade.json is deleted before the probe runs, so a failed
+    probe can never leave a STALE check to be read as the fresh one. What
+    reaches update_verdict in that case is an empty file, and an empty file must
+    be unusable - never current.
+    """
+
+    def test_an_empty_file_is_unusable(self):
+        self.assertEqual(self.verdict_for(""), "unusable")
+
+    def test_whitespace_only_is_unusable(self):
+        self.assertEqual(self.verdict_for("   \n  \n"), "unusable")
+
+
+class HoldExtension(unittest.TestCase):
+    """cmd_update must not be shut down underneath itself.
+
+    The down timer is free to fire mid-upgrade otherwise, pulling the power on a
+    box part-way through writing a new base and kernel - the one moment in this
+    script's life when a hard stop can actually break a guest. `down` skips
+    while a hold is live, so the hold IS the lock; it simply was not being taken
+    by cmd_update until review caught it.
+
+    Extending must never SHORTEN an existing hold, or this call would cut short
+    a longer-running caller that is relying on it.
+    """
+
+    def hold_state(self, contents, now):
+        with tempfile.NamedTemporaryFile("w", suffix=".hold", delete=False) as handle:
+            if contents is not None:
+                handle.write(contents)
+            path = handle.name
+        try:
+            return decide("hold", path, str(now))
+        finally:
+            os.unlink(path)
+
+    def test_a_live_hold_blocks_the_scheduled_down(self):
+        self.assertEqual(self.hold_state("2000000000", 1000000000), "held")
+
+    def test_a_lapsed_hold_does_not(self):
+        self.assertEqual(self.hold_state("1000000000", 2000000000), "free")
+
+
+class MalformedWorkListsAreUnusable(UpdateVerdict):
+    """Every road to "current" must be paved with fields we actually read.
+
+    Found by review. A work key that is absent, or that is not the list it
+    should be, previously counted towards "nothing to do" via dict.get()
+    returning None - so a payload that was not the check we thought it was could
+    resolve to current. Certifying a box as fresh on a payload we did not
+    understand is the same failure as certifying it on a failed fetch.
+    """
+
+    def test_a_missing_work_list_is_unusable(self):
+        for key in (
+            "new_packages",
+            "upgrade_packages",
+            "downgrade_packages",
+            "reinstall_packages",
+            "remove_packages",
+        ):
+            with self.subTest(missing=key):
+                payload = self.healthy()
+                payload.pop(key)
+                self.assertEqual(self.verdict_for(payload), "unusable")
+
+    def test_a_wrong_shaped_work_list_is_unusable(self):
+        for bogus in ("", "some string", 0, {}, None):
+            with self.subTest(bogus=bogus):
+                self.assertEqual(
+                    self.verdict_for(self.healthy(upgrade_packages=bogus)), "unusable"
+                )
+
+    def test_a_well_formed_empty_check_is_still_current(self):
+        """The guard must not make every clean box unusable."""
+        self.assertEqual(self.verdict_for(self.healthy()), "current")

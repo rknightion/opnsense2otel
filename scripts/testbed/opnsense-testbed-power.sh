@@ -7,14 +7,25 @@
 # surface and takes them down after; opnsense-testbed-down.timer is the daily
 # backstop for a lab left running.
 #
-# WHY THIS RUNS ON THE HOST AND NOT IN GITHUB ACTIONS: powering the lab from
-# `live-canary.yml` would need a Proxmox API token and a `tag:ci -> oli:8006`
-# ACL grant reachable from a PUBLIC repo, and a cancelled CI run would leave
-# guests in an indeterminate power state. Neither is true of a host-side timer,
-# and the lab gets a real warm-up instead of the ~10 minutes a CI-driven power
-# cycle would give. Since the cron came off live-canary.yml the run is started BY
-# this host (opnsense-testbed-canary-dispatch.sh) once `up` returns, so the warm-up
-# is bounded by readiness rather than by a clock.
+# WHO RAISES THE LAB: a session does, by hand, and OPN-0109 has NOT changed that
+# yet. The intent is for live-canary.yml to own the cycle over a restricted CI
+# credential, and the work is parked on a live finding rather than a design
+# argument: TAILSCALE SSH INTERCEPTS PORT 22 ON THIS HOST, so sshd's
+# authorized_keys never runs for a connection over the tailnet. A forced
+# command is simply bypassed - verified 2026-09-20, `ssh -v` reports
+# `Authenticated to ... using "none"` and lands in a full shell with the
+# `command="...",restrict` line present and correct. Tailscale SSH has no
+# per-command restriction, so it cannot be the boundary CI needs. Do not wire
+# CI to this host over :22 believing a forced command will hold it.
+#
+# The three objections this header used to raise against CI-owned power still
+# have answers, and they are worth keeping because none of them is the blocker:
+# a forced command needs only :22 and grants far less than DEVBOX_API_KEY, which
+# CI already holds; a cancelled run is bounded by the hold plus the watchdog,
+# not left indeterminate; and `up` blocks on readiness rather than a clock, so a
+# CI cycle is gated the same way a manual one is. The real cost of CI-owned
+# power is thinner tables on a box that has been up for minutes rather than
+# hours, and that is worth naming honestly.
 #
 # ORDERING IS LOAD-BEARING. Every guest except the two firewalls depends on a
 # firewall for DHCP, routing and DNS, so the firewalls start first and stop
@@ -40,6 +51,11 @@ PHASE2_CTS=(105)                # traffgen LXC
 READY_URLS=(https://10.0.90.111/ https://10.0.90.119/)
 
 HOLD_FILE=/var/lib/opnsense-testbed/hold
+# The hold file says "someone intends to keep the lab up until T". That is a
+# lifecycle expiry, NOT mutual exclusion: `down` can read the hold as free and
+# then be overtaken by an `update` that takes one a moment later, and both then
+# proceed. This lock is the exclusion, and every lifecycle verb takes it.
+LOCK_FILE=/var/lib/opnsense-testbed/lock
 DEFAULT_HOLD_SECONDS=28800      # 8h — one working day, then it lapses by itself
 READY_TIMEOUT=600               # 10 min; the canary dispatch waits on this unit
 SHUTDOWN_TIMEOUT=180            # per guest, before falling back to a hard stop
@@ -108,6 +124,107 @@ hold_is_live() {
   [ "$now" -lt "$expiry" ]
 }
 
+# update_verdict reads a firmware check result and says what to do with it.
+#
+# The input is /tmp/pkg_upgrade.json, which `configctl firmware probe` writes.
+# That file is the only machine-readable view of a check: `configctl firmware
+# status` prints a human changelog, and the JSON API needs credentials that
+# deliberately do not exist on this host.
+#
+# Verdicts:
+#   pending  — packages to install, upgrade, downgrade, reinstall or remove
+#   current  — the box is already at its channel head
+#   unusable — the check could not reach the mirror, so ABSENCE OF PENDING
+#              WORK PROVES NOTHING. This is the case that must never be read as
+#              "current": a box with no route to the mirror reports empty
+#              package lists and looks exactly like an up-to-date one.
+#
+# Reads connection/repository first for that reason, before looking at any list.
+update_verdict() {
+  local file=$1
+  [ -f "$file" ] || { echo unusable; return; }
+  python3 - "$file" <<'PYEOF'
+import json, sys
+
+try:
+    with open(sys.argv[1]) as handle:
+        check = json.load(handle)
+except (OSError, ValueError):
+    print("unusable")
+    sys.exit(0)
+
+# A failed fetch still writes the file, with these set to something other than
+# "ok". Empty package lists under a failed fetch mean "we could not look", not
+# "nothing to do".
+if check.get("connection") != "ok" or check.get("repository") != "ok":
+    print("unusable")
+    sys.exit(0)
+
+work = (
+    "new_packages",
+    "upgrade_packages",
+    "downgrade_packages",
+    "reinstall_packages",
+    "remove_packages",
+)
+
+# A field that is absent, or not the list it should be, means this payload is
+# not the check we think it is - and treating a missing list as an empty one
+# would count it towards "nothing to do". Every road to "current" has to be
+# paved with fields we actually read.
+for key in work:
+    if not isinstance(check.get(key), list):
+        print("unusable")
+        sys.exit(0)
+
+if any(check.get(k) for k in work):
+    print("pending")
+    sys.exit(0)
+
+# A box with nothing left to install but a pending reboot is NOT at its channel
+# head: base and kernel only take effect on boot, so it is still RUNNING the old
+# ones. Calling that "current" is how a reboot that silently failed gets
+# certified as a completed update - the box keeps serving, the package lists are
+# empty, and nothing else in the run would notice.
+if str(check.get("needs_reboot", "")).strip().lower() in {"1", "true", "yes"}:
+    print("pending")
+    sys.exit(0)
+
+print("current")
+PYEOF
+}
+
+# check_identity prints "<product_id> <product_version>" from a check result, so
+# a caller can log what a box was before and after an upgrade. Prints nothing
+# when the file is missing or unreadable; a caller must treat that as unknown
+# rather than as a version.
+check_identity() {
+  local file=$1
+  [ -f "$file" ] || return 0
+  python3 - "$file" <<'PYEOF'
+import json, sys
+
+try:
+    with open(sys.argv[1]) as handle:
+        check = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+
+pid = str(check.get("product_id") or "").strip()
+version = str(check.get("product_version") or "").strip()
+if version:
+    print(f"{pid} {version}".strip())
+PYEOF
+}
+
+# snapshot_name is the pre-update restore point for one guest. ONE name per
+# guest, reused every run: Proxmox refuses a duplicate, so the update path
+# deletes the previous one first. A timestamped name would silently accumulate
+# a snapshot per run until the store filled, and nothing would report it.
+snapshot_name() {
+  echo "preupdate-$1"
+}
+
 # --- Test seam. MUST stay above anything that reads state or touches a guest.
 # Production invocations never pass --decide-only.
 if [ "${1-}" = "--decide-only" ]; then
@@ -115,6 +232,9 @@ if [ "${1-}" = "--decide-only" ]; then
     allowed) if is_allowed "${3-}"; then echo yes; else echo no; fi ;;
     order)   guest_order "${3-}" | tr '\n' ' ' | sed 's/ $//' && echo ;;
     hold)    if hold_is_live "${3-}" "${4-}"; then echo held; else echo free; fi ;;
+    verdict) update_verdict "${3-}" ;;
+    identity) check_identity "${3-}" ;;
+    snapname) snapshot_name "${3-}" ;;
     *)       die "--decide-only: unknown question '${2-}'" ;;
   esac
   exit 0
@@ -171,6 +291,23 @@ decode_qm_guest_exec() {
   if ! jq -er '.exitcode | tostring' "$envelope" >"$guest_exit" 2>/dev/null; then
     return 1
   fi
+}
+
+# acquire_lock serialises the lifecycle verbs against each other. Held for the
+# whole operation and released when the script exits, by the kernel, so a
+# crashed run cannot leave it stuck.
+#
+# `wait_seconds` of 0 means do not queue: that is what the down timer passes, so
+# a watchdog firing during an upgrade simply steps aside and tries again on its
+# next tick instead of piling up behind a twenty-minute update.
+acquire_lock() {
+  local wait_seconds=$1
+  mkdir -p "$(dirname "$LOCK_FILE")"
+  exec 9>"$LOCK_FILE" || die "could not open the testbed lock"
+  if ! flock -w "$wait_seconds" 9; then
+    return 1
+  fi
+  return 0
 }
 
 cleanup_qm_guest_exec() {
@@ -437,11 +574,383 @@ warm_firmware_check() {
 }
 
 # ---------------------------------------------------------------------------
+# Firmware update (OPN-0108)
+#
+# The boxes were read live on 2026-09-20 and neither had been updated since
+# late July - 54 and 56 days - because nothing had ever pulled. "nightly" was a
+# name, not a fact, which makes the nightly profile worthless as early warning.
+# The update belongs in the session rather than on its own timer for exactly
+# that reason: a timer is what rotted unobserved.
+# ---------------------------------------------------------------------------
+
+# An upgrade fetches ~350 MiB, installs ~126 packages and reboots, so it needs a
+# far longer gate than a cold boot does.
+UPDATE_READY_TIMEOUT=1800
+# One `opnsense-update -bkp` call: fetch ~350 MiB, then install ~126 packages
+# plus base and kernel. Generous, because the cost of being too short is a
+# needless rollback of an upgrade that was going to work.
+UPDATE_EXEC_TIMEOUT=2400
+# How long to allow for the box to START rebooting after the upgrade is
+# triggered. `configctl firmware upgrade` daemonises and returns immediately, so
+# polling readiness straight away would see the box that has not gone down YET
+# and call the upgrade finished.
+UPDATE_REBOOT_GRACE=420
+
+# ready_url_for maps a firewall id to its webConfigurator URL. READY_URLS is
+# positional against PHASE1_VMS, so this asserts the pairing rather than
+# trusting an index to stay aligned as the inventory changes.
+ready_url_for() {
+  local id=$1 i
+  [ "${#PHASE1_VMS[@]}" -eq "${#READY_URLS[@]}" ] \
+    || die "ready_url_for: PHASE1_VMS and READY_URLS are out of step"
+  for i in "${!PHASE1_VMS[@]}"; do
+    if [ "${PHASE1_VMS[$i]}" = "$id" ]; then
+      printf '%s\n' "${READY_URLS[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+box_serves() {
+  curl -sk -o /dev/null -m 6 "$1"
+}
+
+# wait_box_ready blocks until ONE firewall serves :443 again.
+wait_box_ready() {
+  local id=$1 timeout=$2 url started=$SECONDS deadline
+  deadline=$((SECONDS + timeout))
+  url=$(ready_url_for "$id") || die "wait_box_ready: no ready URL for guest $id"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if box_serves "$url"; then
+      log "vm $id serving :443 again after $((SECONDS - started))s"
+      return 0
+    fi
+    sleep 10
+  done
+  return 1
+}
+
+# snapshot_guest takes the pre-update restore point, replacing the previous one.
+snapshot_guest() {
+  local id=$1 name
+  assert_allowed "$id"
+  name=$(snapshot_name "$id")
+  # Proxmox refuses a duplicate name, and a stale restore point is worse than
+  # none - it would roll back to a state two updates old.
+  if qm listsnapshot "$id" 2>/dev/null | awk '{print $2}' | grep -qx "$name"; then
+    log "removing the previous restore point $name on vm $id"
+    qm delsnapshot "$id" "$name" >/dev/null \
+      || die "could not remove the stale restore point $name on vm $id"
+  fi
+  log "taking restore point $name on vm $id"
+  qm snapshot "$id" "$name" --description "pre-update, opnsense-testbed-power.sh" >/dev/null \
+    || die "could not snapshot vm $id — refusing to update a box with no way back"
+}
+
+# rollback_guest restores the pre-update snapshot and brings the box back.
+rollback_guest() {
+  local id=$1 name
+  name=$(snapshot_name "$id")
+  log "ERROR: rolling vm $id back to $name" >&2
+  if ! qm rollback "$id" "$name" >/dev/null 2>&1; then
+    log "ERROR: rollback of vm $id FAILED — the box needs hands" >&2
+    return 1
+  fi
+  start_guest "$id"
+  if ! wait_box_ready "$id" "$READY_TIMEOUT"; then
+    log "ERROR: vm $id did not come back after rollback — the box needs hands" >&2
+    return 1
+  fi
+  log "vm $id rolled back and serving again"
+  return 0
+}
+
+# probe_check runs a SYNCHRONOUS firmware check and copies the result off the
+# box. `configctl firmware check` daemonises; `probe` is the same launcher call
+# in the foreground, which is what makes the result readable by the time this
+# returns.
+probe_check() {
+  local id=$1 dest=$2
+
+  # Empty the destination FIRST, so every failure below leaves the caller with
+  # nothing rather than with whatever was there before.
+  : >"$dest"
+
+  # Delete the guest's previous result before probing. Without this, a probe
+  # that fails leaves the PREVIOUS check on the box and the copy below reads it
+  # as though it were fresh - so a pre-upgrade file could be presented as the
+  # post-upgrade state, which is precisely the stale-evidence failure this whole
+  # task exists to remove. An empty result reads as `unusable`, which is the
+  # honest answer when the probe did not run.
+  # SUBSHELLS ARE LOAD-BEARING. guest_exec reaches die() on a malformed, missing
+  # or timed-out qm envelope, and die exits the SCRIPT - `|| return 0` cannot
+  # catch that. Without the subshell, one bad envelope here kills the whole
+  # update run, and the worst moment for that is between an upgrade and its
+  # verification: a box left upgraded, unverified, and nobody told. Contained,
+  # the same envelope just yields an empty result, which reads as unusable.
+  if ! ( guest_exec "$id" /bin/rm -f /tmp/pkg_upgrade.json >/dev/null 2>&1 ); then
+    log "WARNING: could not clear the previous firmware check on vm $id — reporting currency as unknown"
+    return 0
+  fi
+
+  if ! qm guest exec "$id" --timeout 300 -- \
+      /usr/local/sbin/configctl firmware probe >/dev/null 2>&1; then
+    log "WARNING: firmware probe on vm $id did not complete — reporting currency as unknown"
+    return 0
+  fi
+
+  ( guest_exec "$id" /bin/cat /tmp/pkg_upgrade.json ) >"$dest" 2>/dev/null || : >"$dest"
+}
+
+# update_guest brings ONE firewall to its channel head.
+#
+# EXIT STATUS IS THE OUTCOME, and the four are deliberately not collapsed -
+# cmd_update maps them to distinct run exits so "we could not check", "the
+# upgrade failed but the box is fine" and "the box may be broken" never read as
+# the same event:
+#
+#   0  at its channel head (already, or after a successful upgrade)
+#   1  update failed, and the box was rolled back and is serving again
+#   2  the check was unusable BEFORE any upgrade, so currency is UNKNOWN and the
+#      box was NOT touched
+#   3  ROLLBACK FAILED - the box may be broken and needs hands
+#   6  the box WAS upgraded and rebooted but could not be verified afterwards -
+#      currency UNKNOWN and someone has to look
+update_guest() {
+  local id=$1 work before after verdict url
+  assert_allowed "$id"
+  work=$(mktemp "${TMPDIR:-/tmp}/opnsense-check-XXXXXX.json")
+  url=$(ready_url_for "$id") || die "update_guest: no ready URL for guest $id"
+
+  probe_check "$id" "$work"
+  verdict=$(update_verdict "$work")
+  before=$(check_identity "$work")
+
+  case "$verdict" in
+    current)
+      log "vm $id is already at its channel head (${before:-version unknown})"
+      rm -f "$work"
+      return 0
+      ;;
+    unusable)
+      # NOT an update failure and NOT success. The box could not reach its
+      # mirror, so "no pending packages" proves nothing - reporting it as
+      # current is how a stale box gets certified fresh. Nothing was touched, so
+      # this must not read like a failed upgrade either.
+      log "ERROR: vm $id firmware check unusable (no mirror route?) — currency UNKNOWN, not confirmed" >&2
+      rm -f "$work"
+      return 2
+      ;;
+  esac
+
+  log "vm $id has pending updates (running ${before:-version unknown}) — upgrading"
+  snapshot_guest "$id"
+
+  # `opnsense-update -bkp` — base, kernel and packages, which opnsense-update(8)
+  # names as the way to "update all currently installed components at once".
+  #
+  # NOT `configctl firmware upgrade`, which was tried first and SILENTLY DID
+  # NOTHING: the action exists and configd accepts it, the call returns 0, and
+  # then no upgrade process ever appears, no log is written and the version does
+  # not move. It daemonises through `daemon -f`, so there is nothing left to
+  # inspect and nothing that reports the failure. A green exit code from it
+  # proves only that configd took the message.
+  #
+  # The RPC's own result is deliberately tolerated rather than trusted. A
+  # base/kernel upgrade can take the box down underneath the guest agent, which
+  # fails the call for a good reason. Success is decided further down by
+  # re-probing the box, which is the only evidence that means anything.
+  log "vm $id: running opnsense-update -bkp (this takes a while)"
+  if ! qm guest exec "$id" --timeout "$UPDATE_EXEC_TIMEOUT" -- \
+      /usr/local/sbin/opnsense-update -bkp >/dev/null 2>&1; then
+    log "vm $id: the upgrade call did not return cleanly — continuing to the readiness gate, which decides"
+  fi
+
+  # Base and kernel only take effect after a reboot, and the check reports
+  # needs_reboot=1 for exactly that reason. Tolerated the same way: the box
+  # going down IS the reboot, so the RPC failing here is the expected case.
+  log "vm $id: rebooting to apply base and kernel"
+  qm guest exec "$id" --timeout 60 -- /sbin/shutdown -r now >/dev/null 2>&1 || true
+
+  # Wait for the box to actually go down before trusting a readiness probe. A
+  # box that never goes down may simply not have needed a reboot, so this is a
+  # grace period and not a gate.
+  local deadline=$((SECONDS + UPDATE_REBOOT_GRACE))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    box_serves "$url" || break
+    sleep 10
+  done
+
+  if ! wait_box_ready "$id" "$UPDATE_READY_TIMEOUT"; then
+    log "ERROR: vm $id did not come back within ${UPDATE_READY_TIMEOUT}s after the upgrade" >&2
+    rm -f "$work"
+    # A rollback that ALSO fails is a different, worse event than an upgrade
+    # that failed cleanly: one box is serving, the other may not be.
+    rollback_guest "$id" || return 3
+    return 1
+  fi
+
+  # Prove it took, rather than assuming a box that boots was upgraded.
+  probe_check "$id" "$work"
+  after=$(check_identity "$work")
+  verdict=$(update_verdict "$work")
+  rm -f "$work"
+
+  case "$verdict" in
+    current)
+      log "vm $id updated: ${before:-unknown} -> ${after:-unknown}"
+      return 0
+      ;;
+    unusable)
+      # Distinct from the pre-update unusable above: this box WAS upgraded and
+      # rebooted, we just cannot confirm what it is now running. Someone has to
+      # look, where an untouched box is a non-event.
+      log "ERROR: vm $id came back but its post-update check is unusable — currency UNKNOWN after an upgrade" >&2
+      return 6
+      ;;
+    *)
+      # DELIBERATELY NOT ROLLED BACK, though review suggested it. The rollback
+      # paths above exist for a box that did NOT come back; this one is serving,
+      # so its state is known and a human can read it. Rolling back here would
+      # discard a partial upgrade in favour of an older one on a healthy box,
+      # and would risk a rollback failure - turning a boring exit 3 into a
+      # possibly-broken lab. The restore point is still there for whoever looks.
+      log "ERROR: vm $id still reports pending updates after upgrading (now ${after:-unknown}); box is serving, restore point $(snapshot_name "$id") kept" >&2
+      return 1
+      ;;
+  esac
+}
+
+# ensure_hold guarantees a hold of at least this many seconds from now,
+# EXTENDING an existing one and never shortening it. Shortening would let this
+# call cut short a hold a longer-running caller is relying on.
+ensure_hold() {
+  local seconds=$1 wanted now existing=0
+  now=$(date -u +%s)
+  wanted=$((now + seconds))
+  if [ -f "$HOLD_FILE" ]; then
+    existing=$(head -n1 "$HOLD_FILE" 2>/dev/null | tr -d '[:space:]')
+    case "$existing" in '' | *[!0-9]*) existing=0 ;; esac
+  fi
+  if [ "$existing" -ge "$wanted" ]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$HOLD_FILE")"
+  printf '%s\n' "$wanted" > "$HOLD_FILE"
+  log "hold extended to $(date -u -d "@$wanted" '+%Y-%m-%dT%H:%M:%SZ') for the update"
+}
+
+# DERIVED, not guessed. A hold shorter than the work it protects is worse than
+# none: it lapses mid-upgrade and hands the box straight back to the down timer,
+# which is the exact failure the hold exists to prevent. 5400 was picked as a
+# round number and was less than half the real worst case.
+#
+# Per box, worst case: the upgrade call, the reboot grace, the readiness gate, a
+# rollback's own readiness gate, and two probes.
+update_hold_seconds() {
+  local per_box
+  per_box=$((UPDATE_EXEC_TIMEOUT + UPDATE_REBOOT_GRACE + UPDATE_READY_TIMEOUT \
+             + READY_TIMEOUT + 2 * GUEST_EXEC_TIMEOUT))
+  # Every firewall in sequence, plus ten minutes of margin.
+  echo $((per_box * ${#PHASE1_VMS[@]} + 600))
+}
+
+# cmd_update brings both firewalls to their channel heads, in place, one at a
+# time.
+#
+# Exit 0 both at head; 3 an upgrade failed with the box still serving, or a
+# firewall was not running so nothing was attempted on it; 4 currency
+# is UNKNOWN for a box, before or after an upgrade, with the log saying which;
+# 5 a rollback FAILED and the lab needs hands; 6 the update aborted early, which
+# is how the dispatch below remaps a die(). All of them are distinct from
+# apidrift's 1 (breaking drift) and 2 (probe error), so an update problem can
+# never be read as drift or as an unreachable box.
+cmd_update() {
+  local id status broken=0 failed=0 unknown=0 touched_unknown=0 not_running=0
+
+  # TAKE A HOLD FIRST. The down timer is otherwise free to fire in the middle of
+  # an upgrade and pull the power on a box that is part-way through writing a
+  # new base and kernel - the one moment in this script's life when a hard stop
+  # can actually break a guest. `down` skips entirely while a hold is live, so
+  # the existing mechanism is the lock; it just was not being taken here.
+  #
+  # Deliberately NOT released at the end: the caller owns the lifecycle, and CI
+  # drops the hold as part of its teardown. A hold left behind lapses on its own.
+  #
+  # The lock is taken BEFORE the hold, so a `down` cannot read the hold as free
+  # and then race this call into taking one.
+  acquire_lock 300 || die "another testbed operation is in progress — not updating"
+  ensure_hold "$(update_hold_seconds)"
+
+  for id in "${PHASE1_VMS[@]}"; do
+    if [ "$(guest_state "$id")" != running ]; then
+      log "ERROR: vm $id is not running — raise the lab before updating" >&2
+      not_running=1
+      continue
+    fi
+    status=0
+    update_guest "$id" || status=$?
+    case "$status" in
+      0) ;;
+      2) unknown=1 ;;
+      6) unknown=1; touched_unknown=1 ;;
+      3)
+        # A rollback that failed leaves ONE box possibly broken. Touching the
+        # other one now can only widen the damage, and the run already has to
+        # stop for hands - so stop here rather than upgrading into a lab that is
+        # already in a state nobody has looked at.
+        broken=1
+        log "ERROR: stopping before the remaining firewalls — the lab needs hands first" >&2
+        break
+        ;;
+      *) failed=1 ;;
+    esac
+  done
+
+  # Worst outcome wins, and each has its own exit so a caller can tell them
+  # apart. All are distinct from apidrift's 1 (breaking drift) and 2 (probe
+  # error), so an update problem never reads as drift.
+  if [ "$broken" -ne 0 ]; then
+    log "ERROR: a rollback FAILED — a firewall may be broken and needs hands" >&2
+    exit 5
+  fi
+  # Log EVERY category that occurred before choosing an exit. A run that hit two
+  # different problems must not report only the one that happened to win.
+  if [ "$not_running" -ne 0 ]; then
+    log "ERROR: a firewall was not running, so nothing was updated on it" >&2
+  fi
+  if [ "$failed" -ne 0 ]; then
+    log "ERROR: an upgrade failed; the box is serving, but not at its channel head" >&2
+  fi
+  if [ "$touched_unknown" -ne 0 ]; then
+    log "ERROR: a firewall was UPGRADED and then could not be verified — currency UNKNOWN, check it" >&2
+  elif [ "$unknown" -ne 0 ]; then
+    log "ERROR: a firmware check was unusable before any upgrade — currency UNKNOWN, box NOT touched" >&2
+  fi
+
+  # An upgraded box nobody can identify outranks one that failed cleanly and is
+  # still serving a KNOWN build: the second is a bad state someone understands,
+  # the first is a box whose contents are a guess.
+  if [ "$touched_unknown" -ne 0 ]; then
+    exit 4
+  fi
+  if [ "$failed" -ne 0 ] || [ "$not_running" -ne 0 ]; then
+    exit 3
+  fi
+  if [ "$unknown" -ne 0 ]; then
+    exit 4
+  fi
+  log "both firewalls are at their channel heads"
+}
+
+# ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
 
 cmd_up() {
   local hold_seconds=${1-}
+  acquire_lock 300 || die "another testbed operation is in progress — not raising the lab"
   log "bringing the testbed up"
   for id in "${PHASE1_VMS[@]}"; do start_guest "$id"; done
   wait_ready
@@ -458,6 +967,14 @@ cmd_up() {
 
 cmd_down() {
   local now expiry
+  # Do not queue. This is the verb the watchdog timer fires, and a watchdog that
+  # blocks for twenty minutes behind a running update would pile up one waiting
+  # instance per tick. Stepping aside costs nothing: the next tick tries again,
+  # and the hold would have made it a no-op anyway.
+  if ! acquire_lock 0; then
+    log "another testbed operation is in progress — skipping shutdown"
+    return 0
+  fi
   now=$(date +%s)
   if hold_is_live "$HOLD_FILE" "$now"; then
     expiry=$(head -n1 "$HOLD_FILE")
@@ -506,6 +1023,14 @@ Usage: opnsense-testbed-power.sh <command>
 
   up [seconds]   Start the testbed in dependency order and block until both
                  firewalls serve :443. With [seconds], also set a hold.
+  update         Bring both firewalls to their channel heads in place, taking a
+                 restore point first and rolling back a box that does not come
+                 back. Exit 0 both at head, 3 an upgrade failed or a firewall
+                 was not running,
+                 4 currency UNKNOWN for a box (before or after an upgrade - the
+                 log says which), 5 a rollback FAILED and the lab needs hands,
+                 6 the update aborted early. Never 1 or 2, which belong to
+                 apidrift's drift and probe-error verdicts.
   down           Gracefully stop the testbed, unless a hold is active.
   hold [seconds] Suppress the scheduled shutdown (default 8h). Auto-expires.
   release        Clear an active hold.
@@ -519,6 +1044,29 @@ EOF
 
 case "${1-}" in
   up)      shift; cmd_up "${1-}" ;;
+  update)
+    # die() exits 1, and cmd_update's whole contract is that its failures are
+    # NEVER apidrift's 1 (breaking drift) or 2 (probe error). An abort inside
+    # snapshot_guest, ready_url_for or assert_allowed would otherwise surface as
+    # exit 1 and a caller would read a refused snapshot as live API drift.
+    #
+    # cmd_update itself only ever exits 0, 3, 4 or 5, so a 1 or 2 arriving here
+    # can only be an abort, and 6 says exactly that: the update stopped early
+    # for an operational reason and the log says which.
+    #
+    # SUBSHELL, or none of this works: cmd_update and die() both call `exit`,
+    # which ends the SCRIPT, so `||` never observes a status and the remap below
+    # is dead code. Running it in a subshell turns those exits into a status
+    # this dispatch can actually see. The exit 3 observed on a stopped lab
+    # before this fix was cmd_update exiting the script directly with the right
+    # number by luck; a die() would have escaped as 1 and read as drift.
+    update_status=0
+    ( cmd_update ) || update_status=$?
+    case "$update_status" in
+      1 | 2) exit 6 ;;
+      *) exit "$update_status" ;;
+    esac
+    ;;
   down)    cmd_down ;;
   hold)    shift; cmd_hold "${1-}" ;;
   release) cmd_release ;;
