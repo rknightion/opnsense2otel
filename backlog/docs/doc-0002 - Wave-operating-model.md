@@ -107,25 +107,36 @@ against the real tree before acting on it.
 
 ## Exclusive resources — serialise these, never fan out across them
 
-**The testbed is a single physical resource, powered on demand.** Six guests on `oli`, off by
-default. Nothing raises the lab on a schedule and nothing dispatches `live-canary.yml` on a schedule:
-`opnsense-testbed-up.timer` and `opnsense-testbed-canary.timer` are installed on `oli` but
-**deliberately disabled**. Do not re-enable them. When a change needs validating against a live API
-surface, the main session raises the lab, dispatches the canary and takes the lab down again.
-`opnsense-testbed-down.timer` stays enabled as a backstop: at 08:30 UTC daily it powers the lab off
-unless a hold is live.
+**The testbed is a single physical resource, and CI owns its power.** THREE guests on `oli`, off by
+default: 102 (nightly firewall), 106 (release firewall) and 105 (the traffgen container, shared by
+both profiles). 110, 111 and 112 were retired and DESTROYED on 2026-09-20 by OPN-0110; they are not
+coming back, and a reference to them in an older task or comment is history.
+
+`live-canary.yml` now raises the lab itself, brings both firewalls to their channel heads, probes,
+and lowers it in an `always()` step, so the lab is up only for the run. A session does not have to
+raise it by hand to dispatch the canary. `opnsense-testbed-up.timer` and
+`opnsense-testbed-canary.timer` remain installed but **deliberately disabled** - do not re-enable
+them; GitHub delayed their scheduled runs by two to three and a half hours every day, which is why
+the schedule was abandoned rather than retimed.
+
+`opnsense-testbed-down.timer` is a **five-minute watchdog**, not the old 08:30 daily backstop. It
+fires every five minutes and powers the lab off whenever no hold is live, which bounds an abandoned
+lab - a cancelled run, a lost runner - to five minutes instead of until the next morning.
 
 Consequences for a wave:
 
 - **Raising the lab is a main-thread action.** A lane never powers the testbed; it reports that it
   needs live evidence and stops.
-- **At most one consumer may use the testbed at a time.** There is no locking; two runs will
-  interleave API writes against the same firewall and produce results neither can trust.
+- **At most one consumer may use the testbed at a time.** There IS locking now - every lifecycle
+  verb takes a `flock` - but it protects the POWER operations, not your API writes: two runs will
+  still interleave writes against the same firewall and produce results neither can trust. The
+  canary matrix is `max-parallel: 1` for this reason. A `down` that exits **8** stepped aside for a
+  busy lock and stopped NOTHING; it is a retry, never a success.
 - **The box is down unless someone raised it.** A pre-flight probe failure on a run nobody raised the
   lab for is not drift, not a box fault and not a regression. Do not open a task for it.
 
-**Raising the lab.** Authorised, including for an unattended run. `oli` is reachable over the tailnet
-as `root` and carries the power scheduler:
+**Raising the lab by hand** is still authorised for interactive work, but the canary no longer needs
+it. `oli` is reachable over the tailnet as `root` and carries the power scheduler:
 
 ```bash
 ssh oli '/usr/local/bin/opnsense-testbed-power.sh status'      # hold state + every guest
@@ -134,15 +145,18 @@ ssh oli '/usr/local/bin/opnsense-testbed-power.sh release'     # clear the hold
 ssh oli '/usr/local/bin/opnsense-testbed-power.sh down'        # refuses while a hold is live
 ```
 
-Always pass `up` a hold sized to the work: without a live hold the 08:30 UTC backstop powers the lab
-off mid-run. `up` blocks until **both** firewalls serve `:443`, so its return is the readiness signal;
-never poll for it yourself. The session that raised the lab owns `release` then `down` when it is
-finished; a forgotten hold lapses on its own and the next 08:30 backstop takes the lab down.
+Always pass `up` a hold sized to the work: without a live hold the five-minute watchdog powers the
+lab off mid-run, and five minutes is not long. `up` blocks until **both** firewalls serve `:443`,
+then proves the shared traffgen can actually reach BOTH of them before returning, so its return is
+the readiness signal; never poll for it yourself. The session that raised the lab owns `release` then
+`down` when it is finished; a forgotten hold lapses on its own and the watchdog takes the lab down.
 
-**Never call `qm` or `pct` on `oli` directly.** The scheduler's hardcoded allowlist (102, 106, 105,
-110, 111, 112) is the only thing standing between a typo and powering off home automation (100), the
-CI runners (101), unifi-os (103), winsrv (104) or postgres (107). Drive power through the script,
-always, and never derive an id from `qm list`.
+**Never call `qm` or `pct` on `oli` directly.** The scheduler's hardcoded allowlist (102, 106, 105)
+is the only thing standing between a typo and powering off home automation (100), the CI runners
+(101), unifi-os (103), winsrv (104) or postgres (107). Drive power through the script, always, and
+never derive an id from `qm list`. This is not hypothetical: a deny-path probe run with a genuinely
+destructive command stopped home assistant for real. **A deny-path test uses a target that is
+harmless when it succeeds** - `qm stop 999999`, never the worst thing the boundary exists to prevent.
 
 **The testbed firewalls' API credentials are not on any laptop** — they live only in the repository's
 `tailnet` GitHub environment (`DEVBOX_API_KEY`/`DEVBOX2_API_KEY`, and the DEVBOX2 pair for the release
@@ -183,12 +197,20 @@ outright and now surface as `logs_dropped_total{reason="rejected"}`.
 **Guest access is through the power script's `exec` and `put` subcommands** (since wave 9), never
 `qm` or `pct` directly. `put` is container-only because `qm` has no guest file-write; a VM fetches a
 release archive itself with `exec <id> -- fetch -o <tmp> <release-url>` and verifies the sha256
-in-guest against `checksums.txt`. Both testbed firewalls run the QEMU guest agent, and 105 and 112
-carry `python3` and `curl`. The exporter starts on a guest with no real credential: `--opnsense.api-key`
+in-guest against `checksums.txt`. Both testbed firewalls run the QEMU guest agent, and 105 carries
+`python3` and `curl` (112 did too, and is gone). The exporter starts on a guest with no real credential: `--opnsense.api-key`
 is a presence check only, and with `--exporter.instance-label` set startup makes no API call, so
 `--opnsense.address 127.0.0.1:1` plus a dummy key and secret gives a receiver whose collectors merely
-fail. Bind receivers on the LAN-side segment (105 eth1 with 112, 102 vtnet2 with 105 eth0); the WAN
-side is behind pf and would measure the firewall, not the receiver.
+fail. **The throughput pair is now firewall-to-container, not container-to-container.** The two-host
+UDP pair 105-to-112 died with 112, so bind receivers on 102 `vtnet2` against 105 `eth0` - both sit on
+the untagged TESTLAN that BOTH firewalls share, which is what lets one container serve both profiles.
+The WAN side is behind pf and would measure the firewall, not the receiver.
+
+**105's interfaces, and why each exists.** `eth0` TESTLAN (untagged `vmbr9`, shared with both
+firewalls, carries the default route and a DHCPv6 lease); `eth1` VLAN 90; `eth2` CPORTAL (no lease
+expected, captive portal); `eth3` the RELEASE firewall's client segment (`vmbr9` tag 40), which
+exists solely so Kea on 106 has a lease to report. `eth3` requests neither routers nor DNS, so it
+cannot take over the container's routing - do not "fix" that by removing the restriction.
 
 **v4.2.0 cannot start with the syslog receiver on a stock FreeBSD `kern.ipc.maxsockbuf`.** The
 kernel refuses a 4 MiB `SO_RCVBUF` with ENOBUFS instead of clamping (OPN-0101, fixed at a86cbb65).
