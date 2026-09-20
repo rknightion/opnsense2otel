@@ -22,7 +22,7 @@ network reach to the firewall's HTTPS port. See [Getting Started](getting-starte
 
 ### Which OPNsense versions are supported?
 
-The current stable release and the previous stable - today that's 26.1.x and 25.7. Older
+The current stable release - today that's 26.7.x. Older
 releases are best-effort. One binary handles every supported payload shape by reading
 whichever field a given firewall actually sends, so there's no version flag to set. See
 [Compatibility](compatibility.md).

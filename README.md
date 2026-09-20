@@ -145,7 +145,7 @@ Details, 401/403 remediation, and ACL caveats: [security](https://m7kni.io/opnse
 
 ## Compatibility
 
-Supported against the current and previous stable OPNsense releases. Plugin-gated collectors go
+Supported against the current stable OPNsense release. Plugin-gated collectors go
 silent when the plugin is absent rather than erroring. See
 [compatibility](https://m7kni.io/opnsense2otel/compatibility/) and
 [upgrading](https://m7kni.io/opnsense2otel/upgrading/).

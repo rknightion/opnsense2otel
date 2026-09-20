@@ -10,24 +10,42 @@ tags:
 
 ## Support policy
 
-The exporter targets the **current stable OPNsense release and the previous stable**: today
-that means **26.1.x and 25.7**. Older releases are best-effort - they generally keep working,
-but a payload change that only affects them will not hold up a release.
+The exporter targets the **current stable OPNsense release**: today that means **26.7.x**.
+Older releases are best-effort - they generally keep working, and this page records the
+differences we know about, but a payload change that only affects them will not hold up a
+release.
 
-One binary handles every supported payload shape at once: no compatibility flags, no
+One binary handles every payload shape it knows at once: no compatibility flags, no
 version-detection switch, nothing to configure. The API client resolves payload differences
-**by shape**, reading whichever field a given firewall actually sends, so the same image
-scrapes a 25.7 box and a 26.1 box correctly.
+**by shape**, reading whichever field a given firewall actually sends, so an older box keeps
+scraping correctly for as long as its shapes are still handled.
 
-Payload drift is caught by a daily canary that diffs live OPNsense responses against the exporter's
-own structs. Its results, and every compatibility decision behind this page, are tracked in the
+### What is actually verified, and how
+
+Two different kinds of evidence sit behind this page, and they are not equally strong:
+
+- **Live-verified.** A canary probes two lab firewalls - one on the development channel, one on
+  the current stable release - and diffs their real responses against the exporter's own structs.
+  This is the only evidence that a payload is really shaped the way we think. It covers the
+  current stable release and the next one in development, and nothing else.
+- **Source-derived.** Everything else, including every statement on this page about a release
+  older than the current stable, is read from the
+  [opnsense/core](https://github.com/opnsense/core) controllers at the relevant branch. It is
+  careful, but no box confirms it.
+
+The narrowing to current-stable-only is deliberate: the policy previously claimed a two-release
+window that no live box exercised, which promised more than the evidence supported.
+
+Canary results, and every compatibility decision behind this page, are tracked in the
 [GitHub issue tracker](https://github.com/rknightion/opnsense2otel/issues). If your release is
 not handled correctly, [open an issue](https://github.com/rknightion/opnsense2otel/issues/new)
-with the OPNsense version and the raw API response.
+with the OPNsense version and the raw API response - for an unsupported release that report is
+the only way the shape gets known at all.
 
-When a release drops out of the support window, the shims that carried its payload shape get
-pruned. That is a normal release change, not a breaking one, because by then no supported
-firewall sends the old shape.
+When a release drops out of the support window, the shims that carried its payload shape become
+candidates for pruning. That is a normal release change, not a breaking one. Shims are not
+ripped out the moment a release ages out, though: a shape that costs nothing to keep reading is
+usually kept, because tolerant-reader parsing is what lets an older box work at all.
 
 The pre-25.1 `healthCheck` response is no longer interpreted. The last release emitting the
 legacy shape was 24.7.12; upstream refactor `1fc5a6335` landed on 2024-12-12 and 25.1 carries
@@ -66,8 +84,9 @@ Unbound's core totals - `opnsense_unbound_dns_queries_total`, `opnsense_unbound_
 ### Metrics introduced with OPNsense 26.7 APIs
 
 Two collector families use core API endpoints that OPNsense first added in 26.7. On 26.1 and
-earlier, the exporter treats the endpoint's 404 as feature absence and emits no series from that
-family; the rest of the scrape remains healthy.
+earlier - now outside the support window, so best-effort - the exporter treats the endpoint's
+404 as feature absence and emits no series from that family; the rest of the scrape remains
+healthy.
 
 | Metric | Behaviour before 26.7 |
 | --- | --- |
