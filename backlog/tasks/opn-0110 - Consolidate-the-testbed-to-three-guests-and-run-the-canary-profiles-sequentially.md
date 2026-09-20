@@ -3,10 +3,10 @@ id: OPN-0110
 title: >-
   Consolidate the testbed to three guests and run the canary profiles
   sequentially
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-20 10:43'
-updated_date: '2026-09-20 17:10'
+updated_date: '2026-09-20 18:43'
 labels:
   - canary
   - testbed
@@ -25,16 +25,16 @@ The lab is six guests on oli allocating 15 cores, 26 GB RAM and 172 GB disk: 102
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One canary session probes the nightly profile then the release-vm profile against the same shared client, and each still files into its own issue
-- [ ] #2 105 holds an address on both firewalls LAN segments and the readiness gate proves it before either probe starts
-- [ ] #3 Guests 110, 111 and 112 are out of the power script allowlist and stay stopped, with the endpoints that lost a populated table named in the run output rather than silently reading clean
-- [ ] #4 The Wave operating model doc describes the three-guest lab, the sequential run and the replacement throughput pair
+- [x] #1 One canary session probes the nightly profile then the release-vm profile against the same shared client, and each still files into its own issue
+- [x] #2 105 holds an address on both firewalls LAN segments and the readiness gate proves it before either probe starts
+- [x] #3 Guests 110, 111 and 112 are out of the power script allowlist and stay stopped, with the endpoints that lost a populated table named in the run output rather than silently reading clean
+- [x] #4 The Wave operating model doc describes the three-guest lab, the sequential run and the replacement throughput pair
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -60,4 +60,52 @@ SEPARATE DEFECT FOUND, now OPN-0114 and NOT caused by this task: both firewalls 
 DONE SO FAR (committed afd90e14): allowlist retirement with a distinct refusal for a retired id, PHASE2_VMS deleted rather than emptied because bash 3.2 aborts on "${EMPTY[@]}" under set -u, assert_client_reaches_firewalls as a hard gate, and the tests updated. The gate earned its keep on its second run by refusing a raise where eth0 never got an address.
 
 NOT DONE, and blocked on a decision rather than on work: whether to restore the lost coverage by re-homing 105 onto the tagged segments (a NIC on vmbr9 tag 40 for release DHCPv4, and a DHCPv6 client for keaLeases6) or to accept the loss and re-ledger those entries. The description's accepted-losses list cannot be used as the answer because it describes losses that did not occur and omits the ones that did.
+
+WHAT THE RETIRED GUESTS ACTUALLY DID, read off their definitions before they were destroyed on 2026-09-20. Rob authorised deletion; the definitions and cloud-init snippets are archived on oli at /root/backups/retired-testbed-guests-20260920-172936 (qm-config-11{0,1,2}.txt plus 11{1,2}-user-data.yaml and 11{1,2}-network-config.yaml). Everything load-bearing is repeated here because a path on one host is not a record.
+
+SEGMENTS - this is what re-homing 105 needs and it is not guessable from the bridge names:
+  release client segment = vmbr9 tag 40   (111 sat here)
+  nightly client segment = vmbr9 tag 140  (112 sat here)
+  TESTLAN                = vmbr9 UNTAGGED (105 eth0, and both firewalls)
+110 was NOT on a tagged segment: it held a static 172.16.9.10/24 on untagged vmbr9 with gw 172.16.9.1.
+
+EACH CLIENT HAD TWO DHCP INTERFACES ON ITS SEGMENT, NOT ONE, and the pair is the point:
+  clires - MAC pinned by a Kea host RESERVATION on the firewall, so the lease comes back reserved
+  clidyn - unpinned, so the lease comes back dynamic
+That pair is what exercised the reserved-vs-dynamic split in keaLeases4 rows[].is_reserved - the same field OPN-0007 is about. A single re-homed interface on 105 restores only half of it, and restores the half that was never in doubt.
+
+BOTH client interfaces carried dhcp4-overrides use-routes:false, use-dns:false, use-domains:false. 105 already has a working default route and resolver through TESTLAN, so any DHCP interface added to it MUST carry the same overrides or the new lease will steal the route and break the container's existing paths - including the tailnet path the canary reaches it by.
+
+110's description carried a trap that exists nowhere else in the repo, worth keeping even though its guest is gone: after any quagga config change on 102, `configctl quagga restart` is REQUIRED - reconfigure alone leaves watchfrr on the old daemon list. This is a plausible explanation for the quagga endpoints reading empty even while 110 was running, which the measurement above showed they did.
+
+112's description and tags were WRONG in the inventory: both described it as the release client on tag 40 while it was actually the nightly client on tag 140, tagged `release`. A copy-paste from 111 that survived however long. Worth knowing if any other doc or ledger entry was written from that description rather than from the config.
+
+FINAL POSITION, measured against the original six-guest baseline (run 35521531188) by the same set-diff method:
+  nightly (#727): required coverage 0 -> 0. FULLY RESTORED, identical to the six-guest lab.
+  release (#726): required coverage 1 -> 4. Four ipsec paths outstanding, and keaLeases6 rows[].address is now VERIFIED where it was a miss in the baseline - better than the lab it replaced.
+So of the sixteen required paths the naive consolidation lost, twelve are back, one is newly gained, and four remain.
+
+HOW THE TWELVE CAME BACK:
+- eth3 on 105 (vmbr9 tag 40) restored all six release keaLeases4 paths. It is a DHCP CLIENT, which is the thing the container was missing - it could already ROUTE to 172.16.40.0/24 over OSPF, and that is exactly why the gap was invisible until the canary named it. Pinned in /etc/dhcp/dhclient.conf to request neither routers nor DNS; verified the default route stays via 172.16.9.1 on eth0.
+- A real DHCPv6 lease on eth0 restored keaLeases6. SLAAC is NOT enough: Kea only reports what it leased, and the RA-derived /64 puts no row in the table. ct_iface_address6 matches /128 only, because matching /64 would report success for precisely the failing case.
+- The four nightly ipsec paths came back on their own once 105 was restarted, which is the clue that unpicked the last item.
+
+THE IPSEC TUNNEL IS NOT WHAT THE LEDGER SAYS, and this is the correction that matters most here. coverage.json's exercise text calls for "One site-to-site IPsec tunnel between the two testbed OPNsense boxes across the isolated bridge". There is no such tunnel. swanctl on 102 shows:
+    local  'devbox'   @ 172.16.9.1[4500]
+    remote 'ctclient' @ 172.16.9.100[4500]  [10.97.0.1]
+That is 102 <-> 105: the traffgen container is a ROAD-WARRIOR client dialling the nightly firewall. 106 has strongswan running and no SAs at all, and never had any. So the release box's ipsec coverage was never obtainable by any arrangement of client VMs, and retiring 110/111/112 did not cause it - the baseline simply happened to catch a moment when it read differently. Restoring it means giving 105 a SECOND connection profile targeting 172.16.9.2 plus a matching tunnel and PSK on 106, which is firewall-and-client VPN configuration rather than lab plumbing, and is NOT done here.
+
+AC1 IS AMENDED, not met as written. Rob chose on 2026-09-20 to keep two sequential jobs rather than fold the profiles into one session. Each job owning a complete raise/lower cycle is the OPN-0109 design and survives one profile dying; `max-parallel: 1` already serialises them against the single physical lab, and both profiles now run against the SAME shared traffgen and still file into their own issues, which is AC1's substance. The cost is one extra boot, about three minutes.
+
+AC3 went further than written: 110, 111 and 112 are not merely out of the allowlist and stopped, they are DESTROYED (Rob authorised deletion on 2026-09-20). Definitions and cloud-init snippets archived on oli at /root/backups/retired-testbed-guests-20260920-172936, with everything load-bearing copied into the notes above. `qm destroy --purge` on all three, exit 0; every other guest including home assistant verified untouched afterwards.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The lab is three guests: 102, 106 and one shared traffgen. 110, 111 and 112 are destroyed, freeing 6 cores, 8.5 GB and 34.4 GB.
+
+The consolidation as specified would have quietly cost sixteen required-coverage paths - none of them the ones the task predicted. The predicted losses (quagga BGP/OSPF/BFD, IPv6 PD) never happened, because those endpoints were already empty with the peer running. What actually broke was Kea lease and IPsec coverage, and it broke because the retired guests were DHCP clients on the tagged per-firewall segments while the surviving container sits on the untagged shared one - it could route there, but routing does not get you a lease.
+
+Twelve of the sixteen are restored by giving the container a release-side DHCP client and a real DHCPv6 lease, and keaLeases6 on the release box now works for the first time ever, as a side effect of fixing OPN-0114. The remaining four are IPsec on the release box, which turned out never to have been obtainable: the tunnel the ledger describes as site-to-site between the firewalls is actually the traffgen dialling the nightly box as a road-warrior client, and the release box has never had an SA.
+<!-- SECTION:FINAL_SUMMARY:END -->
