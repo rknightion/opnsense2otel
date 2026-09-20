@@ -249,7 +249,6 @@ jobs:
           # target's findings an issue holds, so a shared issue means a clean run
           # on one box closes another box's live drift and comments "clean" over
           # it — a canary reporting all-clear while real drift sits unread.
-          # camden's prod canary uses the same "- prod" suffix convention.
           title="OPNsense live-box canary drift - ${CANARY_TARGET}"
           # Label+exact-title dedupe — same proven pattern as api-contract.yml
           # (author-based matching broke on gh's bot-login shape changes, #83).

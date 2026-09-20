@@ -76,9 +76,10 @@ func TestCoverageIndexClassify(t *testing.T) {
 
 // Per-profile scoping (#611). A required entry may be re-classed stateOptional
 // for ONE probe target, because a path can be metric-backing and exercisable on
-// the testbeds while being permanently unreachable on prod - prod has no CARP
-// VIP, no Kea DHCPv4, no DHCPv6 PD pool and no WireGuard instance, and prod is
-// read-only so none of that can be provisioned.
+// one box while being unreachable on its sibling - the two lab firewalls do not
+// carry identical plugin sets, so an endpoint one of them serves is a plain 404
+// on the other. OPN-0106 retired the prod profile, whose CARP, Kea, DHCPv6-PD
+// and WireGuard gaps were the original case for this.
 //
 // The override resolves at COMPILE time, exactly as SchemaExemption.ForProfile
 // flattens: Index(profile) bakes the class in, so Classify and everything
@@ -92,10 +93,10 @@ func TestCoverageIndexProfileOverride(t *testing.T) {
 					Path: "rows[].vhid", Metrics: []string{"opnsense_x_vip"}, Exercise: "add a VIP",
 					Blocker: "no VIP on the testbed",
 					Profiles: map[string]CoverageProfileOverride{
-						ProbeProfileProd: {
+						ProbeProfileReleaseVM: {
 							Class:        CoverageStateOptional,
-							Reason:       "prod has no CARP VIP and is read-only",
-							PruneTrigger: "a second production firewall exists",
+							Reason:       "the release box does not carry the plugin that serves this path",
+							PruneTrigger: "the plugin is installed on the release box",
 						},
 					},
 				},
@@ -108,7 +109,7 @@ func TestCoverageIndexProfileOverride(t *testing.T) {
 
 	for _, profile := range KnownProbeProfiles() {
 		want := CoverageRequired
-		if profile == ProbeProfileProd {
+		if profile == ProbeProfileReleaseVM {
 			want = CoverageStateOptional
 		}
 		ix := ledger.Index(profile)
@@ -142,13 +143,19 @@ func TestCoverageIndexProfileOverride(t *testing.T) {
 
 // THE WIDENING GUARD (#611 acceptance). An override keyed to one profile must
 // change that profile and no other. This is the failure mode that would make the
-// mechanism worse than the warning it replaces: a prod-scoped stateOptional that
-// silently also applied to nightly would blind the two targets that DO verify
-// these paths, which is exactly what the base-scoped `stateOptional` knob
-// already does and why #611 could not use it.
+// mechanism worse than the warning it replaces: an override that silently also
+// applied to a sibling would blind the target that DOES verify the path, which
+// is exactly what the base-scoped `stateOptional` knob already does and why #611
+// could not use it.
 //
 // Written as an invariant over the committed ledger rather than over a fixture,
-// so it holds for every override anybody adds later.
+// so it holds for every override anybody adds later. The committed ledger
+// carries NO overrides today - OPN-0106 retired the prod profile, which owned
+// all 61 of them - so on today's file this asserts the weaker property that
+// every entry resolves to its base class on every profile. That is deliberate,
+// not a gap: the override mechanism itself stays under test against a synthetic
+// ledger in TestCoverageIndexProfileOverride, and this test re-acquires its
+// teeth the moment anybody scopes an entry.
 func TestCommittedCoverageOverridesNeverWiden(t *testing.T) {
 	ledger, err := LoadCoverageLedger(coverageLedgerTestPath)
 	if err != nil {
@@ -177,10 +184,6 @@ func TestCommittedCoverageOverridesNeverWiden(t *testing.T) {
 			}
 		}
 	}
-	if len(overrides) == 0 {
-		t.Fatal("no profile-scoped coverage overrides in the committed ledger — #611 scoped four endpoint groups under prod")
-	}
-
 	for _, profile := range KnownProbeProfiles() {
 		ix := ledger.Index(profile)
 		for k, wantBase := range base {

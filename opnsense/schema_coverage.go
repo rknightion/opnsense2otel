@@ -138,21 +138,23 @@ type CoveragePath struct {
 // (#611), mirroring what SchemaExemption.Profiles does for the exemption ledger.
 //
 // WHY THIS EXISTS, and why neither existing knob would do. A path can be
-// metric-backing and exercisable on the two testbed VMs while being permanently
-// unreachable on prod: the production firewall has no CARP VIP, no Kea DHCPv4
-// subnet, no DHCPv6 PD pool and no WireGuard instance, all four of which would
-// need config WRITES on a box whose standing authorisation is read-only. Those
-// paths verify correctly on both testbeds, so the prod canary reported 15
-// required-coverage warnings that could never clear (#531).
+// metric-backing and exercisable on one probe target while being permanently
+// unreachable on another. The case that built this was the prod profile, retired
+// by OPN-0106: the production firewall had no CARP VIP, no Kea DHCPv4 subnet, no
+// DHCPv6 PD pool and no WireGuard instance, all four of which would have needed
+// config WRITES on a box whose standing authorisation was read-only, so it
+// reported 15 required-coverage warnings that could never clear (#531). The two
+// lab boxes do not carry identical plugin sets either, so the scoping still has
+// work to do.
 //
 // An exemption is not the alternative, and this is checked in code rather than
 // assumed: missingOK is consulted only in the `absentFinal > 0 && !unverifiable`
 // branch and suppresses ValidationResult.Missing (schema_validate.go), while an
-// EMPTY PARENT ARRAY - what prod returns for all four - files its children under
+// EMPTY PARENT ARRAY - what prod returned for all four - files its children under
 // ValidationResult.Unverified with no missingOK check, and the coverage ledger
 // reads that. And the two knobs that do reach here, base `stateOptional` and
-// `opaque`, are both base-scoped: either would blind all three targets on paths
-// the testbeds verify today, which is strictly worse than the warning.
+// `opaque`, are both base-scoped: either would blind every target on paths a
+// sibling box verifies today, which is strictly worse than the warning.
 //
 // The override is a RE-CLASS, not an additive list, which is the one structural
 // difference from SchemaExemption.Profiles: an exemption profile appends more

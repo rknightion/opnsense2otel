@@ -761,28 +761,25 @@ func TestValidateResponseSchemaOSPFv3InnerFieldTypeConflict(t *testing.T) {
 	}
 }
 
-// TestSchemaExemptionForProfile pins #490's ledger requirement: the canary now
-// probes three targets that differ on three independent axes, so an exemption
+// TestSchemaExemptionForProfile pins #490's ledger requirement: an exemption
 // has to be able to say "this is expected on THAT box" without switching the
 // check off for the others.
 //
-// The axes are why this keys on the probe profile rather than the OPNsense
-// generation #490 originally asked for. smartInfo's extra keys are prod-only
-// because prod has real disks; the quagga extras are nightly-only because that
-// box has the plugins installed. Neither is a property of the release, and
-// keying on generation would make the release-VM target silently inherit
-// prod's hardware exemptions.
+// It keys on the probe profile rather than the OPNsense generation #490
+// originally asked for, because a box differs from its sibling on more axes
+// than the release it runs: the quagga extras are nightly-only because that box
+// has the plugins installed, not because of its generation. OPN-0106 retired
+// the third profile, prod, whose exemptions were about real disks and were the
+// sharpest case for the distinction.
 func TestSchemaExemptionForProfile(t *testing.T) {
 	base := SchemaExemption{
 		MissingOK:         []string{"shared.missing"},
 		KnownExtraPaths:   []string{"shared.extra"},
 		KnownExtraTopKeys: []string{"sharedTop"},
 		Profiles: map[string]SchemaExemption{
-			ProbeProfileProd: {
-				MissingOK:       []string{"rows[].reqid"},
-				KnownExtraPaths: []string{"output.wwn"},
-			},
 			ProbeProfileNightly: {
+				MissingOK:         []string{"rows[].reqid"},
+				KnownExtraPaths:   []string{"output.wwn"},
 				KnownExtraTopKeys: []string{"nightlyTop"},
 			},
 		},
@@ -803,24 +800,19 @@ func TestSchemaExemptionForProfile(t *testing.T) {
 			wantTop:     []string{"sharedTop"},
 		},
 		{
-			name:        "the prod profile adds its own entries on top of the base",
-			profile:     ProbeProfileProd,
+			name:        "a ledgered profile adds its own entries on top of the base",
+			profile:     ProbeProfileNightly,
 			wantMissing: []string{"shared.missing", "rows[].reqid"},
 			wantExtra:   []string{"shared.extra", "output.wwn"},
-			wantTop:     []string{"sharedTop"},
-		},
-		{
-			name:        "a sibling profile's entries never leak across",
-			profile:     ProbeProfileNightly,
-			wantMissing: []string{"shared.missing"},
-			wantExtra:   []string{"shared.extra"},
 			wantTop:     []string{"sharedTop", "nightlyTop"},
 		},
 		{
-			// A profile nobody ledgered is not an error: it simply gets the
-			// base rules. The closed-set check that catches a TYPO lives in
+			// Two assertions in one, now that nightly is the only ledgered
+			// profile: a profile nobody ledgered gets the base rules and is not
+			// an error, AND the sibling's entries do not leak across to it. The
+			// closed-set check that catches a TYPO lives in
 			// TestExemptionProfileNamesAreKnown, against the real file.
-			name:        "a profile with no block falls back to the base ledger",
+			name:        "an unledgered profile falls back to the base and inherits no sibling entry",
 			profile:     ProbeProfileReleaseVM,
 			wantMissing: []string{"shared.missing"},
 			wantExtra:   []string{"shared.extra"},
@@ -848,10 +840,10 @@ func TestSchemaExemptionForProfileLeavesBaseUntouched(t *testing.T) {
 	base := SchemaExemption{
 		MissingOK: []string{"shared.missing"},
 		Profiles: map[string]SchemaExemption{
-			ProbeProfileProd: {MissingOK: []string{"prod.only"}},
+			ProbeProfileNightly: {MissingOK: []string{"nightly.only"}},
 		},
 	}
-	_ = base.ForProfile(ProbeProfileProd)
+	_ = base.ForProfile(ProbeProfileNightly)
 	assertSameStrings(t, "base MissingOK after resolving", base.MissingOK, []string{"shared.missing"})
 }
 

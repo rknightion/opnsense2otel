@@ -79,12 +79,18 @@ type SchemaExemption struct {
 // against these.
 //
 // It keys on the TARGET rather than the OPNsense generation #490 first asked
-// for, because the three targets differ on three independent axes - generation,
-// plugin set, and real-vs-virtual hardware - and generation is the axis that
-// explains the fewest findings. smartInfo's extra keys are prod-only because
-// prod has real disks, not because it runs 26.7; the release-VM target runs the
-// same generation and will never produce them. Keying on generation would make
-// that target inherit prod's hardware exemptions and go blind to them.
+// for. The two surviving targets share virtual hardware and run nearly the same
+// plugin set, but not quite: on the 2026-09-15 runs nightly reported 14 absent
+// plugin-gated endpoints and release-vm the same 14 plus netbirdServiceStatus
+// and netbirdStatus, which nightly serves. That difference is a property of
+// what is installed on each box, not of the release it runs, so a generation
+// axis would attribute it to the generation and be wrong.
+//
+// A third profile, prod, probed the production firewall from camden until
+// OPN-0106 retired it. It was the target that made the distinction earn its
+// keep: its exemptions were about real disks and a sparse plugin set, not about
+// the generation it happened to run, and keying on generation would have made
+// the release-VM target inherit them and go blind.
 const (
 	// ProbeProfileNightly is CI against the devel-channel testbed VM.
 	ProbeProfileNightly = "nightly"
@@ -92,14 +98,11 @@ const (
 	// same plugin set and virtual hardware as nightly, so a difference between
 	// the two is attributable to the generation alone.
 	ProbeProfileReleaseVM = "release-vm"
-	// ProbeProfileProd is camden against the production firewall: real
-	// hardware and a real network, but a sparse plugin set.
-	ProbeProfileProd = "prod"
 )
 
 // KnownProbeProfiles returns the closed set of valid profile names.
 func KnownProbeProfiles() []string {
-	return []string{ProbeProfileNightly, ProbeProfileReleaseVM, ProbeProfileProd}
+	return []string{ProbeProfileNightly, ProbeProfileReleaseVM}
 }
 
 // ForProfile flattens the ledger for one probe target: the base entries, which

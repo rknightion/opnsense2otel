@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-15 16:53'
+updated_date: '2026-09-20 10:49'
 ---
 This document carries **only what is specific to opnsense2otel**. The campaign model itself — run
 modes, the routing contract, authority and the thread pool, child lane briefs, external-contract
@@ -160,8 +160,11 @@ land the struct derived from upstream source, push, dispatch the canary, and rea
 the golden schema. A lane that needs to *see* a real payload cannot get one this way, and should say
 so rather than inventing one.
 
-**camden's prod canary runs against Rob's production firewall.** It is not a test target. No lane
-writes to it, and its `--decide-only` seam is the only part a lane exercises.
+**There is no production-firewall canary any more.** OPN-0106 retired it on 2026-09-20: the camden
+timer, its service and the `prod` probe profile are all gone, and Rob's production firewall is no
+longer probed by anything in this repo. It had reported byte-identical output on all 27 runs and ran
+the same OPNsense build as the release lab box. A lane that finds a reference to it in an older task,
+an exemption note or the CHANGELOG is reading history.
 
 **Grafana Cloud is live.** `just grafana-check` regenerates and diffs local artifacts and touches
 nothing remote. Pushing dashboards or rules to a stack is a main-thread action, not a lane's.

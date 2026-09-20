@@ -112,14 +112,6 @@ testbed-test:
     bash -n opnsense-testbed-power.sh
     python3 -m unittest discover -p '*_test.py' -q
 
-# unit-test the prod canary's open-vs-closed decision logic (#612)
-[group('check')]
-[no-exit-message]
-[working-directory('scripts/canary')]
-canary-test:
-    bash -n opnsense-prod-canary.sh
-    python3 -m unittest discover -p '*_test.py' -q
-
 # run the grafana/ builders' own unit tests plus the promqlcheck tool's
 [group('check')]
 [no-exit-message]
@@ -138,7 +130,7 @@ vuln: _tool-govulncheck
 # stay in workflows; the heavy local counterparts are collected by `just ci`.
 # run the bare-toolchain pre-commit gate
 [group('check')]
-check: fmt-check lint test metric-lint fuzz-smoke check-public-ips testbed-test canary-test gitsync-test grafana-test gen-check vuln
+check: fmt-check lint test metric-lint fuzz-smoke check-public-ips testbed-test gitsync-test grafana-test gen-check vuln
 
 # deployment-test needs a Docker daemon for the containerised systemd contracts.
 # snapshot needs cross-compilation for the release archive matrix.
