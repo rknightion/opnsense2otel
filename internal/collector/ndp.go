@@ -43,9 +43,8 @@ func (c *ndpCollector) Register(namespace, instance string, log *slog.Logger) {
 			"addresses). `manufacturer` is the OUI lookup for the MAC and is the label that "+
 			"identifies a device. `device` is the raw kernel device and `interface_description` the "+
 			"assigned name; they diverge on VLAN children and bridges, and only `device` joins "+
-			"against the interfaces metrics. `type` reads empty on OPNsense 26.1, which sends no "+
-			"type key on this endpoint.",
-		[]string{"ip", "mac", "interface_description", "type", "manufacturer", "device"},
+			"against the interfaces metrics.",
+		[]string{"ip", "mac", "interface_description", "manufacturer", "device"},
 	)
 }
 
@@ -82,7 +81,6 @@ func (c *ndpCollector) Update(ctx context.Context, client *opnsense.Client, ch c
 			entry.IP,
 			entry.Mac,
 			entry.IntfDescription,
-			entry.Type,
 			entry.Manufacturer,
 			entry.Device,
 			c.instance,

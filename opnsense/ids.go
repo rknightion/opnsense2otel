@@ -34,14 +34,13 @@ type idsSelectOption struct {
 // The model carries far more (homenet, eveLog, detect profiles, per-rule
 // overrides …); those keys are intentionally not modelled.
 //
-// IPS-mode representation differs across the support window: ≤ 26.1 carries the
-// boolean general.ips, while 26.7 replaced it with the general.mode
-// pcap/netmap/divert selector (pcap = IDS, netmap/divert = IPS). ipsModeEnabled
+// IPS mode is the general.mode pcap/netmap/divert selector (pcap = IDS,
+// netmap/divert = IPS). ≤ 26.1's boolean general.ips was read as a fallback
+// until OPN-0113; it is absent on every supported box. ipsModeEnabled
 // reads whichever is present.
 type idsSettingsResponse struct {
 	IDS struct {
 		General struct {
-			IPS     flexString                 `json:"ips"`
 			Promisc flexString                 `json:"promisc"`
 			Mode    map[string]idsSelectOption `json:"mode"`
 		} `json:"general"`
@@ -49,13 +48,9 @@ type idsSettingsResponse struct {
 }
 
 // ipsModeEnabled reports whether Suricata is running as an IPS (inline drop)
-// rather than a passive IDS, tolerant of both the legacy boolean and the newer
-// mode selector.
+// rather than a passive IDS.
 func (r idsSettingsResponse) ipsModeEnabled() bool {
 	g := r.IDS.General
-	if g.IPS.String() == "1" {
-		return true
-	}
 	return g.Mode["netmap"].Selected.Int() == 1 || g.Mode["divert"].Selected.Int() == 1
 }
 

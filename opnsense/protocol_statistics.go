@@ -40,12 +40,6 @@ func firstPresentNum(nums ...json.Number) json.Number {
 // The ace-*-syn and sent-ect{0,1}-packets keys 26.1.11 added are exported as
 // presence-gated metrics (#237, see AccEcnPresent/SentEctPresent below).
 type ecnStatistics struct {
-	// ≤26.1.x only: superseded by ReceivedCePackets ("received-ce-packets") on 26.1.11+.
-	CePackets json.Number `json:"ce-packets"`
-	// ≤26.1.x only: superseded by ReceivedEct0Packets ("received-ect0-packets") on 26.1.11+.
-	Ect0Packets json.Number `json:"ect0-packets"`
-	// ≤26.1.x only: superseded by ReceivedEct1Packets ("received-ect1-packets") on 26.1.11+.
-	Ect1Packets json.Number `json:"ect1-packets"`
 
 	// 26.1.11+ spellings of the three counters above.
 	ReceivedCePackets   json.Number `json:"received-ce-packets"`
@@ -81,17 +75,17 @@ func (e ecnStatistics) AccEcnPresent() bool {
 
 // ReceivedCe resolves the received CE-marked packet counter across both key spellings.
 func (e ecnStatistics) ReceivedCe() json.Number {
-	return firstPresentNum(e.ReceivedCePackets, e.CePackets)
+	return firstPresentNum(e.ReceivedCePackets)
 }
 
 // ReceivedEct0 resolves the received ECT(0) packet counter across both key spellings.
 func (e ecnStatistics) ReceivedEct0() json.Number {
-	return firstPresentNum(e.ReceivedEct0Packets, e.Ect0Packets)
+	return firstPresentNum(e.ReceivedEct0Packets)
 }
 
 // ReceivedEct1 resolves the received ECT(1) packet counter across both key spellings.
 func (e ecnStatistics) ReceivedEct1() json.Number {
-	return firstPresentNum(e.ReceivedEct1Packets, e.Ect1Packets)
+	return firstPresentNum(e.ReceivedEct1Packets)
 }
 
 type protocolStatisticsResponse struct {
@@ -116,12 +110,10 @@ type protocolStatisticsResponse struct {
 			ReceivedDuplicateAcks               json.Number `json:"received-duplicate-acks"`
 			ReceivedUDPTunneledPkts             json.Number `json:"received-udp-tunneled-pkts"`
 			ReceivedBadUDPTunneledPkts          json.Number `json:"received-bad-udp-tunneled-pkts"`
-			// ≤26.1.x only: FreeBSD dropped "received-acks-for-unsent-data" in 26.1.11 with
-			// no replacement key, so this reads zero on newer boxes. Kept so older boxes,
-			// which still send it, keep reporting. Decoded only — the split below is the
-			// exported metric (#237).
-			ReceivedAcksForUnsentData json.Number `json:"received-acks-for-unsent-data"`
-			// 26.7+ three-way split of the legacy field above. Introduced together, so
+			// The three-way split of FreeBSD's old "received-acks-for-unsent-data",
+			// which was dropped in 26.1.11 with no replacement key. That legacy field
+			// was decoded but never fed a metric, and is no longer decoded at all
+			// (OPN-0113). Introduced together, so
 			// presence is checked once (ReceivedAcksForDataSplitPresent) rather than per
 			// field.
 			ReceivedAcksForDataNotYetSent         json.Number `json:"received-acks-for-data-not-yet-sent"`
@@ -186,16 +178,14 @@ type protocolStatisticsResponse struct {
 				BadAck         json.Number `json:"bad-ack"`
 				Unreachable    json.Number `json:"unreachable"`
 				ZoneFailures   json.Number `json:"zone-failures"`
-				SentCookies    json.Number `json:"sent-cookies"`
-				ReceivdCookies json.Number `json:"receivd-cookies"`
 			} `json:"syncache"`
 			// Syncookies is a new 26.7+ top-level section: the syncache cookie
 			// counters moved out of statistics.tcp.syncache.{sent-cookies,receivd-cookies}
 			// (upstream's typo included) into their own object, gaining
 			// failed/spurious counters and fixing the "receivd" typo along the way.
-			// A pointer so nil means the box predates the move (#237); the legacy
-			// syncache fields above stay decoded for the support window but never fed
-			// a metric, so there is nothing to fall back to.
+			// A pointer so nil means the box predates the move (#237). The legacy
+			// syncache sent-cookies/receivd-cookies pair never fed a metric and is no
+			// longer decoded (OPN-0113), so there is nothing to fall back to.
 			Syncookies *struct {
 				SentCookies     json.Number `json:"sent-cookies"`
 				ReceivedCookies json.Number `json:"received-cookies"`

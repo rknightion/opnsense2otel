@@ -112,31 +112,11 @@
       "kind": "number"
     },
     {
-      "path": "mbuf-statistics.jumbop-cache",
-      "kind": "number"
-    },
-    {
-      "path": "mbuf-statistics.jumbop-current",
-      "kind": "number"
-    },
-    {
       "path": "mbuf-statistics.jumbop-failures",
       "kind": "number"
     },
     {
-      "path": "mbuf-statistics.jumbop-max",
-      "kind": "number"
-    },
-    {
       "path": "mbuf-statistics.jumbop-sleeps",
-      "kind": "number"
-    },
-    {
-      "path": "mbuf-statistics.jumbop-total",
-      "kind": "number"
-    },
-    {
-      "path": "mbuf-statistics.mbuf-and-cluster",
       "kind": "number"
     },
     {
@@ -149,10 +129,6 @@
     },
     {
       "path": "mbuf-statistics.mbuf-failures",
-      "kind": "number"
-    },
-    {
-      "path": "mbuf-statistics.mbuf-max",
       "kind": "number"
     },
     {
@@ -177,10 +153,6 @@
     },
     {
       "path": "mbuf-statistics.packet-sleeps",
-      "kind": "number"
-    },
-    {
-      "path": "mbuf-statistics.percentage",
       "kind": "number"
     },
     {

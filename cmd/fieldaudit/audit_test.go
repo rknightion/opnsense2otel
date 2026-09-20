@@ -14,11 +14,21 @@ import (
 // The set shrinks as the audit's own findings get acted on: OrganizationName
 // (#557), Driver and HWOffloadCapabilities (#555) were all on this list and are
 // now read in production, so keeping them here would assert the opposite of what
-// is true. ndpEntry.Expire is the one that must never leave without being fixed
-// first — it is the case a textual scan misses, so it is what proves the analysis
-// is doing real type-aware work rather than grepping.
+// is true.
+//
+// Whatever sits here must have ONE property: its field NAME is read elsewhere on
+// a different type, so a textual scan would wrongly conclude this instance is
+// read too. That is what proves the analysis is type-aware rather than grepping,
+// so never empty this list and never replace the entry with a field whose name
+// is unique.
+//
+// ndpEntry.Expire held the slot until OPN-0113 deleted the field outright.
+// interfaceConfigEntry.Device replaces it: ".Device" is read in roughly 160
+// places across opnsense/ and internal/ (NDPEntry.Device among them), while this
+// one cannot be read by construction — FetchInterfaceEnumeration hand-walks the
+// raw JSON to preserve key order (#361) and never decodes into the type at all.
 var acceptanceFindings = []string{
-	"opnsense.ndpEntry.Expire",
+	"opnsense.interfaceConfigEntry.Device",
 }
 
 func auditOnce(t *testing.T) []Finding {
@@ -44,7 +54,7 @@ func auditBoth(t *testing.T) (map[string]bool, []Finding) {
 }
 
 // TestAuditFindsKnownDeadFields pins the analysis itself: these were found by
-// hand and a textual scan misses at least one of them (ndpEntry.Expire).
+// hand and a textual scan misses at least one of them (see acceptanceFindings).
 func TestAuditFindsKnownDeadFields(t *testing.T) {
 	findings := auditOnce(t)
 	got := map[string]bool{}

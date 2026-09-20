@@ -56,8 +56,9 @@ func TestMbufCollector_Update(t *testing.T) {
 	// 0 pool_{current,cache,total,max} series: this fixture predates jumbo9/jumbo16/packet-count/
 	// packet-free (#579), so PoolCurrent/Cache/Total/Max come back empty and emit no series --
 	// proves the "absent means no series" contract at the collector layer, not just the client.
-	// Total: 8 + 6 + 6 + 3 + 3 = 26
-	expectedCount := 26
+	// Total: 7 + 6 + 6 + 3 + 3 = 25 (mbuf_max removed in OPN-0113: upstream
+	// dropped the mbuf-max key in 26.1.11, so it read 0 on every supported box).
+	expectedCount := 25
 	if len(metrics) != expectedCount {
 		t.Errorf("expected %d metrics, got %d", expectedCount, len(metrics))
 	}
@@ -69,18 +70,6 @@ func TestMbufCollector_Update(t *testing.T) {
 		}
 	}
 
-	foundMbufMax := false
-	for _, m := range metrics {
-		if hasFqName(m, "opnsense_mbuf_max") {
-			foundMbufMax = true
-			if getMetricValue(m) != 131072 {
-				t.Errorf("expected opnsense_mbuf_max=131072, got %v", getMetricValue(m))
-			}
-		}
-	}
-	if !foundMbufMax {
-		t.Error("expected an opnsense_mbuf_max series")
-	}
 }
 
 // TestMbufCollector_JumboPoolMetrics covers #579: the jumbo9/jumbo16/packet pool

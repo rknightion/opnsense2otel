@@ -10414,7 +10414,7 @@
         "spec": {
           "id": 94,
           "title": "mbuf Counts",
-          "description": "opnsense_mbuf current/cache/total/max: instantaneous mbuf counts (RAW). max is the mbuf pool's ceiling, mirroring cluster_max -- may read 0 on OPNsense >=26.1.11, where upstream removed this key, which means no ceiling was reported rather than a ceiling of zero; guard any current/max ratio against a zero denominator.",
+          "description": "opnsense_mbuf current/cache/total: instantaneous mbuf counts (RAW). There is no max series: upstream removed the mbuf-max key in 26.1.11, so it reported 0 on every supported box and was dropped in OPN-0113. The cluster and jumbo pools still report their ceilings on the panels below.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10492,32 +10492,6 @@
                         "expr": "max without (job, service_instance_id, service_name, service_version) (opnsense_mbuf_mbufs{opnsense_instance=~\"$opnsense_instance\"})",
                         "refId": "C",
                         "legendFormat": "Total",
-                        "instant": false,
-                        "range": true
-                      }
-                    }
-                  }
-                },
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "D",
-                    "hidden": false,
-                    "datasource": {
-                      "type": "prometheus",
-                      "uid": "${datasource}"
-                    },
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "prometheus",
-                      "datasource": {
-                        "name": "${datasource}"
-                      },
-                      "spec": {
-                        "expr": "max without (job, service_instance_id, service_name, service_version) (opnsense_mbuf_max{opnsense_instance=~\"$opnsense_instance\"})",
-                        "refId": "D",
-                        "legendFormat": "Max",
                         "instant": false,
                         "range": true
                       }

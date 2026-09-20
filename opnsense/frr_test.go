@@ -230,8 +230,8 @@ const ospfNeighborsFixture = `{
     {
       "neighborid": "10.0.0.2",
       "priority": "1",
-      "state": "Full/DR",
-      "address": "10.0.0.2",
+      "nbrState": "Full/DR",
+      "ifaceAddress": "10.0.0.2",
       "ifaceName": "em0",
       "converged": "Full",
       "upTimeInMsec": 93780000,

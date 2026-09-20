@@ -63,9 +63,6 @@ func TestNDPCollector_Update(t *testing.T) {
 			if labels["interface_description"] != "LAN" {
 				t.Errorf("expected interface_description 'LAN', got %q", labels["interface_description"])
 			}
-			if labels["type"] != "dynamic" {
-				t.Errorf("expected type 'dynamic', got %q", labels["type"])
-			}
 			val := getMetricValue(m)
 			if val != 1 {
 				t.Errorf("expected value 1, got %v", val)

@@ -6,7 +6,11 @@ import (
 )
 
 type FirewallPFStat struct {
-	InterfaceName string `json:"interface,omitempty"` // We will populate this field with the key of the map
+	// Populated from the map KEY, never from the wire: pfstatistics.py stopped
+	// emitting a per-row "interface" field in 26.1.11 because the name is the
+	// key. json:"-" so the canary does not expect a key no supported box sends
+	// (OPN-0113); the label itself is unaffected.
+	InterfaceName string `json:"-"`
 	References    int    `json:"references"`
 
 	// Skipped is derived from the map key, not a wire field: pfctl appends a

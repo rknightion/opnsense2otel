@@ -9,10 +9,6 @@
       "kind": "object"
     },
     {
-      "path": "[].expire",
-      "kind": "string"
-    },
-    {
       "path": "[].intf",
       "kind": "string"
     },
@@ -30,10 +26,6 @@
     },
     {
       "path": "[].manufacturer",
-      "kind": "string"
-    },
-    {
-      "path": "[].type",
       "kind": "string"
     }
   ]

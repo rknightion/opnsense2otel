@@ -150,11 +150,11 @@ func (c *keaCollector) Register(namespace, instanceLabel string, log *slog.Logge
 	)
 	c.dhcp4PoolSize = buildPrometheusDesc(c.subsystem, "dhcp4_pool_size",
 		"Number of addresses in the configured Kea DHCPv4 pools for this subnet",
-		[]string{"subnet", "interface"},
+		[]string{"subnet"},
 	)
 	c.dhcp6PoolSize = buildPrometheusDesc(c.subsystem, "dhcp6_pool_size",
 		"Number of addresses in the configured Kea DHCPv6 pools for this subnet",
-		[]string{"subnet", "interface"},
+		[]string{"subnet"},
 	)
 	c.dhcp4PoolUsed = buildPrometheusDesc(c.subsystem, "dhcp4_pool_used",
 		"Number of Kea DHCPv4 leases whose address falls within this subnet's configured pool",
@@ -259,7 +259,7 @@ func (c *keaCollector) Update(ctx context.Context, client *opnsense.Client, ch c
 		subnets4 = s4
 		for _, s := range subnets4 {
 			ch <- prometheus.MustNewConstMetric(c.dhcp4PoolSize, prometheus.GaugeValue,
-				s.PoolSize, s.Subnet, s.Interface, c.instance)
+				s.PoolSize, s.Subnet, c.instance)
 		}
 	}
 	if s6, sErr := client.FetchKeaSubnets6(); sErr != nil {
@@ -271,7 +271,7 @@ func (c *keaCollector) Update(ctx context.Context, client *opnsense.Client, ch c
 		subnets6 = s6
 		for _, s := range subnets6 {
 			ch <- prometheus.MustNewConstMetric(c.dhcp6PoolSize, prometheus.GaugeValue,
-				s.PoolSize, s.Subnet, s.Interface, c.instance)
+				s.PoolSize, s.Subnet, c.instance)
 		}
 	}
 

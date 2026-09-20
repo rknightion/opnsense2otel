@@ -479,13 +479,7 @@ var Exemptions = map[string]string{
 		"per-neighbour and per-interface state that this field does not feed; it is modelled " +
 		"so the live-box canary validates the payload the daemon actually sends.",
 	// opnsense/frr.go:220  json:"nbrPriority"
-	"opnsense.frrOSPFNeighborRow.NbrPriority": "FRR routing detail decoded for schema fidelity. The FRR collectors export " +
-		"per-neighbour and per-interface state that this field does not feed; it is modelled " +
-		"so the live-box canary validates the payload the daemon actually sends.",
 	// opnsense/frr.go:219  json:"priority"
-	"opnsense.frrOSPFNeighborRow.Priority": "FRR routing detail decoded for schema fidelity. The FRR collectors export " +
-		"per-neighbour and per-interface state that this field does not feed; it is modelled " +
-		"so the live-box canary validates the payload the daemon actually sends.",
 	// opnsense/frr.go:232  json:"current"
 	"opnsense.frrOSPFNeighborSearch.Current": "Bootgrid envelope pagination field. The exporter asks for every row in a single page " +
 		"and counts the rows it decoded, so page state is never consulted; it stays decoded " +
@@ -680,20 +674,11 @@ var Exemptions = map[string]string{
 		"and counts the rows it decoded, so page state is never consulted; it stays decoded " +
 		"so the live-box schema canary keeps validating the envelope's shape.",
 	// opnsense/mbuf.go:44  json:"percentage"
-	"opnsense.mbufStatisticsData.BytesPercent": "Percentage the API computes from figures the collector already exports as raw " +
-		"counters. A ratio belongs in PromQL, not in a series — deliberately dropped.",
 	// opnsense/mbuf.go:46  json:"mbuf-and-cluster"
-	"opnsense.mbufStatisticsData.MbufAndCluster": "Derivable: the API's own sum of the mbuf and cluster counts, both of which are " +
-		"already exported separately. A precomputed sum belongs in PromQL, not in its own " +
-		"series.",
 	// opnsense/monit.go:122  json:"pendingaction"
 	"opnsense.monitServiceXML.PendingAction": "Transient monit action id, meaningful only between a request and its execution. It " +
 		"would be zero on essentially every scrape and cannot be sampled reliably.",
 	// opnsense/ndp.go:9  json:"expire"
-	"opnsense.ndpEntry.Expire": "Decoded and dropped. Not worth exporting either: the reference box (OPNsense 26.1) " +
-		"sends no expire key on this endpoint at all, the same negative result as " +
-		"ndpEntry.Type (#539 note 9), so the field is dead on every release in the support " +
-		"window. Kept only so the canary would notice if a future release started sending it.",
 	// opnsense/nginx.go:341  json:"ip"
 	"opnsense.nginxBanRow.IP": "Banned client address. One series per banned IP is unbounded and churns as bans " +
 		"expire; the collector exports the ban count.",
@@ -738,9 +723,6 @@ var Exemptions = map[string]string{
 		"and counts the rows it decoded, so page state is never consulted; it stays decoded " +
 		"so the live-box schema canary keeps validating the envelope's shape.",
 	// opnsense/pf_statistics.go:12  json:"rate"
-	"opnsense.pfStatsCounterEntry.Rate": "A per-second rate the box computes over its own window. The counter is exported " +
-		"instead so rate() controls the window; shipping a precomputed rate would " +
-		"double-count and cannot be re-aggregated.",
 	// opnsense/network_diagnostics.go:425  json:"current"
 	"opnsense.pfsyncNodesResponse.Current": "Bootgrid envelope pagination field. The exporter asks for every row in a single page " +
 		"and counts the rows it decoded, so page state is never consulted; it stays decoded " +
@@ -925,10 +907,6 @@ var Exemptions = map[string]string{
 		"metrics is a catalogue decision (five sections are consumed today, #545); the field " +
 		"is not a dropped dimension of anything already exported.",
 	// opnsense/protocol_statistics.go:123  json:"received-acks-for-unsent-data"
-	"opnsense.protocolStatisticsResponse.Statistics.TCP.ReceivedAcksForUnsentData": "netstat -s counter modelled so the live-box schema canary validates the whole " +
-		"protocol-statistics payload, not just the slice we export. Which counters become " +
-		"metrics is a catalogue decision (five sections are consumed today, #545); the field " +
-		"is not a dropped dimension of anything already exported.",
 	// opnsense/protocol_statistics.go:143  json:"received-after-close-packets"
 	"opnsense.protocolStatisticsResponse.Statistics.TCP.ReceivedAfterClosePackets": "netstat -s counter modelled so the live-box schema canary validates the whole " +
 		"protocol-statistics payload, not just the slice we export. Which counters become " +
@@ -1080,10 +1058,6 @@ var Exemptions = map[string]string{
 		"metrics is a catalogue decision (five sections are consumed today, #545); the field " +
 		"is not a dropped dimension of anything already exported.",
 	// opnsense/protocol_statistics.go:190  json:"receivd-cookies"
-	"opnsense.protocolStatisticsResponse.Statistics.TCP.Syncache.ReceivdCookies": "netstat -s counter modelled so the live-box schema canary validates the whole " +
-		"protocol-statistics payload, not just the slice we export. Which counters become " +
-		"metrics is a catalogue decision (five sections are consumed today, #545); the field " +
-		"is not a dropped dimension of anything already exported.",
 	// opnsense/protocol_statistics.go:183  json:"reset"
 	"opnsense.protocolStatisticsResponse.Statistics.TCP.Syncache.Reset": "netstat -s counter modelled so the live-box schema canary validates the whole " +
 		"protocol-statistics payload, not just the slice we export. Which counters become " +
@@ -1095,10 +1069,6 @@ var Exemptions = map[string]string{
 		"metrics is a catalogue decision (five sections are consumed today, #545); the field " +
 		"is not a dropped dimension of anything already exported.",
 	// opnsense/protocol_statistics.go:189  json:"sent-cookies"
-	"opnsense.protocolStatisticsResponse.Statistics.TCP.Syncache.SentCookies": "netstat -s counter modelled so the live-box schema canary validates the whole " +
-		"protocol-statistics payload, not just the slice we export. Which counters become " +
-		"metrics is a catalogue decision (five sections are consumed today, #545); the field " +
-		"is not a dropped dimension of anything already exported.",
 	// opnsense/protocol_statistics.go:184  json:"stale"
 	"opnsense.protocolStatisticsResponse.Statistics.TCP.Syncache.Stale": "netstat -s counter modelled so the live-box schema canary validates the whole " +
 		"protocol-statistics payload, not just the slice we export. Which counters become " +

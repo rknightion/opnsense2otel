@@ -20,9 +20,6 @@ const idsSettingsModeFixture = `{"ids":{"general":{"enabled":"1","promisc":"0",
           "divert":{"value":"Divert (IPS)","selected":0}},
   "interfaces":{"opt1":{"value":"TESTLAN","selected":1}}}}}`
 
-// idsSettingsLegacyFixture is the <=26.1 shape: boolean general.ips, no mode.
-const idsSettingsLegacyFixture = `{"ids":{"general":{"enabled":"1","promisc":"1","ips":"1"}}}`
-
 // idsSettingsPassiveFixture is pcap IDS mode with promiscuous off.
 const idsSettingsPassiveFixture = `{"ids":{"general":{"enabled":"1","promisc":"0",
   "mode":{"pcap":{"value":"PCAP live mode (IDS)","selected":1},
@@ -99,41 +96,6 @@ func TestFetchIDS_Populated(t *testing.T) {
 	wantTS := float64(time.Date(2026, 7, 13, 18, 11, 0, 0, time.UTC).Unix())
 	if info.Rulesets[1].LastUpdated != wantTS {
 		t.Errorf("Rulesets[1].LastUpdated = %v, want %v", info.Rulesets[1].LastUpdated, wantTS)
-	}
-}
-
-// TestFetchIDS_LegacyIPSField proves the <=26.1 boolean general.ips is honoured.
-func TestFetchIDS_LegacyIPSField(t *testing.T) {
-	server, mux, client := newTestClientWithMux(t)
-	defer server.Close()
-	mux.HandleFunc("/api/ids/service/status", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"status":"running"}`))
-	})
-	mux.HandleFunc("/api/ids/settings/get", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(idsSettingsLegacyFixture))
-	})
-	mux.HandleFunc("/api/ids/service/get_alert_logs", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`[]`))
-	})
-	mux.HandleFunc("/api/ids/settings/list_rulesets", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"total":0,"rowCount":0,"current":1,"rows":[]}`))
-	})
-	mux.HandleFunc("/api/ids/settings/searchInstalledRules", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"rows":[],"rowCount":0,"total":0,"current":1}`))
-	})
-
-	info, err := client.FetchIDS()
-	if err != nil {
-		t.Fatalf("FetchIDS: %v", err)
-	}
-	if !info.IPSMode {
-		t.Error("IPSMode = false, want true (legacy ips=1)")
-	}
-	if !info.PromiscuousMode {
-		t.Error("PromiscuousMode = false, want true (promisc=1)")
-	}
-	if len(info.AlertLogs) != 0 || len(info.Rulesets) != 0 || info.InstalledRulesTotal != 0 {
-		t.Errorf("expected fully empty structures, got %+v", info)
 	}
 }
 

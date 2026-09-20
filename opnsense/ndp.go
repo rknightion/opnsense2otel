@@ -10,8 +10,6 @@ type ndpEntry struct {
 	Intf            string `json:"intf"`
 	IntfDescription string `json:"intf_description"`
 	Manufacturer    string `json:"manufacturer"`
-	Expire          string `json:"expire"`
-	Type            string `json:"type"`
 }
 
 type NDPEntry struct {
@@ -25,9 +23,6 @@ type NDPEntry struct {
 	// the reference box (#534).
 	Manufacturer    string
 	IntfDescription string
-	// Type is modelled but the reference box (OPNsense 26.1) sends no `type`
-	// key on this endpoint at all, so it reads empty there.
-	Type string
 }
 
 type NDPTable struct {
@@ -59,7 +54,6 @@ func (c *Client) FetchNDPTable() (NDPTable, *APICallError) {
 			Device:          entry.Intf,
 			Manufacturer:    entry.Manufacturer,
 			IntfDescription: entry.IntfDescription,
-			Type:            entry.Type,
 		})
 	}
 

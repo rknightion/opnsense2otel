@@ -449,7 +449,7 @@ func TestFetchKeaSubnets6_Success(t *testing.T) {
 	if len(subnets) != 2 {
 		t.Fatalf("expected 2 subnets, got %d", len(subnets))
 	}
-	if subnets[0].Subnet != "2001:db8:100::/64" || subnets[0].Interface != "MGMT" || subnets[0].PoolSize != 4096 {
+	if subnets[0].Subnet != "2001:db8:100::/64" || subnets[0].PoolSize != 4096 {
 		t.Errorf("unexpected subnet[0]: %+v", subnets[0])
 	}
 	if subnets[0].UUID != "99d70a8d" {
@@ -689,8 +689,8 @@ func TestFetchKeaPdPools_InvalidPrefixLengths(t *testing.T) {
 
 func TestKeaPoolUsedBySubnet(t *testing.T) {
 	subnets := []KeaSubnet{
-		{UUID: "u1", Subnet: "10.0.0.0/24", Interface: "LAN"},
-		{UUID: "u2", Subnet: "192.168.1.0/24", Interface: "OPT1"},
+		{UUID: "u1", Subnet: "10.0.0.0/24"},
+		{UUID: "u2", Subnet: "192.168.1.0/24"},
 	}
 	leases := []KeaLease{
 		{Address: "10.0.0.50"},
@@ -712,7 +712,7 @@ func TestKeaPoolUsedBySubnet(t *testing.T) {
 
 func TestKeaPoolUsedBySubnet_ExcludesPDLeases(t *testing.T) {
 	subnets := []KeaSubnet{
-		{UUID: "u1", Subnet: "fd00:1::/64", Interface: "LAN"},
+		{UUID: "u1", Subnet: "fd00:1::/64"},
 	}
 	leases := []KeaLease{
 		{Address: "fd00:1::10", Type: "IA_NA"},
@@ -727,7 +727,7 @@ func TestKeaPoolUsedBySubnet_ExcludesPDLeases(t *testing.T) {
 
 func TestKeaPoolUsedBySubnet_ZeroFillsUnmatchedSubnets(t *testing.T) {
 	subnets := []KeaSubnet{
-		{UUID: "u1", Subnet: "10.0.0.0/24", Interface: "LAN"},
+		{UUID: "u1", Subnet: "10.0.0.0/24"},
 	}
 	used := KeaPoolUsedBySubnet(nil, subnets)
 	if got, ok := used["10.0.0.0/24"]; !ok || got != 0 {
@@ -737,7 +737,7 @@ func TestKeaPoolUsedBySubnet_ZeroFillsUnmatchedSubnets(t *testing.T) {
 
 func TestKeaPoolUsedBySubnet_UnparseableSubnetCIDRSkipped(t *testing.T) {
 	subnets := []KeaSubnet{
-		{UUID: "u1", Subnet: "not-a-cidr", Interface: "LAN"},
+		{UUID: "u1", Subnet: "not-a-cidr"},
 	}
 	leases := []KeaLease{{Address: "10.0.0.5"}}
 	used := KeaPoolUsedBySubnet(leases, subnets)

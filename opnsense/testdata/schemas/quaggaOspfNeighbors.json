@@ -27,10 +27,6 @@
       "kind": "object"
     },
     {
-      "path": "rows[].address",
-      "kind": "any"
-    },
-    {
       "path": "rows[].converged",
       "kind": "any"
     },
@@ -55,10 +51,6 @@
       "kind": "any"
     },
     {
-      "path": "rows[].nbrPriority",
-      "kind": "any"
-    },
-    {
       "path": "rows[].nbrState",
       "kind": "any"
     },
@@ -67,15 +59,7 @@
       "kind": "any"
     },
     {
-      "path": "rows[].priority",
-      "kind": "any"
-    },
-    {
       "path": "rows[].routerDeadIntervalTimerDueMsec",
-      "kind": "any"
-    },
-    {
-      "path": "rows[].state",
       "kind": "any"
     },
     {

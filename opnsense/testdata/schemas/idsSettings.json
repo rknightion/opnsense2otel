@@ -16,10 +16,6 @@
       "kind": "object"
     },
     {
-      "path": "ids.general.ips",
-      "kind": "any"
-    },
-    {
       "path": "ids.general.mode",
       "kind": "object"
     },

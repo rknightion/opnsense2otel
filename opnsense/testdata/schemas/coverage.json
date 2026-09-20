@@ -1,6 +1,6 @@
 {
   "hasyncVersion": {
-    "note": "#459 audited every endpoint sharing OSPFv3's `Response json.RawMessage` envelope pattern and left this one unwrapped deliberately, not for lack of a body type to point at. hasyncVersionResponse.Response is genuinely polymorphic on the wire: an object ({\"firmware\":{...}}) only when HA is configured and the peer answers; a bare JSON boolean (`false`) on the overwhelming majority of installs (single-node, HA unconfigured \u2014 see HasyncStatusController.php's exception path); JSON null on some error paths. Reflecting through it as an object would misdescribe the common case as a schema conflict rather than widen an unverified path, which is the opposite of what #459 is for. PRUNE TRIGGER: if a future OPNsense release collapses this to one shape, or if per-field polymorphic kinds are ever supported by FieldKind, register an envelopeDescent here like the other FRR/Tor endpoints.",
+    "note": "#459 audited every endpoint sharing OSPFv3's `Response json.RawMessage` envelope pattern and left this one unwrapped deliberately, not for lack of a body type to point at. hasyncVersionResponse.Response is genuinely polymorphic on the wire: an object ({\"firmware\":{...}}) only when HA is configured and the peer answers; a bare JSON boolean (`false`) on the overwhelming majority of installs (single-node, HA unconfigured — see HasyncStatusController.php's exception path); JSON null on some error paths. Reflecting through it as an object would misdescribe the common case as a schema conflict rather than widen an unverified path, which is the opposite of what #459 is for. PRUNE TRIGGER: if a future OPNsense release collapses this to one shape, or if per-field polymorphic kinds are ever supported by FieldKind, register an envelopeDescent here like the other FRR/Tor endpoints.",
     "required": [
       {
         "path": "response",
@@ -18,7 +18,7 @@
     ]
   },
   "quaggaOspfInterface": {
-    "note": "#459 audited every endpoint sharing OSPFv3's `Response json.RawMessage` envelope pattern; this one is deliberately left as a bare envelope rather than unwrapped. frr.go's FetchFRROSPFInterfaces decodes TWO candidate shapes for the same endpoint: FRR>=8 wraps per-interface data in {\"interfaces\": {...}} (frrOSPFInterfaceWrapped, confirmed live against this box's FRR 10.3), while older FRR returns the flat per-interface map directly at the top level (frrOSPFInterfaceEntry map) per the plugin's own doc comments \u2014 but that flat shape has never itself been confirmed live. Registering an envelopeDescent requires naming ONE Inner type; picking the wrapped shape would silently assert the flat shape doesn't exist, and picking the flat shape would misdescribe the one shape actually verified. PRUNE TRIGGER: confirm which shape(s) a live box in the support window actually sends (dev-box FRR is 10.3, already wrapped-only), then register an envelopeDescent \u2014 same treatment as quaggaOspfv3Interface below, which has no such ambiguity."
+    "note": "#459 audited every endpoint sharing OSPFv3's `Response json.RawMessage` envelope pattern; this one is deliberately left as a bare envelope rather than unwrapped. frr.go's FetchFRROSPFInterfaces decodes TWO candidate shapes for the same endpoint: FRR>=8 wraps per-interface data in {\"interfaces\": {...}} (frrOSPFInterfaceWrapped, confirmed live against this box's FRR 10.3), while older FRR returns the flat per-interface map directly at the top level (frrOSPFInterfaceEntry map) per the plugin's own doc comments — but that flat shape has never itself been confirmed live. Registering an envelopeDescent requires naming ONE Inner type; picking the wrapped shape would silently assert the flat shape doesn't exist, and picking the flat shape would misdescribe the one shape actually verified. PRUNE TRIGGER: confirm which shape(s) a live box in the support window actually sends (dev-box FRR is 10.3, already wrapped-only), then register an envelopeDescent — same treatment as quaggaOspfv3Interface below, which has no such ambiguity."
   },
   "dechwPowerStatus": {
     "stateOptional": [
@@ -129,7 +129,7 @@
           "opnsense_netbird_peer_last_handshake_timestamp_seconds",
           "opnsense_netbird_peer_latency_seconds"
         ],
-        "exercise": "Requires the dev box enrolled into a NetBird tenant AND at least one OTHER peer visible to it \u2014 a peer never lists itself, so a single-peer tenant yields peers.total 0 and an empty details[]. A second netstack-mode peer runs on the dev box for this purpose (NB_USE_NETSTACK_MODE=true, state dir /var/db/netbird-canary2, its own daemon socket), which creates no host interface or routes. It is started BY HAND and does NOT survive a reboot: if these paths regress to unverified, restart that second peer before treating it as drift.",
+        "exercise": "Requires the dev box enrolled into a NetBird tenant AND at least one OTHER peer visible to it — a peer never lists itself, so a single-peer tenant yields peers.total 0 and an empty details[]. A second netstack-mode peer runs on the dev box for this purpose (NB_USE_NETSTACK_MODE=true, state dir /var/db/netbird-canary2, its own daemon socket), which creates no host interface or routes. It is started BY HAND and does NOT survive a reboot: if these paths regress to unverified, restart that second peer before treating it as drift.",
         "verified": "2026-07-25, live on the dev box in both the Connected and lazy-connection Idle states. The peer label on every netbird_peer_* series comes from this field. NOT REBOOT-DURABLE: the second peer that makes details[] non-empty is hand-started, so if these paths regress to unverified, restart it before treating it as drift - see the exercise recipe."
       },
       {
@@ -181,7 +181,7 @@
         "verified": "2026-07-25, live in both Connected and Idle states; the wire value is a plain integer nanosecond count, as netbird's uninstrumented time.Duration implied."
       }
     ],
-    "note": "RESOLVED 2026-07-25. Every field of netbirdPeerDetail was source-derived from netbirdio/netbird client/status/status.go and unobserved (#211); the dev box is now enrolled and all 22 paths in the netbirdStatus golden validated live (22 verified, 0 mismatch, 0 unverified) in both the Connected and Idle states, so every source-derived guess proved correct. The entries stay in the ledger as required BECAUSE the enrollment is not reboot-durable \u2014 a regression to unverified must read as \"restart the second canary peer\", not as drift. Never record the setup key, API token, tenant name, peer FQDNs, netbird IPs or public keys here: the recipe describes the required STATE only."
+    "note": "RESOLVED 2026-07-25. Every field of netbirdPeerDetail was source-derived from netbirdio/netbird client/status/status.go and unobserved (#211); the dev box is now enrolled and all 22 paths in the netbirdStatus golden validated live (22 verified, 0 mismatch, 0 unverified) in both the Connected and Idle states, so every source-derived guess proved correct. The entries stay in the ledger as required BECAUSE the enrollment is not reboot-durable — a regression to unverified must read as \"restart the second canary peer\", not as drift. Never record the setup key, API token, tenant name, peer FQDNs, netbird IPs or public keys here: the recipe describes the required STATE only."
   },
   "ntpGPS": {
     "stateOptional": [
@@ -201,7 +201,7 @@
           "opnsense_frr_ospfv3_interface_up"
         ],
         "exercise": "Bring up an OSPFv3 adjacency on a box with a working IPv6 stack (two os-frr peers over a v6 transit link), capture api/quagga/diagnostics/ospfv3interface, and check the field names against opnsense/frr.go's ospf6 structs by hand.",
-        "verified": "LIVE STATE ACHIEVED 2026-07-25 (#377): OSPFv3 was enabled on the testbed and a Full adjacency brought up across the isolated bridge; all four v3 endpoints now return real objects instead of {\"response\":[]}, and all 13 source-derived field names in opnsense/frr.go were confirmed present in the live payload by hand. UNTIL #459, the canary still could not verify any of them structurally: schema_registry.go registered the bare ENVELOPE type, whose sole field is Response json.RawMessage -> KindAny. #459 (envelopeDescent) unwraps the envelope, so this is now an ORDINARY required path \u2014 the same live run that achieved 2026-07-25 state would resolve it, once re-run."
+        "verified": "LIVE STATE ACHIEVED 2026-07-25 (#377): OSPFv3 was enabled on the testbed and a Full adjacency brought up across the isolated bridge; all four v3 endpoints now return real objects instead of {\"response\":[]}, and all 13 source-derived field names in opnsense/frr.go were confirmed present in the live payload by hand. UNTIL #459, the canary still could not verify any of them structurally: schema_registry.go registered the bare ENVELOPE type, whose sole field is Response json.RawMessage -> KindAny. #459 (envelopeDescent) unwraps the envelope, so this is now an ORDINARY required path — the same live run that achieved 2026-07-25 state would resolve it, once re-run."
       },
       {
         "path": "response.*.cost",
@@ -209,7 +209,7 @@
           "opnsense_frr_ospfv3_interface_cost"
         ],
         "exercise": "Same OSPFv3 lab as above.",
-        "verified": "See response.*.status above \u2014 same 2026-07-25 live confirmation, same #459 unwrap."
+        "verified": "See response.*.status above — same 2026-07-25 live confirmation, same #459 unwrap."
       },
       {
         "path": "response.*.ospf6InterfaceState",
@@ -217,7 +217,7 @@
           "opnsense_frr_ospfv3_interface_state"
         ],
         "exercise": "Same OSPFv3 lab as above; the adjacency-bearing interface returns a real non-Down value (BDR was observed).",
-        "verified": "See response.*.status above \u2014 same 2026-07-25 live confirmation, same #459 unwrap."
+        "verified": "See response.*.status above — same 2026-07-25 live confirmation, same #459 unwrap."
       },
       {
         "path": "response.*.pendingLsaLsUpdateCount",
@@ -225,7 +225,7 @@
           "opnsense_frr_ospfv3_interface_pending_lsa"
         ],
         "exercise": "Same OSPFv3 lab as above.",
-        "verified": "See response.*.status above \u2014 same 2026-07-25 live confirmation, same #459 unwrap."
+        "verified": "See response.*.status above — same 2026-07-25 live confirmation, same #459 unwrap."
       },
       {
         "path": "response.*.pendingLsaLsAckCount",
@@ -233,7 +233,7 @@
           "opnsense_frr_ospfv3_interface_pending_lsa"
         ],
         "exercise": "Same OSPFv3 lab as above.",
-        "verified": "See response.*.status above \u2014 same 2026-07-25 live confirmation, same #459 unwrap."
+        "verified": "See response.*.status above — same 2026-07-25 live confirmation, same #459 unwrap."
       }
     ],
     "note": "Until #459 the only path OSPFv3 exposed to the canary was the response envelope, recorded as required-but-opaque so the gap was a NAMED blind spot instead of vanishing into the unverified count (see the OSPFv3 note in the VERIFICATION comment at the top of opnsense/frr.go). #459 registered an envelopeDescent for this endpoint instead, so the schema now carries the real inner paths and these are ordinary required entries a live run resolves."
@@ -246,7 +246,7 @@
           "opnsense_frr_ospfv3_area_lsa_count"
         ],
         "exercise": "Same OSPFv3 lab as quaggaOspfv3Interface; capture api/quagga/diagnostics/ospfv3overview with at least one area carrying LSAs and check the area key structure by hand.",
-        "verified": "LIVE STATE ACHIEVED 2026-07-25 (#377): OSPFv3 was enabled on the testbed and a Full adjacency brought up across the isolated bridge; all four v3 endpoints now return real objects instead of {\"response\":[]}, and all 13 source-derived field names in opnsense/frr.go were confirmed present in the live payload by hand. UNTIL #459, the canary still could not verify this structurally: schema_registry.go registered the bare ENVELOPE type, whose sole field is Response json.RawMessage -> KindAny. #459 (envelopeDescent) unwraps the envelope, so this is now an ORDINARY required path \u2014 the same live run that achieved 2026-07-25 state would resolve it, once re-run."
+        "verified": "LIVE STATE ACHIEVED 2026-07-25 (#377): OSPFv3 was enabled on the testbed and a Full adjacency brought up across the isolated bridge; all four v3 endpoints now return real objects instead of {\"response\":[]}, and all 13 source-derived field names in opnsense/frr.go were confirmed present in the live payload by hand. UNTIL #459, the canary still could not verify this structurally: schema_registry.go registered the bare ENVELOPE type, whose sole field is Response json.RawMessage -> KindAny. #459 (envelopeDescent) unwraps the envelope, so this is now an ORDINARY required path — the same live run that achieved 2026-07-25 state would resolve it, once re-run."
       }
     ],
     "note": "Until #459 the only path OSPFv3 exposed to the canary was the response envelope, recorded as required-but-opaque (see the OSPFv3 note in the VERIFICATION comment at the top of opnsense/frr.go). #459 registered an envelopeDescent for this endpoint instead, so the schema now carries the real inner path and this is an ordinary required entry a live run resolves."
@@ -478,7 +478,7 @@
           "opnsense_wireguard_peer_handshake_age_seconds"
         ],
         "exercise": "Enable WireGuard on the box (Services > WireGuard > general, enabled=1). Both testbeds carry the same self-contained pair from the #460 clone - two local instances wgtest1/wgtest2 peering each other over the loopback with a short persistent-keepalive - so no external peer is needed and a handshake re-establishes within seconds of enabling. These three keys exist ONLY on type=\"peer\" rows. CORRECTION 2026-07-31: an earlier version of this recipe claimed a box with WireGuard DISABLED still returns its type=\"interface\" rows, so that an EMPTY rows array would prove the instances had been deleted rather than merely switched off. That is WRONG and the distinction does not exist. Upstream builds every record from `wg show all dump` (/usr/local/opnsense/scripts/wireguard/wg_show.py), so a stopped instance has no kernel wg interface and contributes NO row of either type - a disabled box and a never-configured box both answer with an empty rows array. An empty rows array therefore says nothing about which of the two it is; only looking at the box does.",
-        "verified": "LIVE-VERIFIED 2026-07-29 on both testbeds (#502). VM 102 had WireGuard enabled and served peer rows; VM 106 was enabled=0 from the clone strip and reported all three paths missing in the first release-vm canary run (#508). Enabling it on 106 produced peer rows carrying all three within 15s. Fixed on the box rather than exempted, per the triage rule that a field backing an exported metric should have the testbed fixed instead \u2014 an exemption here would blind the canary to real drift on a consumed field."
+        "verified": "LIVE-VERIFIED 2026-07-29 on both testbeds (#502). VM 102 had WireGuard enabled and served peer rows; VM 106 was enabled=0 from the clone strip and reported all three paths missing in the first release-vm canary run (#508). Enabling it on 106 produced peer rows carrying all three within 15s. Fixed on the box rather than exempted, per the triage rule that a field backing an exported metric should have the testbed fixed instead — an exemption here would blind the canary to real drift on a consumed field."
       },
       {
         "path": "rows[].transfer-rx",
@@ -486,7 +486,7 @@
           "opnsense_wireguard_peer_received_bytes_total"
         ],
         "exercise": "Same as rows[].latest-handshake; the keepalive alone moves enough bytes for both byte counters to be non-zero.",
-        "verified": "LIVE-VERIFIED 2026-07-29 on both testbeds (#502). VM 102 had WireGuard enabled and served peer rows; VM 106 was enabled=0 from the clone strip and reported all three paths missing in the first release-vm canary run (#508). Enabling it on 106 produced peer rows carrying all three within 15s. Fixed on the box rather than exempted, per the triage rule that a field backing an exported metric should have the testbed fixed instead \u2014 an exemption here would blind the canary to real drift on a consumed field."
+        "verified": "LIVE-VERIFIED 2026-07-29 on both testbeds (#502). VM 102 had WireGuard enabled and served peer rows; VM 106 was enabled=0 from the clone strip and reported all three paths missing in the first release-vm canary run (#508). Enabling it on 106 produced peer rows carrying all three within 15s. Fixed on the box rather than exempted, per the triage rule that a field backing an exported metric should have the testbed fixed instead — an exemption here would blind the canary to real drift on a consumed field."
       },
       {
         "path": "rows[].transfer-tx",
@@ -494,7 +494,7 @@
           "opnsense_wireguard_peer_transmitted_bytes_total"
         ],
         "exercise": "Same as rows[].transfer-rx.",
-        "verified": "LIVE-VERIFIED 2026-07-29 on both testbeds (#502). VM 102 had WireGuard enabled and served peer rows; VM 106 was enabled=0 from the clone strip and reported all three paths missing in the first release-vm canary run (#508). Enabling it on 106 produced peer rows carrying all three within 15s. Fixed on the box rather than exempted, per the triage rule that a field backing an exported metric should have the testbed fixed instead \u2014 an exemption here would blind the canary to real drift on a consumed field."
+        "verified": "LIVE-VERIFIED 2026-07-29 on both testbeds (#502). VM 102 had WireGuard enabled and served peer rows; VM 106 was enabled=0 from the clone strip and reported all three paths missing in the first release-vm canary run (#508). Enabling it on 106 produced peer rows carrying all three within 15s. Fixed on the box rather than exempted, per the triage rule that a field backing an exported metric should have the testbed fixed instead — an exemption here would blind the canary to real drift on a consumed field."
       },
       {
         "path": "rows[].type",
@@ -838,14 +838,6 @@
           "opnsense_kea_dhcp4_pool_size"
         ],
         "exercise": "Configure one Kea DHCPv4 subnet with a pool range on the testbed VLAN (Services > Kea DHCP > DHCPv4 > Subnets) so api/kea/dhcpv4/searchSubnet returns a row. Configuration only - no client needs to take a lease, though the same subnet is what the traffgen LXC's lease comes from, so this resolves alongside keaLeases4. pools is the VALUE of pool_size: poolSpecSize parses the configured pool SPEC (range or CIDR form) and sums the address capacity. A subnet configured with no pool at all yields 0, which is a real state, so make sure the testbed subnet actually carries a range or this path proves nothing.",
-        "blocker": "searchSubnet returned an empty rows array on the release-channel testbed: the release-channel testbed is a stripped clone of the devel box, so a feature configured only on the devel box reads as unverified on every release-channel run - the same divergence #508 found for WireGuard. Fix the box, not the ledger: this field backs an exported metric, so an exemption here would blind the canary to real drift on a consumed field."
-      },
-      {
-        "path": "rows[].%interface",
-        "metrics": [
-          "opnsense_kea_dhcp4_pool_size"
-        ],
-        "exercise": "Configure one Kea DHCPv4 subnet with a pool range on the testbed VLAN (Services > Kea DHCP > DHCPv4 > Subnets) so api/kea/dhcpv4/searchSubnet returns a row. Configuration only - no client needs to take a lease, though the same subnet is what the traffgen LXC's lease comes from, so this resolves alongside keaLeases4. The interface label on pool_size, and the reason it exists: it carries the same display name as the lease rows' if_descr, which is what makes pool_size joinable against opnsense_kea_dhcp4_leases_by_interface in PromQL. A drift here breaks the join, not the series.",
         "blocker": "searchSubnet returned an empty rows array on the release-channel testbed: the release-channel testbed is a stripped clone of the devel box, so a feature configured only on the devel box reads as unverified on every release-channel run - the same divergence #508 found for WireGuard. Fix the box, not the ledger: this field backs an exported metric, so an exemption here would blind the canary to real drift on a consumed field."
       }
     ],

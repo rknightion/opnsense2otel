@@ -1151,16 +1151,15 @@ def build(b: Builder):
             (sel("opnsense_mbuf_current"), "Current"),
             (sel("opnsense_mbuf_cache"), "Cache"),
             (sel("opnsense_mbuf_mbufs"), "Total"),
-            (sel("opnsense_mbuf_max"), "Max"),
         ],
         unit="short",
         w=12,
         h=8,
         desc=(
-            "opnsense_mbuf current/cache/total/max: instantaneous mbuf counts (RAW). max is the "
-            "mbuf pool's ceiling, mirroring cluster_max -- may read 0 on OPNsense >=26.1.11, where "
-            "upstream removed this key, which means no ceiling was reported rather than a ceiling "
-            "of zero; guard any current/max ratio against a zero denominator."
+            "opnsense_mbuf current/cache/total: instantaneous mbuf counts (RAW). There is no max "
+            "series: upstream removed the mbuf-max key in 26.1.11, so it reported 0 on every "
+            "supported box and was dropped in OPN-0113. The cluster and jumbo pools still report "
+            "their ceilings on the panels below."
         ),
     )
 

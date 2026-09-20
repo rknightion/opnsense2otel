@@ -241,17 +241,21 @@ func (c *Client) FetchKeaLeases6() (KeaLeases, *APICallError) {
 	return c.fetchKeaLeases("keaLeases6")
 }
 
-// keaSubnetRow mirrors api/kea/dhcpv4|dhcpv6/searchSubnet bootgrid rows.
-// %interface carries the display name (e.g. "MGMT") that matches the
-// if_descr labels used by the lease metrics, enabling PromQL joins. uuid
+// keaSubnetRow mirrors api/kea/dhcpv4|dhcpv6/searchSubnet bootgrid rows. uuid
 // identifies the subnet record and is used to join PD pool rows (whose own
 // "subnet" field is a ModelRelationField UUID reference, not a CIDR) back to
 // their subnet's CIDR.
+//
+// There is deliberately no interface field. The rows used to carry %interface,
+// a display name that joined against the lease metrics' if_descr labels, but
+// the subnet4/subnet6 model node has carried no interface field at all since
+// 26.7 - verified 2026-09-20 against KeaDhcpv4.xml on both boxes, where the
+// node holds only subnet_id, subnet, pools and the ddns/option families. It was
+// decoded until OPN-0113 and produced a permanently empty label.
 type keaSubnetRow struct {
-	UUID      string `json:"uuid"`
-	Subnet    string `json:"subnet"`
-	Pools     string `json:"pools"`
-	Interface string `json:"%interface"`
+	UUID   string `json:"uuid"`
+	Subnet string `json:"subnet"`
+	Pools  string `json:"pools"`
 }
 
 type keaSubnetResponse struct {
@@ -260,10 +264,9 @@ type keaSubnetResponse struct {
 
 // KeaSubnet is one configured Kea subnet with its computed pool size.
 type KeaSubnet struct {
-	UUID      string
-	Subnet    string
-	Interface string
-	PoolSize  float64
+	UUID     string
+	Subnet   string
+	PoolSize float64
 }
 
 func (c *Client) fetchKeaSubnets(endpointName EndpointName) ([]KeaSubnet, *APICallError) {
@@ -284,10 +287,9 @@ func (c *Client) fetchKeaSubnets(endpointName EndpointName) ([]KeaSubnet, *APICa
 	subnets := make([]KeaSubnet, 0, len(resp.Rows))
 	for _, row := range resp.Rows {
 		subnets = append(subnets, KeaSubnet{
-			UUID:      row.UUID,
-			Subnet:    row.Subnet,
-			Interface: row.Interface,
-			PoolSize:  c.poolSpecSize(row.Pools),
+			UUID:     row.UUID,
+			Subnet:   row.Subnet,
+			PoolSize: c.poolSpecSize(row.Pools),
 		})
 	}
 	return subnets, nil

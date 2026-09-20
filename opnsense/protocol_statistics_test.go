@@ -63,14 +63,6 @@ func TestFetchProtocolStatistics_EcnKeyRenames(t *testing.T) {
 		wantCe, wantEct0, want1 int64
 	}{
 		{
-			name: "legacy keys only (<=26.1.10)",
-			ecn: `{
-				"ce-packets": 11, "ect0-packets": 22, "ect1-packets": 33,
-				"handshakes": 44, "congestion-reductions": 55
-			}`,
-			wantCe: 11, wantEct0: 22, want1: 33,
-		},
-		{
 			name: "modern keys only (26.1.11, real key set)",
 			ecn: `{
 				"ace-ce-syn": 1, "ace-ect0-syn": 2, "ace-ect1-syn": 3, "ace-nonect-syn": 4,

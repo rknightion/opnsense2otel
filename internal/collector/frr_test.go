@@ -76,8 +76,8 @@ func frrCollectorMux(t *testing.T) *http.ServeMux {
   "rows": [
     {
       "neighborid": "10.0.0.2",
-      "state": "Full/DR",
-      "address": "10.0.0.2",
+      "nbrState": "Full/DR",
+      "ifaceAddress": "10.0.0.2",
       "ifaceName": "em0"
     }
   ]
@@ -797,8 +797,8 @@ func TestFRRCollector_Update_OSPFNeighborAdjacencyStability(t *testing.T) {
   "rows": [
     {
       "neighborid": "10.0.0.2",
-      "state": "Full/DR",
-      "address": "10.0.0.2",
+      "nbrState": "Full/DR",
+      "ifaceAddress": "10.0.0.2",
       "ifaceName": "em0",
       "converged": "Full",
       "upTimeInMsec": 93780000,

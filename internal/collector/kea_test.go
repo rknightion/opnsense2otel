@@ -395,7 +395,7 @@ func TestKeaCollector_PoolAndService(t *testing.T) {
 		if strings.Contains(desc, "kea_dhcp4_pool_size") {
 			sawPool = true
 			labels := getMetricLabels(m)
-			if labels["subnet"] != "10.0.0.0/24" || labels["interface"] != "LAN" || getMetricValue(m) != 131 {
+			if labels["subnet"] != "10.0.0.0/24" || getMetricValue(m) != 131 {
 				t.Errorf("bad pool_size: value=%v labels=%v", getMetricValue(m), labels)
 			}
 		}

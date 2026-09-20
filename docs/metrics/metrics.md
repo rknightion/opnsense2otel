@@ -7,8 +7,8 @@ The `opnsense_instance` label is applied to all metrics.
 
 ## Summary
 
-- **Total metrics:** 1048
-- **Gauges:** 699
+- **Total metrics:** 1047
+- **Gauges:** 698
 - **Counters:** 349
 
 ## General
@@ -746,8 +746,8 @@ The `opnsense_instance` label is applied to all metrics.
 | opnsense_kea_dhcp6_lease_pool_stats | Gauge | pool_state | Kea's own DHCPv6 lease pool accounting (the response's top-level `stats` object, computed over the FULL lease population), by pool_state (active/inactive/total). Authoritative and never truncated by bootgrid pagination, unlike a row-derived count -- a complement to the other DHCPv6 lease metrics in this collector, not a replacement for any of them. | --exporter.disable-kea |
 | opnsense_kea_dhcp6_reservations_configured | Gauge | subnet | Number of configured Kea DHCPv6 reservations in this subnet, including reservations with no current lease | --exporter.disable-kea |
 | opnsense_kea_service_running | Gauge | --- | Whether the Kea DHCP service is running (1 = running, 0 = stopped/disabled) | --exporter.disable-kea |
-| opnsense_kea_dhcp4_pool_size | Gauge | subnet, interface | Number of addresses in the configured Kea DHCPv4 pools for this subnet | --exporter.disable-kea |
-| opnsense_kea_dhcp6_pool_size | Gauge | subnet, interface | Number of addresses in the configured Kea DHCPv6 pools for this subnet | --exporter.disable-kea |
+| opnsense_kea_dhcp4_pool_size | Gauge | subnet | Number of addresses in the configured Kea DHCPv4 pools for this subnet | --exporter.disable-kea |
+| opnsense_kea_dhcp6_pool_size | Gauge | subnet | Number of addresses in the configured Kea DHCPv6 pools for this subnet | --exporter.disable-kea |
 | opnsense_kea_dhcp4_pool_used | Gauge | subnet | Number of Kea DHCPv4 leases whose address falls within this subnet's configured pool | --exporter.disable-kea |
 | opnsense_kea_dhcp6_pool_used | Gauge | subnet | Number of Kea DHCPv6 address (non-PD) leases whose address falls within this subnet's configured pool | --exporter.disable-kea |
 | opnsense_kea_dhcp6_pd_pool_size | Gauge | subnet, prefix | Delegable-prefix capacity of a configured Kea DHCPv6 prefix-delegation pool (2^(delegated_len-prefix_len)) | --exporter.disable-kea |
@@ -834,7 +834,6 @@ The `opnsense_instance` label is applied to all metrics.
 | opnsense_mbuf_current | Gauge | --- | Current number of mbufs in use | --exporter.disable-mbuf |
 | opnsense_mbuf_cache | Gauge | --- | Number of mbufs in cache | --exporter.disable-mbuf |
 | opnsense_mbuf_mbufs | Gauge | --- | Current number of mbufs available | --exporter.disable-mbuf |
-| opnsense_mbuf_max | Gauge | --- | Maximum number of mbufs (the mbuf pool's ceiling, mirroring cluster_max). May read 0 on OPNsense >=26.1.11, where upstream removed this key -- that means no ceiling was reported, not a ceiling of zero, so guard any current/max ratio against a zero denominator (#543). | --exporter.disable-mbuf |
 | opnsense_mbuf_cluster_current | Gauge | --- | Current number of mbuf clusters in use | --exporter.disable-mbuf |
 | opnsense_mbuf_cluster_cache | Gauge | --- | Number of mbuf clusters in cache | --exporter.disable-mbuf |
 | opnsense_mbuf_cluster | Gauge | --- | Current number of mbuf clusters available | --exporter.disable-mbuf |
@@ -885,7 +884,7 @@ The `opnsense_instance` label is applied to all metrics.
 | Metric Name | Type | Labels | Description | Disable Flag |
 |-------------|------|--------|-------------|--------------|
 | opnsense_ndp_table_entries | Gauge | --- | Current number of NDP table entries (low-cardinality aggregate, always emitted) | --exporter.disable-ndp |
-| opnsense_ndp_entries | Gauge | ip, mac, interface_description, type, manufacturer, device | One series per NDP neighbour entry (value is always 1). Only emitted when --exporter.enable-ndp-details is set (high, churning cardinality from IPv6 privacy addresses). `manufacturer` is the OUI lookup for the MAC and is the label that identifies a device. `device` is the raw kernel device and `interface_description` the assigned name; they diverge on VLAN children and bridges, and only `device` joins against the interfaces metrics. `type` reads empty on OPNsense 26.1, which sends no type key on this endpoint. | --exporter.disable-ndp |
+| opnsense_ndp_entries | Gauge | ip, mac, interface_description, manufacturer, device | One series per NDP neighbour entry (value is always 1). Only emitted when --exporter.enable-ndp-details is set (high, churning cardinality from IPv6 privacy addresses). `manufacturer` is the OUI lookup for the MAC and is the label that identifies a device. `device` is the raw kernel device and `interface_description` the assigned name; they diverge on VLAN children and bridges, and only `device` joins against the interfaces metrics. | --exporter.disable-ndp |
 
 ## NRPE
 

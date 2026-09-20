@@ -9,12 +9,13 @@ type mbufStatisticsData struct {
 	MbufCurrent int `json:"mbuf-current"`
 	MbufCache   int `json:"mbuf-cache"`
 	MbufTotal   int `json:"mbuf-total"`
-	// MbufMax is exported (#557), matching how ClusterMax/JumboPageMax are
-	// already exported as ceilings. ≤26.1.x only: removed upstream, reads
-	// zero on ≥26.1.11 -- per the #543 "limit==0 means no ceiling
-	// configured" lesson, a consumer computing a current/max ratio must
-	// guard the denominator rather than trusting a bare 0.
-	MbufMax        int `json:"mbuf-max"`
+	// There is deliberately no mbuf-max. It was exported as a ceiling (#557)
+	// alongside cluster-max, but upstream removed the key in 26.1.11 and the
+	// support window is now current-stable only, so it read 0 on every
+	// supported box - a gauge whose own help text had to explain that its
+	// value meant "no ceiling reported" rather than a ceiling. Removed with
+	// its metric in OPN-0113. cluster-max and jumbo-max are still sent and
+	// still exported.
 	ClusterCurrent int `json:"cluster-current"`
 	ClusterCache   int `json:"cluster-cache"`
 	ClusterTotal   int `json:"cluster-total"`
@@ -25,18 +26,15 @@ type mbufStatisticsData struct {
 	MbufSleeps     int `json:"mbuf-sleeps"`
 	ClusterSleeps  int `json:"cluster-sleeps"`
 	PacketSleeps   int `json:"packet-sleeps"`
-	// Jumbo-page pool, legacy names. ≤26.1.x only: replaced on ≥26.1.11 by
-	// jumbo-count / jumbo-cache / jumbo-total / jumbo-max below. Resolved by
-	// jumboPage*(); pointers so nil == "key absent" rather than "present and zero".
-	JumbopCurrent *int `json:"jumbop-current"`
-	JumbopCache   *int `json:"jumbop-cache"`
-	JumbopTotal   *int `json:"jumbop-total"`
-	JumbopMax     *int `json:"jumbop-max"`
-	// NOT renamed — jumbop-failures / jumbop-sleeps keep their names on ≥26.1.11.
+	// jumbop-failures / jumbop-sleeps keep the jumbop- spelling on ≥26.1.11.
+	// They were never renamed, so do not "correct" them to jumbo-.
 	JumbopFails  int `json:"jumbop-failures"`
 	JumbopSleeps int `json:"jumbop-sleeps"`
-	// Jumbo-page pool, ≥26.1.11 names. Nil on older releases, where the jumbop-*
-	// fields above carry the same values.
+	// Jumbo-page pool. The ≤26.1.10 spellings (jumbop-current/cache/total/max)
+	// were resolved alongside these by jumboPage*() until OPN-0113 narrowed the
+	// support window to current stable; measured absent on both boxes, so the
+	// resolvers collapsed to direct reads. Still pointers because that is what
+	// the extended-field convention below uses.
 	JumboCount *int `json:"jumbo-count"`
 	JumboCache *int `json:"jumbo-cache"`
 	JumboTotal *int `json:"jumbo-total"`
@@ -52,10 +50,6 @@ type mbufStatisticsData struct {
 	// usr.bin/netstat/mbuf.c) -- so, matching those two fields, this is a plain
 	// int64, not a pointer (#579).
 	BytesInCache int64 `json:"bytes-in-cache"`
-	// ≤26.1.x only: removed upstream, reads zero on ≥26.1.11 (unused by any metric).
-	BytesPercent int `json:"percentage"`
-	// ≤26.1.x only: removed upstream, reads zero on ≥26.1.11 (unused by any metric).
-	MbufAndCluster int `json:"mbuf-and-cluster"`
 	// Extended fields present in systemMbuf on OPNsense 26.1+ (both endpoints wrap the
 	// same `netstat -m` output). Pointers so a nil distinguishes "key absent" (older
 	// release) from "present with value 0", which decides whether the redundant
@@ -109,27 +103,16 @@ type mbufStatisticsData struct {
 	PacketFree  *int `json:"packet-free"`
 }
 
-// jumboPageCurrent resolves the jumbo-page pool's in-use count across the 26.1.11
-// rename: the new jumbo-count key wins when the box sends it, else the legacy
-// jumbop-current. Zero when neither is present.
-func (s mbufStatisticsData) jumboPageCurrent() int {
-	return firstPresentInt(s.JumboCount, s.JumbopCurrent)
-}
+// jumboPage* read the jumbo-page pool. They stay as methods rather than
+// becoming direct field reads because a nil pointer must still mean "key
+// absent" and read 0, not panic.
+func (s mbufStatisticsData) jumboPageCurrent() int { return firstPresentInt(s.JumboCount) }
 
-// jumboPageCache resolves jumbo-cache (≥26.1.11) else jumbop-cache (≤26.1.x).
-func (s mbufStatisticsData) jumboPageCache() int {
-	return firstPresentInt(s.JumboCache, s.JumbopCache)
-}
+func (s mbufStatisticsData) jumboPageCache() int { return firstPresentInt(s.JumboCache) }
 
-// jumboPageTotal resolves jumbo-total (≥26.1.11) else jumbop-total (≤26.1.x).
-func (s mbufStatisticsData) jumboPageTotal() int {
-	return firstPresentInt(s.JumboTotal, s.JumbopTotal)
-}
+func (s mbufStatisticsData) jumboPageTotal() int { return firstPresentInt(s.JumboTotal) }
 
-// jumboPageMax resolves jumbo-max (≥26.1.11) else jumbop-max (≤26.1.x).
-func (s mbufStatisticsData) jumboPageMax() int {
-	return firstPresentInt(s.JumboMax, s.JumbopMax)
-}
+func (s mbufStatisticsData) jumboPageMax() int { return firstPresentInt(s.JumboMax) }
 
 // firstPresentInt returns the first non-nil pointer's value, or 0 when all are nil
 // (i.e. none of the candidate JSON keys was sent).
@@ -161,19 +144,15 @@ type memoryStatisticsResponse struct {
 }
 
 type MbufStatistics struct {
-	MbufCurrent int
-	MbufCache   int
-	MbufTotal   int
-	// MbufMax may legitimately read 0 on OPNsense >=26.1.11, where upstream
-	// removed the key -- that means "no ceiling reported", not "ceiling of
-	// zero" (#543). Guard any current/max ratio against a zero denominator.
-	MbufMax        int
+	MbufCurrent    int
+	MbufCache      int
+	MbufTotal      int
 	ClusterCurrent int
 	ClusterCache   int
 	ClusterTotal   int
 	ClusterMax     int
-	// Jumbo-page pool, already resolved across the 26.1.11 key rename (jumbop-* on
-	// ≤26.1.x, jumbo-* on ≥26.1.11) — callers never see the two spellings.
+	// Jumbo-page pool (jumbo-* since 26.1.11; the older jumbop-* spellings on
+	// ≤26.1.x left the support window in OPN-0113 and are no longer decoded).
 	JumboPageCurrent int
 	JumboPageCache   int
 	JumboPageTotal   int
@@ -229,7 +208,6 @@ func (c *Client) FetchMbufStatistics() (MbufStatistics, *APICallError) {
 	data.MbufCurrent = s.MbufCurrent
 	data.MbufCache = s.MbufCache
 	data.MbufTotal = s.MbufTotal
-	data.MbufMax = s.MbufMax
 	data.ClusterCurrent = s.ClusterCurrent
 	data.ClusterCache = s.ClusterCache
 	data.ClusterTotal = s.ClusterTotal

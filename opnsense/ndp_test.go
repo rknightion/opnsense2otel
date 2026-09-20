@@ -55,10 +55,6 @@ func TestFetchNDPTable_Success(t *testing.T) {
 	if e1.IntfDescription != "LAN" {
 		t.Errorf("expected IntfDescription 'LAN', got %q", e1.IntfDescription)
 	}
-	if e1.Type != "dynamic" {
-		t.Errorf("expected Type 'dynamic', got %q", e1.Type)
-	}
-
 	e2 := data.Entries[1]
 	if e2.Mac != "aa:bb:cc:dd:ee:ff" {
 		t.Errorf("expected mac 'aa:bb:cc:dd:ee:ff', got %q", e2.Mac)
@@ -68,9 +64,6 @@ func TestFetchNDPTable_Success(t *testing.T) {
 	}
 	if e2.IntfDescription != "WAN" {
 		t.Errorf("expected IntfDescription 'WAN', got %q", e2.IntfDescription)
-	}
-	if e2.Type != "static" {
-		t.Errorf("expected Type 'static', got %q", e2.Type)
 	}
 }
 
@@ -109,10 +102,13 @@ func TestFetchNDPTable_ServerError(t *testing.T) {
 	}
 }
 
-// liveNDPFixture is trimmed verbatim from the prod box (OPNsense 26.1,
-// api/diagnostics/interface/get_ndp). NOTE: the live payload carries NO `type`
-// and NO `expire` key at all — only mac, ip, intf, intf_description and
-// manufacturer — so the fixture omits them deliberately.
+// liveNDPFixture is trimmed verbatim from a live box
+// (api/diagnostics/interface/get_ndp). The payload carries NO `type` and NO
+// `expire` key — only mac, ip, intf, intf_description and manufacturer —
+// re-confirmed 2026-09-20 against both testbed boxes by running the producer,
+// /usr/local/opnsense/scripts/interfaces/list_ndp.py, directly. Neither key is
+// modelled any more (OPN-0113), so this fixture is now the whole shape rather
+// than a deliberate subset of it.
 const liveNDPFixture = `[
  {"mac":"0e:40:69:ec:4d:9a","ip":"fe80::d6:761:6510:f3a6%ixl0","intf":"ixl0","manufacturer":"","intf_description":"LAN"},
  {"mac":"98:b7:85:21:af:f2","ip":"2001:db8::1","intf":"ixl0_vlan100","manufacturer":"Intel Corporate","intf_description":"MGMT"}

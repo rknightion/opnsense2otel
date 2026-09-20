@@ -632,19 +632,7 @@
       "kind": "numeric"
     },
     {
-      "path": "statistics.tcp.ecn.ce-packets",
-      "kind": "numeric"
-    },
-    {
       "path": "statistics.tcp.ecn.congestion-reductions",
-      "kind": "numeric"
-    },
-    {
-      "path": "statistics.tcp.ecn.ect0-packets",
-      "kind": "numeric"
-    },
-    {
-      "path": "statistics.tcp.ecn.ect1-packets",
       "kind": "numeric"
     },
     {
@@ -745,10 +733,6 @@
     },
     {
       "path": "statistics.tcp.received-acks-for-data-not-yet-sent",
-      "kind": "numeric"
-    },
-    {
-      "path": "statistics.tcp.received-acks-for-unsent-data",
       "kind": "numeric"
     },
     {
@@ -956,19 +940,11 @@
       "kind": "numeric"
     },
     {
-      "path": "statistics.tcp.syncache.receivd-cookies",
-      "kind": "numeric"
-    },
-    {
       "path": "statistics.tcp.syncache.reset",
       "kind": "numeric"
     },
     {
       "path": "statistics.tcp.syncache.retransmitted",
-      "kind": "numeric"
-    },
-    {
-      "path": "statistics.tcp.syncache.sent-cookies",
       "kind": "numeric"
     },
     {

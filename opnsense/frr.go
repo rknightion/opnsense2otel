@@ -300,13 +300,15 @@ func (d *frrOSPFDeadIntervalDue) UnmarshalJSON(data []byte) error {
 // frrOSPFNeighborRow holds a single row from the searchOspfneighbor bootgrid.
 // FRR renamed fields across versions; both old and new names are decoded.
 type frrOSPFNeighborRow struct {
-	NeighborID   flexString `json:"neighborid"`
-	Priority     flexString `json:"priority"`     // old FRR
-	NbrPriority  flexString `json:"nbrPriority"`  // new FRR
-	State        flexString `json:"state"`        // old, e.g. "Full/DR"
-	NbrState     flexString `json:"nbrState"`     // new
-	Address      flexString `json:"address"`      // old
-	IfaceAddress flexString `json:"ifaceAddress"` // new
+	NeighborID flexString `json:"neighborid"`
+	// Neither priority spelling is decoded: old FRR's "priority" and new FRR's
+	// "nbrPriority" were both read into a field nothing ever consumed, so they
+	// were dead rather than a cross-version shim (OPN-0113).
+	// nbrState ("Full/DR") and ifaceAddress are the only spellings decoded.
+	// Old FRR's "state" and "address" were coalesced ahead of these until
+	// OPN-0113; measured absent on both boxes against a live Full adjacency.
+	NbrState     flexString `json:"nbrState"`
+	IfaceAddress flexString `json:"ifaceAddress"`
 	IfaceName    flexString `json:"ifaceName"`
 
 	// #582: adjacency stability fields, all emitted unconditionally by FRR
@@ -550,15 +552,8 @@ func (c *Client) FetchFRROSPF() (FRROSPF, *APICallError) {
 	}
 
 	for _, row := range nbrSearch.Rows {
-		// Coalesce old/new field names.
-		state := row.State.String()
-		if state == "" {
-			state = row.NbrState.String()
-		}
-		address := row.Address.String()
-		if address == "" {
-			address = row.IfaceAddress.String()
-		}
+		state := row.NbrState.String()
+		address := row.IfaceAddress.String()
 		adjacent := 0.0
 		if strings.HasPrefix(state, "Full") {
 			adjacent = 1.0

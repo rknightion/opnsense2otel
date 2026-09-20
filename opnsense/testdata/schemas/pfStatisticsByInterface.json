@@ -52,10 +52,6 @@
       "kind": "number"
     },
     {
-      "path": "interfaces.*.interface",
-      "kind": "string"
-    },
-    {
       "path": "interfaces.*.out4_block_bytes",
       "kind": "number"
     },

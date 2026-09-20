@@ -16,10 +16,6 @@
       "kind": "object"
     },
     {
-      "path": "rows[].%interface",
-      "kind": "string"
-    },
-    {
       "path": "rows[].pools",
       "kind": "string"
     },

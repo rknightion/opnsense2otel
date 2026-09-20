@@ -7,9 +7,13 @@ import (
 
 // Internal response DTOs matching OPNsense JSON exactly.
 
+// pfStatsCounterEntry is one pfctl counter row. There is deliberately no Rate:
+// pfctl emits "rate" for the counter rows (searches/inserts/removals) and omits
+// it for the current-entries gauges, and nothing in the exporter ever read it,
+// so it was two tolerated absences buying nothing. Re-adding it means re-adding
+// the missingOK pair for both tables' current-entries (OPN-0113).
 type pfStatsCounterEntry struct {
 	Total float64 `json:"total"`
-	Rate  float64 `json:"rate"`
 }
 
 type pfStatsTableData struct {

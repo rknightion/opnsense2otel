@@ -37,11 +37,13 @@ const modernMbufFields = `"bytes-in-cache": 3000, "bytes-in-use": 65536, "bytes-
 	"sendfile-readahead": 0, "sendfile-requested-readahead": 0, "sendfile-syscalls": 42,
 	"sfbufs-alloc-failed": 0, "sfbufs-alloc-wait": 0`
 
-// TestFetchMbufStatistics_JumboPageKeyRename pins the tolerant read of the jumbo-page
-// pool across the 26.1.11 key rename (jumbop-current/-cache/-total/-max ->
-// jumbo-count/-cache/-total/-max): the new keys win when present, the legacy keys are
-// used when they are not, and a box sending both is read from the new keys.
-func TestFetchMbufStatistics_JumboPageKeyRename(t *testing.T) {
+// TestFetchMbufStatistics_JumboPageKeys pins that the jumbo-page pool decodes
+// from the jumbo-* keys, and reads 0 rather than panicking when they are absent
+// (the fields are pointers). It used to also cover the ≤26.1.10 jumbop-*
+// spellings and their new-wins-else-legacy resolution; those left the support
+// window in OPN-0113 and are no longer decoded, so asserting on them would
+// assert the opposite of what is true.
+func TestFetchMbufStatistics_JumboPageKeys(t *testing.T) {
 	tests := []struct {
 		name                                string
 		jumboKeys                           string
@@ -50,28 +52,8 @@ func TestFetchMbufStatistics_JumboPageKeyRename(t *testing.T) {
 		wantJumbopFailures, wantJumbopSleep int
 	}{
 		{
-			name:               "legacy jumbop keys only (<=26.1.x)",
-			jumboKeys:          `"jumbop-current": 10, "jumbop-cache": 5, "jumbop-total": 20, "jumbop-max": 50, "jumbop-failures": 7, "jumbop-sleeps": 4`,
-			wantCurrent:        10,
-			wantCache:          5,
-			wantTotal:          20,
-			wantMax:            50,
-			wantJumbopFailures: 7,
-			wantJumbopSleep:    4,
-		},
-		{
-			name:               "modern jumbo keys only (>=26.1.11)",
+			name:               "jumbo keys present",
 			jumboKeys:          `"jumbo-count": 11, "jumbo-cache": 6, "jumbo-total": 21, "jumbo-max": 51, "jumbop-failures": 7, "jumbop-sleeps": 4`,
-			wantCurrent:        11,
-			wantCache:          6,
-			wantTotal:          21,
-			wantMax:            51,
-			wantJumbopFailures: 7,
-			wantJumbopSleep:    4,
-		},
-		{
-			name:               "both key sets present, new wins",
-			jumboKeys:          `"jumbop-current": 10, "jumbop-cache": 5, "jumbop-total": 20, "jumbop-max": 50, "jumbo-count": 11, "jumbo-cache": 6, "jumbo-total": 21, "jumbo-max": 51, "jumbop-failures": 7, "jumbop-sleeps": 4`,
 			wantCurrent:        11,
 			wantCache:          6,
 			wantTotal:          21,
@@ -483,9 +465,6 @@ func TestFetchMbufStatistics_Success(t *testing.T) {
 	if data.ClusterMax != 1024 {
 		t.Errorf("expected ClusterMax=1024, got %d", data.ClusterMax)
 	}
-	if data.MbufMax != 4096 {
-		t.Errorf("expected MbufMax=4096, got %d", data.MbufMax)
-	}
 	// API reports KB; FetchMbufStatistics converts to bytes (×1024).
 	if data.BytesInUse != 65536*1024 {
 		t.Errorf("expected BytesInUse=%d, got %d", 65536*1024, data.BytesInUse)
@@ -536,9 +515,6 @@ func TestFetchMbufStatistics_MbufMaxAbsentOnModernRelease(t *testing.T) {
 	data, err := client.FetchMbufStatistics()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if data.MbufMax != 0 {
-		t.Errorf("expected MbufMax=0 on a release that omits mbuf-max, got %d", data.MbufMax)
 	}
 	// cluster-max survives the rename and should still read normally.
 	if data.ClusterMax != 1024 {
