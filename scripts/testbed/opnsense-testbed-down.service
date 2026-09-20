@@ -5,6 +5,12 @@ After=pve-guests.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/opnsense-testbed-power.sh down
+# Exit 8 is "another operation held the lock, so nothing was stopped". For this
+# timer that is a normal outcome - it fires every five minutes and the next one
+# will do the work - so it must not mark the unit failed. It stays a FAILURE for
+# every other caller, which is the point: CI needs to know its teardown was
+# skipped rather than see a green step over a lab that is still running.
+SuccessExitStatus=8
 # Six guests, each allowed 180s of graceful ACPI shutdown before the script
 # escalates to a hard stop. This bounds the whole sequence with headroom.
 TimeoutStartSec=1500

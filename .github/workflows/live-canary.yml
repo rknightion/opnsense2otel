@@ -353,28 +353,34 @@ jobs:
           # the next run re-post the whole report and the noise would return.
           # The issue BODY counts too: the first report is the body, not a
           # comment.
-          body_json=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${existing}" \
-            --jq '[{body: .body, at: .created_at}]')
-          # `gh api --paginate --jq` emits one JSON document PER PAGE, so an
-          # array filter over two pages yields `[...][...]` — not valid JSON,
-          # and --argjson below would reject it. These issues accumulate a
-          # comment per run by design and GitHub pages at 30, so this breaks in
-          # normal use, not at some theoretical limit. Emit one object per line
-          # and slurp the lot into a single array instead.
-          comments_json=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${existing}/comments" \
-            --paginate --jq '.[] | {body: .body, at: .created_at}' | jq -s '.')
-          history=$(jq -n --argjson a "$body_json" --argjson b "$comments_json" '($a + $b)')
+          # VIA FILES, NEVER argv. Passing the history to jq with --argjson blew
+          # up on the first real run: `/usr/bin/jq: Argument list too long`,
+          # because issue 727 alone holds seventeen full reports and the whole
+          # lot went on the command line. It passed offline against a small
+          # fixture, which is exactly the shape of bug a fixture cannot catch.
+          #
+          # `gh api --paginate --jq` also emits one JSON document PER PAGE, so
+          # an array filter over two pages yields `[...][...]`, which is not
+          # valid JSON. Emitting one object per line sidesteps both problems:
+          # the pages concatenate cleanly and jq slurps them from a file.
+          history="${RUNNER_TEMP}/canary-history.json"
+          {
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${existing}" \
+              --jq '{body: .body, at: .created_at}'
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${existing}/comments" \
+              --paginate --jq '.[] | {body: .body, at: .created_at}'
+          } | jq -s '.' > "$history"
 
           last_fp=$(jq -r '
             map(select(.body != null and (.body | test("<!-- canary-fingerprint: "))))
             | last // {}
             | (.body // "" | [scan("<!-- canary-fingerprint: ([^ ]+) -->")] | last | .[0]? // "")
-          ' <<<"$history")
+          ' "$history")
           # Any canary utterance resets the heartbeat clock, report or heartbeat.
           last_said=$(jq -r '
             map(select(.body != null and (.body | test("<!-- canary-(fingerprint: |heartbeat)"))))
             | last // {} | .at // ""
-          ' <<<"$history")
+          ' "$history")
 
           if [ "$last_fp" != "$combined" ]; then
             gh issue comment "$existing" --body-file out/report.md

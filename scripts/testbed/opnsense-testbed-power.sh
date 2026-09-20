@@ -293,21 +293,47 @@ decode_qm_guest_exec() {
   fi
 }
 
-# acquire_lock serialises the lifecycle verbs against each other. Held for the
-# whole operation and released when the script exits, by the kernel, so a
-# crashed run cannot leave it stuck.
+# with_lock re-execs this script under flock(1) so the lifecycle verbs cannot
+# overlap. THREE ATTEMPTS AT THIS, and the first two both failed in ways worth
+# recording:
 #
-# `wait_seconds` of 0 means do not queue: that is what the down timer passes, so
-# a watchdog firing during an upgrade simply steps aside and tries again on its
-# next tick instead of piling up behind a twenty-minute update.
-acquire_lock() {
+# 1. `exec 9>lock; flock 9` held the lock on an inherited fd. `qm start` leaves
+#    a kvm process per guest that lives as long as the guest, and every one
+#    inherited fd 9 - so the lock stayed held for the entire time the lab was
+#    up and NOTHING could take it down again. Seen live 2026-09-20: lsof showed
+#    fd 9 on the lock file in five kvm processes hours after the script exited.
+#    `exec {var}>` was tested on this host and is inherited too; bash cannot
+#    mark a redirection close-on-exec.
+#
+# 2. A PID file fixed the inheritance but carried a TOCTOU window: two callers
+#    can both read the same stale PID, both delete it, and the second delete
+#    can remove a lock the first has just legitimately taken.
+#
+# 3. This. `flock --close` keeps the lock in the flock PROCESS and closes the
+#    descriptor before exec'ing the command, so no child - however long-lived -
+#    can inherit it. The kernel owns the mutual exclusion, and it is released
+#    when flock exits however the run ends, including a kill.
+#
+# -E 8 makes a conflict exit 8, which `down` reports rather than swallowing.
+#
+# The re-entry marker is an ARGV FLAG, not an environment variable. An earlier
+# version used OPNSENSE_TESTBED_LOCKED=1 in the environment, which anyone with a
+# shell could export once and then silently run every later invocation with no
+# lock at all - and nothing in the output would say so. A flag has to be passed
+# deliberately on each call, and it shows up in `ps`.
+#
+# This is a safety interlock, not a privilege boundary: every caller here is
+# already root, so someone determined to skip the lock can simply not use it.
+# What matters is that it cannot be disabled BY ACCIDENT, which the ambient
+# variable made easy.
+with_lock() {
   local wait_seconds=$1
+  shift
+  # Already inside the lock: run the verb directly rather than nesting.
+  [ "${LOCK_REENTERED:-0}" = 1 ] && return 0
   mkdir -p "$(dirname "$LOCK_FILE")"
-  exec 9>"$LOCK_FILE" || die "could not open the testbed lock"
-  if ! flock -w "$wait_seconds" 9; then
-    return 1
-  fi
-  return 0
+  exec flock --close --exclusive --wait "$wait_seconds" --conflict-exit-code 8 \
+    "$LOCK_FILE" "$0" --locked "$@"
 }
 
 cleanup_qm_guest_exec() {
@@ -880,7 +906,7 @@ cmd_update() {
   #
   # The lock is taken BEFORE the hold, so a `down` cannot read the hold as free
   # and then race this call into taking one.
-  acquire_lock 300 || die "another testbed operation is in progress — not updating"
+  with_lock 300 update
   ensure_hold "$(update_hold_seconds)"
 
   for id in "${PHASE1_VMS[@]}"; do
@@ -950,7 +976,9 @@ cmd_update() {
 
 cmd_up() {
   local hold_seconds=${1-}
-  acquire_lock 300 || die "another testbed operation is in progress — not raising the lab"
+  # Queue rather than refuse: a raise that loses a race to a finishing teardown
+  # should wait for it, not fail the run.
+  with_lock 300 up "$@"
   log "bringing the testbed up"
   for id in "${PHASE1_VMS[@]}"; do start_guest "$id"; done
   wait_ready
@@ -971,10 +999,16 @@ cmd_down() {
   # that blocks for twenty minutes behind a running update would pile up one
   # waiting instance per tick. Stepping aside costs nothing: the next firing
   # tries again, and the hold would have made it a no-op anyway.
-  if ! acquire_lock 0; then
-    log "another testbed operation is in progress — skipping shutdown"
-    return 0
-  fi
+  # DO NOT QUEUE, and EXIT 8 ON CONFLICT rather than 0. A `down` that stepped
+  # aside has NOT taken the lab down, and reporting that as success is how the
+  # first CI-driven run tore nothing down and said it had: the teardown step
+  # went green while six guests kept running.
+  #
+  # flock's -E 8 produces that exit directly. The watchdog timer tolerates it
+  # via SuccessExitStatus, because for a timer "busy, will retry in five
+  # minutes" really is fine; for a caller that asked for a teardown and needs to
+  # know whether it happened - CI above all - it stays a failure.
+  with_lock 0 down
   now=$(date +%s)
   if hold_is_live "$HOLD_FILE" "$now"; then
     expiry=$(head -n1 "$HOLD_FILE")
@@ -1031,7 +1065,9 @@ Usage: opnsense-testbed-power.sh <command>
                  log says which), 5 a rollback FAILED and the lab needs hands,
                  6 the update aborted early. Never 1 or 2, which belong to
                  apidrift's drift and probe-error verdicts.
-  down           Gracefully stop the testbed, unless a hold is active.
+  down           Gracefully stop the testbed, unless a hold is active. Exit 8
+                 means another operation held the lock so nothing was stopped -
+                 a retry, not a success.
   hold [seconds] Suppress the scheduled shutdown (default 8h). Auto-expires.
   release        Clear an active hold.
   status         Show hold state and every guest's power state.
@@ -1041,6 +1077,14 @@ Usage: opnsense-testbed-power.sh <command>
                  Push a file to an allowlisted container (VMs have no put route).
 EOF
 }
+
+# Strip the internal re-entry flag before dispatching. Set only by with_lock's
+# own re-exec, which is already inside flock.
+LOCK_REENTERED=0
+if [ "${1-}" = "--locked" ]; then
+  LOCK_REENTERED=1
+  shift
+fi
 
 case "${1-}" in
   up)      shift; cmd_up "${1-}" ;;
