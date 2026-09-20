@@ -123,6 +123,18 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Stamp the heading with what the box is ACTUALLY running, read off the box
+	// itself. An explicitly passed --generation still wins, so a caller can
+	// label a run this tool cannot work out for itself.
+	//
+	// Hardcoding the label, or leaving it off, is the failure this exists to
+	// prevent: the two lab profiles ran unlabelled for months and reported
+	// seventeen identical clean comments each while both boxes sat eight weeks
+	// stale, and nothing in the output could have revealed it (OPN-0107).
+	if generation == "" {
+		generation = p.fetchGeneration()
+	}
+
 	results := p.probeAll(schemas, exemptions)
 
 	// A box-wide outage is a probe problem, not API drift — fail loudly so the

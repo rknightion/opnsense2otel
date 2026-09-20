@@ -78,8 +78,14 @@ func codeList(names []string) string {
 // The support window is current + previous stable, so a key that is new on the
 // nightly box is NOT yet real for anyone on a release, and a key removed there
 // must still be tolerated while a release in the window sends it. Without the
-// stamp a reader cannot tell which of those they are looking at. Empty renders
-// the historical unlabelled heading.
+// stamp a reader cannot tell which of those they are looking at.
+//
+// main sets this from --generation when given and otherwise reads it off the
+// box (see generation.go), and a box that cannot be asked yields a loud
+// unknownGeneration label rather than nothing. So the CLI no longer emits the
+// unlabelled heading the empty branch below renders; it is kept because
+// renderReport is also called directly, and an empty label must degrade to a
+// heading rather than print a stray separator.
 var generation string
 
 func renderReport(results []probeResult, exempt map[string]string) string {
