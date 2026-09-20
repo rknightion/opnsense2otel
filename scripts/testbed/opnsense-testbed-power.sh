@@ -643,6 +643,67 @@ restart_address_dependent_services() {
              --state=loaded --no-legend --plain 2>/dev/null | awk '{print $1}')
 }
 
+# ensure_dhcp_sockets guarantees Kea is actually SERVING DHCP, not merely
+# running (OPN-0114).
+#
+# THE STATUS COMMAND LIES. `configctl kea status` reports "kea-dhcp[v4] is
+# running as pid N" by looking at the PROCESS, and says nothing about sockets.
+# A kea-dhcp4 that failed to bind every one of its addresses is still a live
+# process, so status reads healthy while the box answers no DHCP at all. This
+# check therefore asserts on SOCKSTAT, never on status.
+#
+# THE CAUSE, measured on both boxes: dnsmasq serves one test VLAN and, because
+# DHCP must receive broadcasts, its DHCP socket is ALWAYS the wildcard *:67 -
+# `bind-interfaces` is already set and governs only the DNS listener, so there
+# is no dnsmasq setting that avoids this. Kea binds per address. On FreeBSD the
+# two coexist happily when Kea binds FIRST, and Kea fails every bind when
+# dnsmasq gets there first:
+#   DHCPSRV_OPEN_SOCKET_FAIL ... address 172.16.9.1, port 67 ... Address already in use
+#   DHCP4_OPEN_SOCKETS_FAILED maximum number of open service sockets attempts: 5
+# Boot order decides which happens, which is why the traffgen's TESTLAN lease
+# was intermittent and why keaLeases coverage moved between runs for no reason
+# visible in the report.
+#
+# The repair is ordering, not configuration: stop dnsmasq, restart Kea so it
+# binds into a clear port, then start dnsmasq so its wildcard lands on top.
+# Verified live on guest 102 - three per-address binds plus dnsmasq's wildcard,
+# all present together.
+ensure_dhcp_sockets() {
+  local id bound
+  for id in "${PHASE1_VMS[@]}"; do
+    assert_allowed "$id"
+    bound=$(kea_socket_count "$id")
+    if [ "$bound" -gt 0 ]; then
+      log "vm $id kea holds $bound dhcp socket(s)"
+      continue
+    fi
+    log "vm $id kea bound NO dhcp sockets — restarting it ahead of dnsmasq"
+    guest_exec "$id" /bin/sh -c \
+      '/usr/local/sbin/configctl dnsmasq stop >/dev/null 2>&1; sleep 2; /usr/local/sbin/configctl kea restart >/dev/null 2>&1; sleep 8; /usr/local/sbin/configctl dnsmasq start >/dev/null 2>&1; sleep 3' \
+      >/dev/null 2>&1 || true
+    bound=$(kea_socket_count "$id")
+    if [ "$bound" -gt 0 ]; then
+      log "vm $id kea recovered with $bound dhcp socket(s)"
+    else
+      # Not fatal: the canary is still worth running, and every kea* path will
+      # report as unverified coverage rather than as drift. Failing the raise
+      # here would cost the whole run over one collector family.
+      log "WARNING: vm $id kea still holds no dhcp sockets — expect every kea lease and subnet path to read unverified" >&2
+    fi
+  done
+}
+
+# kea_socket_count prints how many UDP/67 sockets kea-dhcp4 actually holds.
+# Zero is the failure this whole function exists to detect, and it is invisible
+# to `configctl kea status`.
+kea_socket_count() {
+  local id=$1 out
+  assert_allowed "$id"
+  out=$(guest_exec "$id" /bin/sh -c "sockstat -4 -l | grep -c 'kea-dhcp4.*:67'" 2>/dev/null) || out=0
+  out=$(printf '%s' "$out" | tr -dc '0-9')
+  printf '%s' "${out:-0}"
+}
+
 # warm_firmware_check makes each firewall store an update check.
 #
 # WHY (found by the #625 acceptance test): OPNsense's firmware check result does
@@ -1054,8 +1115,16 @@ cmd_up() {
   log "bringing the testbed up"
   for id in "${PHASE1_VMS[@]}"; do start_guest "$id"; done
   wait_ready
-  # Phase 2 only after the firewalls serve, so every dependent guest finds a
-  # DHCP server and a default route on its first attempt.
+  # BEFORE phase 2, not after. settle_containers is the step that waits on the
+  # traffgen's leases, so a Kea with no sockets makes it burn its whole
+  # ADDRESS_TIMEOUT and then report the container unaddressed - which is the
+  # exact symptom this repair exists to remove. Repairing Kea afterwards fixes
+  # the firewall and leaves the container with no address, so the order here is
+  # the whole point of the step rather than a detail of it.
+  ensure_dhcp_sockets
+  # Phase 2 only after the firewalls serve AND can actually hand out a lease, so
+  # every dependent guest finds a DHCP server and a default route on its first
+  # attempt.
   for id in "${PHASE2_CTS[@]}"; do start_guest "$id"; done
   settle_containers
   warm_firmware_check
