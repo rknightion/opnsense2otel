@@ -1,10 +1,10 @@
 ---
 id: OPN-0113
 title: Decide per endpoint whether to prune the pre-26.7 legacy payload shims
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-20 11:18'
-updated_date: '2026-09-20 18:59'
+updated_date: '2026-09-20 19:56'
 labels:
   - canary
   - compatibility
@@ -26,15 +26,15 @@ So each entry is its own decision, weighed on what the shim actually costs: a le
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every one of the nine entries carries a recorded decision - prune or keep - justified against what the shim costs and what a box on the older shape would lose
-- [ ] #2 Any entry decided for pruning has both the struct field and its ledger entry removed in the same change, never the ledger entry alone
-- [ ] #3 A live canary run after the change reports no new missing paths on either profile
+- [x] #1 Every one of the nine entries carries a recorded decision - prune or keep - justified against what the shim costs and what a box on the older shape would lose
+- [x] #2 Any entry decided for pruning has both the struct field and its ledger entry removed in the same change, never the ledger entry alone
+- [x] #3 A live canary run after the change reports no new missing paths on either profile
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -75,4 +75,46 @@ WHAT THE MEASUREMENT FOUND THAT THE TASK DID NOT ASK ABOUT - three legacy fields
   - keaSubnets4 %interface feeds the `interface` LABEL on opnsense_kea_dhcp4_pool_size and its dhcp6 sibling (internal/collector/kea.go:262,274). Permanently empty for the same reason.
   - mbuf-max feeds opnsense_..._mbuf_max (internal/collector/mbuf.go:208). Permanently 0. Its own help text already warns "May read 0 on OPNsense >=26.1.11 ... that means no ceiling was reported, not a ceiling of zero" - a metric documenting its own uselessness rather than being removed.
 These are dashboard-visible, so removing a label or a metric breaks consumers. They are Rob's call, not a shim decision.
+
+DECISIONS RECORDED, all nine entries, Rob 2026-09-20. Two questions were put to him: what to do about the three legacy fields that were not inert, and how far the prune should go. He chose "remove all three" and "prune shims + delete the dead fields".
+
+PRUNED, field and ledger entry together (AC2):
+  idsSettings ids.general.ips           - collapsed ipsModeEnabled() to the mode selector alone. TestFetchIDS_LegacyIPSField and its fixture deleted; _Populated and _PassiveIDS already cover both branches, so no coverage was lost.
+  idsSettings ids.general.mode.*        - the REVERSE shim (tolerating mode being absent on <= 26.1). mode is present on both boxes, so enforcing it is now correct and even desirable: it will catch upstream removing it.
+  keaSubnets4 rows[].%interface         - and the label it fed. See BREAKING below.
+  memoryStatistics + systemMbuf jumbop-*  - four firstPresentInt resolvers collapsed to direct reads.
+  memoryStatistics + systemMbuf percentage, mbuf-and-cluster - decoded-only, zero consumers.
+  memoryStatistics + systemMbuf mbuf-max  - and the metric it fed. See BREAKING below.
+  ndpTable [].expire                    - decoded-only, never even copied into the public struct.
+  ndpTable [].type                      - and the label it fed. See BREAKING below.
+  pfStatisticsByInterface interfaces.*.interface - the json tag was a phantom: the field is overwritten from the MAP KEY two lines after decoding, so it is now json:"-". The label is unaffected.
+  protocolStatistics ecn ce/ect0/ect1-packets - three firstPresentNum resolvers collapsed.
+  protocolStatistics received-acks-for-unsent-data, syncache receivd-cookies/sent-cookies - decoded-only, zero consumers.
+  quaggaOspfNeighbors rows[].state, rows[].address - the new-vs-legacy coalescing block in frr.go deleted.
+  quaggaOspfNeighbors rows[].priority   - not a shim: BOTH spellings were dead.
+
+KEPT, one entry, and the measurement is what settled it rather than deferring it again:
+  pfStatsInfo current-entries.rate x2   - `rate` is ONE shared field on pfStatsCounterEntry. Gauges omit it (hence exactly two missingOK paths) but searches/inserts/removals still SEND it, measured on both boxes. Enforcing the key would be wrong; deleting the field trades two tolerated absences for extra-key warnings. The field went anyway because nothing read it, and the real keys are declared knownExtraPaths instead - which is the honest shape, not a shim.
+
+BREAKING, and Rob authorised each one. Three legacy fields were not inert:
+  opnsense_ndp_entries lost its `type` label
+  opnsense_kea_dhcp4_pool_size and its dhcp6 sibling lost their `interface` label
+  opnsense_mbuf_max is REMOVED, along with its dashboard series in grafana/tabs/system.py
+Anyone selecting on those labels was selecting on an empty string, and anyone graphing mbuf_max was graphing a constant 0 whose own help text explained that the value meant "no ceiling reported".
+
+A SECOND CANARY RUN WAS NEEDED, and the reason is worth keeping. Deleting a modelled field turns any key the box still sends into an UNEXPECTED key - the inverse of the missing-path problem this task is about. The first post-prune run (35532753994) reported 0 missing paths but three new extras: pfStatsInfo info.counters.*.rate and info.limit-counters.*.rate, because the six named table paths were enumerated and the two MAP-VALUED families were missed, and quaggaOspfNeighbors rows[].nbrPriority, because deleting the dead field left FRR's key unmodelled. Declared as knownExtraPaths in 955a418d; run 35533378902 then returned both profiles to exactly their pre-prune extra-key counts - 30 paths on nightly, 25 on release - with 0 missing paths, 0 breaking drift and 0 probe errors on both. Plan for that second run when pruning a modelled field.
+
+THE FIELDAUDIT ACCEPTANCE SLOT MOVED. cmd/fieldaudit's acceptanceFindings held exactly one entry, ndpEntry.Expire, described as the case a textual scan misses and therefore the proof that the analysis is type-aware rather than grepping. This change deletes that field, so the slot was repointed to interfaceConfigEntry.Device, which has the same property: ".Device" is read in roughly 160 places across opnsense/ and internal/ (NDPEntry.Device among them) while this one cannot be read by construction, because FetchInterfaceEnumeration hand-walks the raw JSON to preserve key order (#361) and never decodes into the type. Never empty that list and never replace its entry with a field whose name is unique.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All nine entries decided and eight pruned, with the struct field and the ledger entry removed together in every case. Measured first: 30 of the 31 legacy paths are absent on both boxes, read straight off the API's own producers rather than taken from the notes, which have been wrong twice this week.
+
+pfStatsInfo is the single keep, and it is now settled rather than deferred - `rate` is a shared field that gauges omit and counters still send, so neither enforcing the key nor deleting the field was a win. The field went because nothing read it; the keys are declared instead.
+
+The measurement also found what the task did not ask about: three of these legacy fields were feeding a permanently empty label or a permanently zero gauge. Rob authorised removing all three, so opnsense_ndp_entries and the Kea pool_size pair each lose a label and opnsense_mbuf_max is gone.
+
+Verified by two live canary runs, because deleting a modelled field converts keys the box still sends into unexpected ones. The second returned both profiles to their exact pre-prune extra-key counts with 0 missing paths, 0 breaking drift and 0 probe errors.
+<!-- SECTION:FINAL_SUMMARY:END -->
