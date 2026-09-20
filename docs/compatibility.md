@@ -132,12 +132,18 @@ here only so a payload diff against an older firewall does not read as a regress
 
 ## How drift is caught
 
-Two canaries run daily. The **API contract canary** diffs the exporter's endpoint set against the
-OPNsense source tree (both `master` and `stable`), catching renamed, removed and GET→POST-flipped
-endpoints before anyone's firewall upgrades into them. The **live schema canary** scrapes a real
-OPNsense devel box and validates the actual payload structure (key paths and JSON types) against
-the exporter's structs. That is what catches a field quietly changing type or vanishing from a
-response body.
+Two canaries, on different schedules and with different reach.
+
+The **API contract canary** runs daily against the OPNsense source tree (both `master` and
+`stable`), diffing the exporter's endpoint set to catch renamed, removed and GET→POST-flipped
+endpoints before anyone's firewall upgrades into them. It needs no hardware, so nothing stops it
+running every day.
+
+The **live schema canary** validates actual payload structure - key paths and JSON types - against
+the exporter's structs, which is what catches a field quietly changing type or vanishing from a
+response body. It probes the two lab firewalls named above, one on the development channel and one
+on the current stable release. It runs on demand rather than daily, because the lab is powered up
+for a run and shut down afterwards.
 
 Genuine drift lands as an `api-drift` issue on the repository. If you hit a payload problem the
 canaries have not already filed, open an issue with the release version and the raw API response.
