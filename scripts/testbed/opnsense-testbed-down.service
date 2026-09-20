@@ -1,5 +1,5 @@
 [Unit]
-Description=Take the OPNsense testbed guests down after the live canary (#625)
+Description=Take the OPNsense testbed guests down when no hold is live
 After=pve-guests.service
 
 [Service]

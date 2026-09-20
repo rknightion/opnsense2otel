@@ -384,16 +384,15 @@ class TestGuestRoutes(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
 
+class VerdictHelpers:
+    """Fixtures for the firmware-check verdict, shared by the classes below.
 
-class UpdateVerdict(unittest.TestCase):
-    """The firmware-check verdict (OPN-0108).
-
-    Shapes here are taken from real /tmp/pkg_upgrade.json files read off guests
-    102 and 106 on 2026-09-20, not invented: both boxes were 54-56 days stale
-    and reported base/kernel 26.7 -> 26.7.4 plus ~126 package upgrades.
+    Deliberately NOT a TestCase. The verdict classes used to borrow these by
+    subclassing UpdateVerdict, which also inherited its eight test methods and
+    re-ran them in every subclass - 67 reported runs for 43 distinct tests, and
+    a suite whose count went up when a class was added rather than a test. A
+    plain mixin gives the same helpers and inherits nothing else.
     """
 
     def verdict_for(self, payload) -> str:
@@ -424,6 +423,15 @@ class UpdateVerdict(unittest.TestCase):
         }
         base.update(overrides)
         return base
+
+
+class UpdateVerdict(VerdictHelpers, unittest.TestCase):
+    """The firmware-check verdict (OPN-0108).
+
+    Shapes here are taken from real /tmp/pkg_upgrade.json files read off guests
+    102 and 106 on 2026-09-20, not invented: both boxes were 54-56 days stale
+    and reported base/kernel 26.7 -> 26.7.4 plus ~126 package upgrades.
+    """
 
     def test_a_box_at_its_channel_head_is_current(self):
         self.assertEqual(self.verdict_for(self.healthy()), "current")
@@ -493,7 +501,7 @@ class UpdateVerdict(unittest.TestCase):
         self.assertNotEqual(decide("snapname", "102"), decide("snapname", "106"))
 
 
-class NeedsRebootIsNotCurrent(UpdateVerdict):
+class NeedsRebootIsNotCurrent(VerdictHelpers, unittest.TestCase):
     """A pending reboot means the box is still running the OLD base and kernel.
 
     Found by review before this shipped. `opnsense-update -bkp` installs base
@@ -524,7 +532,7 @@ class NeedsRebootIsNotCurrent(UpdateVerdict):
         self.assertEqual(self.verdict_for(payload), "current")
 
 
-class EmptyProbeResultIsUnusable(UpdateVerdict):
+class EmptyProbeResultIsUnusable(VerdictHelpers, unittest.TestCase):
     """probe_check empties its destination on every failure path.
 
     The destination is truncated before the guest is touched, and the guest's
@@ -571,7 +579,7 @@ class HoldExtension(unittest.TestCase):
         self.assertEqual(self.hold_state("1000000000", 2000000000), "free")
 
 
-class MalformedWorkListsAreUnusable(UpdateVerdict):
+class MalformedWorkListsAreUnusable(VerdictHelpers, unittest.TestCase):
     """Every road to "current" must be paved with fields we actually read.
 
     Found by review. A work key that is absent, or that is not the list it
@@ -604,3 +612,7 @@ class MalformedWorkListsAreUnusable(UpdateVerdict):
     def test_a_well_formed_empty_check_is_still_current(self):
         """The guard must not make every clean box unusable."""
         self.assertEqual(self.verdict_for(self.healthy()), "current")
+
+
+if __name__ == "__main__":
+    unittest.main()
