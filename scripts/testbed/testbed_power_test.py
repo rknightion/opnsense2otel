@@ -25,7 +25,12 @@ SCRIPT = Path(__file__).resolve().parent / "opnsense-testbed-power.sh"
 # in the file.
 PROD_GUESTS = ["100", "101", "103", "104", "107"]
 
-TESTBED_GUESTS = ["102", "105", "106", "110", "111", "112"]
+TESTBED_GUESTS = ["102", "105", "106"]
+# Retired from the lab by OPN-0110 but still DEFINED on oli, which is exactly
+# why they get their own list: "not in the allowlist" and "deliberately out of
+# reach" are different answers, and a guest that still exists is the one where
+# confusing them costs something.
+RETIRED_GUESTS = ["110", "111", "112"]
 
 
 def decide(*args: str) -> str:
@@ -72,6 +77,22 @@ class TestAllowlist(unittest.TestCase):
         for vmid in ["0", "99", "113", "999", ""]:
             self.assertEqual(decide("allowed", vmid), "no", f"vmid {vmid!r}")
 
+    def test_retired_guests_are_refused(self):
+        # These three ran in the lab until OPN-0110 and still exist on oli, so
+        # the allowlist is the only thing standing between a stale command line
+        # and a guest nobody meant to touch.
+        for vmid in RETIRED_GUESTS:
+            self.assertEqual(decide("allowed", vmid), "no", f"vmid {vmid}")
+
+    def test_retired_guests_are_refused_by_name(self):
+        # A retired id must not fall through to the generic allowlist refusal:
+        # the caller is usually running an older command, not making a typo,
+        # and the message is what tells them which it was.
+        for vmid in RETIRED_GUESTS:
+            result = run_script("exec", vmid, "--", "true")
+            self.assertNotEqual(result.returncode, 0, f"vmid {vmid}")
+            self.assertIn("retired from the lab by OPN-0110", result.stderr)
+
     def test_substring_ids_do_not_match(self):
         # A naive `case`/grep allowlist matches "10" inside "102" or "1020"
         # inside "102". Both would be catastrophic in opposite directions.
@@ -87,7 +108,7 @@ class TestOrdering(unittest.TestCase):
         # route and resolve through them, so starting a client first means it
         # boots with no lease and the canary reads an empty box.
         for firewall in ("102", "106"):
-            for dependent in ("105", "110", "111", "112"):
+            for dependent in ("105",):
                 self.assertLess(
                     order.index(firewall),
                     order.index(dependent),
@@ -102,7 +123,7 @@ class TestOrdering(unittest.TestCase):
     def test_down_stops_dependents_before_firewalls(self):
         order = decide("order", "down").split()
         for firewall in ("102", "106"):
-            for dependent in ("105", "110", "111", "112"):
+            for dependent in ("105",):
                 self.assertLess(
                     order.index(dependent),
                     order.index(firewall),
@@ -215,7 +236,7 @@ class TestGuestRoutes(unittest.TestCase):
             )
             result = run_script(
                 "exec",
-                "110",
+                "102",
                 "--",
                 "uname",
                 "-a",
@@ -233,7 +254,7 @@ class TestGuestRoutes(unittest.TestCase):
                 [
                     "guest",
                     "exec",
-                    "110",
+                    "102",
                     "--timeout",
                     "300",
                     "--",

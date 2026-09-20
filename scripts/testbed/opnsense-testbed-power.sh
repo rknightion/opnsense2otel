@@ -43,8 +43,27 @@ set -euo pipefail
 # from `qm list` or an argument.
 # ---------------------------------------------------------------------------
 PHASE1_VMS=(102 106)            # firewalls: nightly, release
-PHASE2_VMS=(110 111 112)        # FRR/PD peer, release client, nightly client
-PHASE2_CTS=(105)                # traffgen LXC
+PHASE2_CTS=(105)                # traffgen LXC, multi-homed onto both firewalls
+
+# RETIRED BY OPN-0110 and deliberately NOT an allowlist entry. 110 was the
+# nightly FRR/PD peer, 111 the release client, 112 the nightly client. The lab
+# was two parallel stacks because the canary probed both targets as a matrix;
+# it now runs the profiles sequentially against the one traffgen container, so
+# the second client of each pair had nothing left to do. Retiring them frees 6
+# cores, 8.5 GB RAM and 34.4 GB of disk.
+#
+# The ids live here rather than in a comment so that re-adding one is a
+# deliberate edit to the allowlist and not a plausible-looking line in a list
+# that already mentions them. is_allowed does NOT read this array: while these
+# ids are here, the script refuses to touch those guests at all, which is the
+# point - they stay DEFINED and STOPPED on oli until Rob confirms deletion
+# separately, and a script that could still stop them could still start them.
+#
+# What was lost is recorded where it can be read from a run rather than from
+# this comment: the affected coverage entries in
+# opnsense/testdata/schemas/coverage.json carry a RETIRED note, so the canary
+# names each one in its report instead of reading clean.
+RETIRED_VMS=(110 111 112)
 
 # Readiness gate. oli reaches both boxes' webConfigurator from its 10.0.0.6 LAN
 # address (the MGMT_SRC alias covers 10.0.0.0/24), verified 200 on both.
@@ -68,6 +87,20 @@ GUEST_EXEC_TIMEOUT=300          # qm guest-agent command timeout
 # lease there is not required and not waited for.
 CT_REQUIRED_IFACES=(eth0 eth1)
 
+# Both firewalls' TESTLAN addresses. 102 and 106 each put an UNTAGGED interface
+# on vmbr9, so TESTLAN is ONE broadcast domain shared by both boxes rather than
+# a segment per firewall - which is what makes a single traffgen container able
+# to serve both profiles, and why OPN-0110 could retire the second client
+# instead of re-homing it.
+#
+# The gate below asserts 105 can actually reach both. Holding a lease on eth0
+# is NOT the same claim: a lease proves Kea answered, and the canary's failure
+# mode here is the box being up and unreachable, which reads as an empty table
+# rather than an error. Since the profiles now run one after the other against
+# this one container, an unreachable firewall would let the FIRST profile probe
+# happily and silently hollow out the second.
+FIREWALL_TESTLAN_ADDRS=(172.16.9.1 172.16.9.2)
+
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
@@ -82,7 +115,20 @@ die() { log "ERROR: $*" >&2; exit 1; }
 # "1020" must not be mistaken for 102.
 is_allowed() {
   local candidate=${1-} id
-  for id in "${PHASE1_VMS[@]}" "${PHASE2_VMS[@]}" "${PHASE2_CTS[@]}"; do
+  for id in "${PHASE1_VMS[@]}" "${PHASE2_CTS[@]}"; do
+    [ "$candidate" = "$id" ] && return 0
+  done
+  return 1
+}
+
+# is_retired exits 0 for a guest OPN-0110 took out of the lab. Purely so the
+# refusal can say WHICH kind of no it is: a retired id is a guest that still
+# exists on oli and that this script must not touch, which is a different
+# situation from a typo or from guest 100, and a caller that hits it is usually
+# running an older command line rather than making a mistake.
+is_retired() {
+  local candidate=${1-} id
+  for id in "${RETIRED_VMS[@]}"; do
     [ "$candidate" = "$id" ] && return 0
   done
   return 1
@@ -91,7 +137,7 @@ is_allowed() {
 # guest_order prints the ids for a direction, in the order they must be acted
 # on. down is the exact reverse of up.
 guest_order() {
-  local direction=$1 up=("${PHASE1_VMS[@]}" "${PHASE2_CTS[@]}" "${PHASE2_VMS[@]}")
+  local direction=$1 up=("${PHASE1_VMS[@]}" "${PHASE2_CTS[@]}")
   case "$direction" in
     up) printf '%s\n' "${up[@]}" ;;
     down)
@@ -245,7 +291,11 @@ fi
 # ---------------------------------------------------------------------------
 
 assert_allowed() {
-  is_allowed "$1" || die "refusing to touch guest $1 — not in the testbed allowlist"
+  is_allowed "$1" && return 0
+  if is_retired "$1"; then
+    die "refusing to touch guest $1 — retired from the lab by OPN-0110 (it is still defined on oli, and deliberately out of reach here)"
+  fi
+  die "refusing to touch guest $1 — not in the testbed allowlist"
 }
 
 # guest_kind resolves vm-vs-container from the hardcoded lists, NOT by probing
@@ -539,7 +589,29 @@ settle_containers() {
         log "ERROR: ct $id $iface still has no address — the traffgen is not feeding the box" >&2
       fi
     done
+    assert_client_reaches_firewalls "$id"
     restart_address_dependent_services "$id"
+  done
+}
+
+# assert_client_reaches_firewalls proves the shared traffgen can talk to BOTH
+# boxes before either profile is probed (OPN-0110 AC2).
+#
+# This is a hard failure, not a warning. The whole consolidation rests on one
+# container serving two firewalls in sequence, so a container that reaches only
+# one of them produces a full clean report for the profile it can reach and a
+# hollow one for the profile it cannot - and a hollow report is the single
+# outcome this canary must never produce quietly, because "no rows" and "the
+# field was removed upstream" look identical downstream.
+assert_client_reaches_firewalls() {
+  local id=$1 addr
+  assert_allowed "$id"
+  for addr in "${FIREWALL_TESTLAN_ADDRS[@]}"; do
+    if pct exec "$id" -- ping -c 2 -W 2 "$addr" >/dev/null 2>&1; then
+      log "ct $id reaches firewall $addr on TESTLAN"
+    else
+      die "ct $id cannot reach firewall $addr on TESTLAN — the shared traffgen feeds both profiles, so probing now would report one of them as empty rather than as broken"
+    fi
   done
 }
 
@@ -984,7 +1056,7 @@ cmd_up() {
   wait_ready
   # Phase 2 only after the firewalls serve, so every dependent guest finds a
   # DHCP server and a default route on its first attempt.
-  for id in "${PHASE2_CTS[@]}" "${PHASE2_VMS[@]}"; do start_guest "$id"; done
+  for id in "${PHASE2_CTS[@]}"; do start_guest "$id"; done
   settle_containers
   warm_firmware_check
   if [ -n "$hold_seconds" ]; then
