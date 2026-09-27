@@ -14,7 +14,7 @@ jobs:
   # `notices` job (and ci.yml's docker-build) use — the Dockerfile has no
   # default of its own to silently diverge from that pin.
   go-licenses-pin:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       version: ${{ steps.pin.outputs.version }}
       module: ${{ steps.pin.outputs.module }}
@@ -57,7 +57,7 @@ jobs:
       helm-chart-path: ${{ inputs.release_tag != '' && 'charts/opnsense2otel' || '' }}
   notices:
     if: inputs.release_tag != ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
