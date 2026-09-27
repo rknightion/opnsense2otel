@@ -21,7 +21,7 @@ jobs:
 
   build-test:
     name: Build & test
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,7 +43,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,7 +65,7 @@ jobs:
 
   fuzz-smoke:
     name: Fuzz smoke (${{ matrix.name }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     strategy:
       fail-fast: false
@@ -114,7 +114,7 @@ jobs:
 
   docs:
     name: Generated docs up-to-date
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,7 +133,7 @@ jobs:
 
   deployment-contracts:
     name: Executable deployment contracts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -162,7 +162,7 @@ jobs:
 
   grafana:
     name: Grafana artifacts up-to-date
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -190,7 +190,7 @@ jobs:
         run: just grafana-check
 
   docker-build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -381,7 +381,7 @@ jobs:
   # the GitHub context, so the account token is the only Codacy input needed.
   coverage:
     name: Coverage to Codacy
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     env:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
@@ -434,7 +434,7 @@ jobs:
 
   goreleaser-snapshot:
     name: GoReleaser snapshot
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -478,7 +478,7 @@ jobs:
   # automerge waits for this to go green. NOTE: `coverage` is intentionally absent from `needs`.
   ci-success:
     name: ci-success
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: always()
     needs: [repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate]
     steps:

@@ -34,7 +34,7 @@ jobs:
   # rebuild and republish :main on the previous month's files, which costs a
   # pointless image push and, worse, makes the refresh look like it worked.
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       available: ${{ steps.probe.outputs.available }}
       month: ${{ steps.probe.outputs.month }}
