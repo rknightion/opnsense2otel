@@ -99,3 +99,6 @@ docs/fonts/
 # load-bearing regardless of which harness runs the wave: codex-sync.sh mirrors
 # run artefacts between machines by matching this exact directory name.
 codex/
+
+# loop-pi (pi-subagents writes .pi/subagents/)
+.pi/
