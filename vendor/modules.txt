@@ -66,8 +66,8 @@ github.com/munnerz/goautoneg
 # github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 ## explicit
 github.com/mwitkow/go-conntrack
-# github.com/oschwald/maxminddb-golang/v2 v2.6.0
-## explicit; go 1.25.0
+# github.com/oschwald/maxminddb-golang/v2 v2.7.0
+## explicit; go 1.26.0
 github.com/oschwald/maxminddb-golang/v2
 github.com/oschwald/maxminddb-golang/v2/internal/decoder
 github.com/oschwald/maxminddb-golang/v2/internal/maxminddbtag
