@@ -19,7 +19,7 @@ Narrow the suite with the filter argument: `just test TestFetchGateways`.
 
 ## Tracker
 
-Tasks are `OPN-NNNN` in `backlog/`. Read the **Agent fan-out protocol (canonical)** doc before
+Tasks are `OPN-NNNN` in `backlog/`. Read `~/repos/agent-docs/sources/loop/planner.md` before
 designing a wave, and the **Wave operating model** doc for this project's own rules, exclusive
 resources and recurring defects.
 

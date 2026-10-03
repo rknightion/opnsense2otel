@@ -8,7 +8,7 @@ updated_date: '2026-09-20 10:49'
 This document carries **only what is specific to opnsense2otel**. The campaign model itself — run
 modes, the routing contract, authority and the thread pool, child lane briefs, external-contract
 freezing, the unattended blocker contract, the goal-file template, the pre-flight checklist — lives
-in the *Agent fan-out protocol (canonical)* doc and is not repeated here. If something below could be
+in `~/repos/agent-docs/sources/loop/contract.md` and `~/repos/agent-docs/sources/loop/planner.md` and is not repeated here. If something below could be
 pasted into another repo unchanged, it is in the wrong document.
 
 ## Run-end against this tracker
