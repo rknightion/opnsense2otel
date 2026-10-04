@@ -36,18 +36,6 @@ the board, not the issue, is where it is worked.
 
 Tracker traps:
 
-- **Never `--notes` or `--plan` bare.** They *silently replace* the whole section and exit 0,
-  destroying another session's writes. Use `--append-notes` and `--append-plan`. A `PreToolUse` hook
-  denies the bare form, so a block there is the guard working, not a broken harness; `task create` is
-  exempt because a new task has no section to overwrite.
-- Break an HTML-comment section marker by hand-editing task markdown and the section is silently
-  dropped, still in the file but invisible until the next write destroys it. There is no repair
-  command - `backlog doctor` only fixes duplicate task IDs. `backlog/config.yml` is the one file
-  edited by hand.
-- **Finalize in a single call** so an interrupted session cannot leave finished work looking
-  unfinished: `backlog task edit OPN-0007 --check-ac 1 --check-ac 2 -s Done`.
-- **Never let two agents edit the same task.** The v1.50.x concurrency fix covers the `task edit`
-  funnel only - not reorder, draft saves, the TUI path, `doc update` or decision updates.
 - **Do not build on `backlog decision` or the MCP server.** Decisions are half-built upstream (no
   edit, no view, no supersede) and the MCP server costs 10-50k tokens of permanent context against
   1-2k for the CLI. Durable reference goes in **docs**; tasks are the unit of work.
