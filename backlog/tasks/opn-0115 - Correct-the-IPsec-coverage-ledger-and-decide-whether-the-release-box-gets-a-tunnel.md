@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-20 18:43'
+updated_date: '2026-10-08 21:21'
 labels:
   - testbed
   - canary
@@ -32,3 +33,9 @@ Note the nightly tunnel is established by the container, so it comes back when 1
 - [ ] #1 just check
 - [ ] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Part 1 done: the nine ipsec exercise texts in coverage.json now describe the real road-warrior tunnel (traffgen container -> devel firewall) and state that the release profile is unobtainable by construction. Part 2 (give the release box its own tunnel) remains an open decision for Rob.
+<!-- SECTION:NOTES:END -->
