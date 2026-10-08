@@ -9944,7 +9944,7 @@
                         "name": "${datasource}"
                       },
                       "spec": {
-                        "expr": "max without (job, service_instance_id, service_name, service_version) (histogram_quantile(0.95, sum by (opnsense_instance, le, endpoint) (rate(opnsense_exporter_api_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))))",
+                        "expr": "max without (job, service_instance_id, service_name, service_version) (histogram_quantile(0.95, sum by (opnsense_instance, le, endpoint) (rate(opnsense_exporter_api_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))) or histogram_quantile(0.95, sum by (opnsense_instance, endpoint) (rate(opnsense_exporter_api_request_duration_seconds{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))))",
                         "refId": "A",
                         "legendFormat": "{{endpoint}}",
                         "instant": false,
@@ -10031,7 +10031,7 @@
                         "name": "${datasource}"
                       },
                       "spec": {
-                        "expr": "max without (job, service_instance_id, service_name, service_version) (sum by (opnsense_instance, le, endpoint) (rate(opnsense_exporter_api_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval])))",
+                        "expr": "max without (job, service_instance_id, service_name, service_version) (sum by (opnsense_instance, le, endpoint) (rate(opnsense_exporter_api_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval])) or on (opnsense_instance, endpoint) sum by (opnsense_instance, endpoint) (rate(opnsense_exporter_api_request_duration_seconds{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval])))",
                         "refId": "A",
                         "instant": false,
                         "range": true,
@@ -11123,7 +11123,7 @@
                         "name": "${datasource}"
                       },
                       "spec": {
-                        "expr": "max without (job, service_instance_id, service_name, service_version) (histogram_quantile(0.95, sum by (opnsense_instance, le, status) (rate(opnsense_exporter_server_metrics_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))))",
+                        "expr": "max without (job, service_instance_id, service_name, service_version) (histogram_quantile(0.95, sum by (opnsense_instance, le, status) (rate(opnsense_exporter_server_metrics_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))) or histogram_quantile(0.95, sum by (opnsense_instance, status) (rate(opnsense_exporter_server_metrics_request_duration_seconds{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))))",
                         "refId": "A",
                         "legendFormat": "{{status}}",
                         "instant": false,
@@ -11210,7 +11210,7 @@
                         "name": "${datasource}"
                       },
                       "spec": {
-                        "expr": "max without (job, service_instance_id, service_name, service_version) (sum by (opnsense_instance, le, status) (rate(opnsense_exporter_server_metrics_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval])))",
+                        "expr": "max without (job, service_instance_id, service_name, service_version) (sum by (opnsense_instance, le, status) (rate(opnsense_exporter_server_metrics_request_duration_seconds_bucket{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval])) or on (opnsense_instance, status) sum by (opnsense_instance, status) (rate(opnsense_exporter_server_metrics_request_duration_seconds{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval])))",
                         "refId": "A",
                         "instant": false,
                         "range": true,

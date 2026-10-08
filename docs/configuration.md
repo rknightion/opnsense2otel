@@ -275,6 +275,21 @@ flags take precedence over those env vars.
 is rejected at startup rather than defaulted), so the exporter passes both explicitly
 and those two env vars never apply - set the flags instead.
 
+**Histograms are exported as native (base2 exponential) histograms over OTLP.** The
+two latency histograms the exporter observes itself,
+`opnsense_exporter_api_request_duration_seconds` and
+`opnsense_exporter_server_metrics_request_duration_seconds`, keep their classic
+buckets on `/metrics` and also carry native buckets (schema 3, at most 160 buckets,
+reset at most hourly). The OTLP bridge sends the native form: one series per label
+set instead of one per bucket plus `_sum` and `_count`. Query it by its bare name,
+for example `histogram_quantile(0.95, sum by (endpoint) (rate(opnsense_exporter_api_request_duration_seconds[5m])))`;
+the shipped dashboards accept either form. This is fixed, not configurable, and
+`OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION` has no effect on it: that
+variable selects the aggregation for OTel SDK instruments, and these are Prometheus
+client histograms bridged as already-aggregated data. The unbound recursion-time and
+flow source-byte delta-ratio histograms stay classic over OTLP too, because they are
+built from pre-bucketed data whose bucket bounds are the data.
+
 <!-- docgen:begin:flags-otlp -->
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|

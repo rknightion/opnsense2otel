@@ -1171,14 +1171,21 @@ def build_diagnostics(b: Builder):
     # same argument grp() makes for the by-clause). Two call sites had opted out;
     # this is one, `server_p95` below is the other.
     api_p95_buckets = sel("opnsense_exporter_api_request_duration_seconds_bucket")
+    # OPN-0118: the exporter emits a dual histogram. A Prometheus scrape of /metrics
+    # stores the classic _bucket series; the OTLP push stores one native histogram
+    # under the bare name. Each query takes whichever form the datasource holds.
+    api_p95_native = sel("opnsense_exporter_api_request_duration_seconds")
     api_p95 = b.ts("API Request p95 Latency (by endpoint)",
                    [(f'histogram_quantile(0.95, sum {grp("le", "endpoint")} '
-                     f'(rate({api_p95_buckets}[{RATE}])))', "{{endpoint}}")],
+                     f'(rate({api_p95_buckets}[{RATE}]))) or '
+                     f'histogram_quantile(0.95, sum {grp("endpoint")} '
+                     f'(rate({api_p95_native}[{RATE}])))', "{{endpoint}}")],
                    unit="s", w=12, h=7,
                    desc="p95 of opnsense_exporter_api_request_duration_seconds by endpoint.")
     api_latency_heatmap = b.heatmap(
         "API Request Latency Distribution",
-        f'sum {grp("le", "endpoint")} (rate({api_p95_buckets}[{RATE}]))',
+        f'sum {grp("le", "endpoint")} (rate({api_p95_buckets}[{RATE}])) '
+        f'or on (opnsense_instance, endpoint) sum {grp("endpoint")} (rate({api_p95_native}[{RATE}]))',
         unit="s", w=12, h=8,
         desc="Full request-latency histogram by endpoint. This keeps the distribution visible "
              "beside p95 so a broad slowdown and a narrow tail are not mistaken for one another.")
@@ -1334,10 +1341,14 @@ def build_diagnostics(b: Builder):
     # Through sel() rather than a hand-written matcher — see api_p95 above (#591 6b).
     server_p95_buckets = sel(
         "opnsense_exporter_server_metrics_request_duration_seconds_bucket")
+    # Classic-or-native, as api_p95 above (OPN-0118).
+    server_p95_native = sel("opnsense_exporter_server_metrics_request_duration_seconds")
     server_p95 = b.ts(
         "Metrics Handler Request p95 Latency (by status)",
         [(f'histogram_quantile(0.95, sum {grp("le", "status")} '
-          f'(rate({server_p95_buckets}[{RATE}])))', "{{status}}")],
+          f'(rate({server_p95_buckets}[{RATE}]))) or '
+          f'histogram_quantile(0.95, sum {grp("status")} '
+          f'(rate({server_p95_native}[{RATE}])))', "{{status}}")],
         unit="s", w=6, h=6,
         desc="p95 of opnsense_exporter_server_metrics_request_duration_seconds, timed from "
              "admission to response completion, by outcome status. Excludes requests the "
@@ -1345,7 +1356,8 @@ def build_diagnostics(b: Builder):
              "timing) - a rejection shows up on the Rejections panel instead.")
     server_latency_heatmap = b.heatmap(
         "Metrics Handler Latency Distribution",
-        f'sum {grp("le", "status")} (rate({server_p95_buckets}[{RATE}]))',
+        f'sum {grp("le", "status")} (rate({server_p95_buckets}[{RATE}])) '
+        f'or on (opnsense_instance, status) sum {grp("status")} (rate({server_p95_native}[{RATE}]))',
         unit="s", w=12, h=8,
         desc="Full request-duration histogram by response status, complementing the p95 panel "
              "with the shape and density of the serving-path latency distribution.")

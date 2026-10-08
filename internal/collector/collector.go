@@ -1492,6 +1492,13 @@ func New(client *opnsense.Client, log *slog.Logger, instanceName string, options
 		Name:      "exporter_api_request_duration_seconds",
 		Help:      "Duration of individual OPNsense API requests in seconds, by endpoint (api/* path). Lets operators see which underlying endpoint call regressed when a collector's scheduled poll duration spikes.",
 		Buckets:   []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15},
+		// Dual histogram (OPN-0118): the classic buckets keep the text /metrics output
+		// unchanged, while the native buckets make the OTLP bridge emit one base2
+		// exponential histogram per endpoint instead of 14 series (11 buckets, +Inf,
+		// _sum, _count). See nativeHistogramOpts.
+		NativeHistogramBucketFactor:     nativeHistogramBucketFactor,
+		NativeHistogramMaxBucketNumber:  nativeHistogramMaxBucketNumber,
+		NativeHistogramMinResetDuration: nativeHistogramMinResetDuration,
 	}, []string{"endpoint", "opnsense_instance"})
 
 	c.apiCacheHits = *prometheus.NewCounterVec(prometheus.CounterOpts{

@@ -116,6 +116,12 @@ func newHandlerMetrics(reg prometheus.Registerer) *handlerMetrics {
 				"do enough work to be worth timing and would otherwise dilute the distribution with " +
 				"near-zero samples.",
 			Buckets: prometheus.DefBuckets,
+			// Dual histogram, same settings as the collector's API request histogram
+			// (internal/collector/native_histogram.go, OPN-0118): classic buckets for
+			// /metrics, a base2 exponential histogram on the OTLP bridge.
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  160,
+			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"status"}),
 		requestsRejected: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: metricNameRequestsRejectedTotal,
