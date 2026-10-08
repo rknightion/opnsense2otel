@@ -132,6 +132,6 @@ jobs:
     uses: rknightion/.github/.github/workflows/binaries.yml@c36bf7ded21407b0a5169ecb2502d6a3a385be30 # v1.25.5
     with:
       release-tag: ${{ needs.rc.outputs.tag }}
-      go-version: "1.27.0"
+      go-version: "1.27.1"
       install-cosign: true
       pre-cmd: "go install github.com/anchore/syft/cmd/syft@v1.54.1" # archive SBOMs

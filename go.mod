@@ -1,6 +1,6 @@
 module github.com/rknightion/opnsense2otel/v5
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0

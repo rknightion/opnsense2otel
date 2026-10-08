@@ -1,0 +1,5 @@
+# actionlint 1.7.12 predates the ubuntu-26.04 hosted image and rejects the label.
+# Drop this once the pinned actionlint knows it.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
