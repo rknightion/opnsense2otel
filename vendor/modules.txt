@@ -49,11 +49,12 @@ github.com/grpc-ecosystem/grpc-gateway/v2/utilities
 # github.com/jpillora/backoff v1.0.0
 ## explicit; go 1.13
 github.com/jpillora/backoff
-# github.com/klauspost/compress v1.19.1
-## explicit; go 1.24
+# github.com/klauspost/compress v1.20.1
+## explicit; go 1.25
 github.com/klauspost/compress/flate
 github.com/klauspost/compress/gzip
 github.com/klauspost/compress/internal/le
+github.com/klauspost/compress/internal/regmask
 # github.com/mdlayher/socket v0.6.0
 ## explicit; go 1.25.0
 github.com/mdlayher/socket
@@ -72,8 +73,8 @@ github.com/oschwald/maxminddb-golang/v2
 github.com/oschwald/maxminddb-golang/v2/internal/decoder
 github.com/oschwald/maxminddb-golang/v2/internal/maxminddbtag
 github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors
-# github.com/prometheus/client_golang v1.24.1
-## explicit; go 1.25.0
+# github.com/prometheus/client_golang v1.25.0
+## explicit; go 1.26.0
 github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
 github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil/header
 github.com/prometheus/client_golang/prometheus
