@@ -1,7 +1,7 @@
 # Digest-pinned builder (matches the pinned distroless runtime below) so a mutable-tag
 # push can't slip an unreviewed builder image into a release build (#148). Digest is the
 # multi-arch index for golang:1.27.0-alpine; Renovate keeps it fresh (pinDigests, renovate.json).
-FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
+FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS build
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -64,7 +64,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # one and TestBundledPathsAreStable / TestGeoIPFlagDefaultsPointAtTheBundledDatabases
 # fail, which is the point: an image whose databases nothing opens looks exactly
 # like a firewall with nothing to report.
-FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS geoip
+FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS geoip
 
 # Empty = "the current UTC year-month, falling back to the previous one". Set it
 # (e.g. --build-arg DBIP_MONTH=2026-07) to pin a reproducible build to a known file.
