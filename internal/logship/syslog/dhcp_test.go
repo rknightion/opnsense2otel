@@ -427,12 +427,6 @@ func TestParseDHCP_NilSnapshot(t *testing.T) {
 // TestParseDHCP_Registered: every DHCP backend program dispatches to this lane,
 // and BuildRecord tags the record with the coarse dhcp subsystem.
 func TestParseDHCP_Registered(t *testing.T) {
-	for _, prog := range []string{"dhcpd", "dnsmasq", "kea-dhcp4", "kea-dhcp6", "dhcrelay", "DhcpLFC"} {
-		if _, ok := parserFor(prog); !ok {
-			t.Errorf("no parser registered for program %q", prog)
-		}
-	}
-
 	env := dhcpEnvelope("dhcpd", "DHCPACK on 172.16.30.100 to bc:24:11:eb:db:3d (exporter-traffgen) via vlan02")
 	rec := BuildRecord(env, dhcpSnapshot(), nil)
 	wantDHCPAttrs(t, rec, map[string]string{

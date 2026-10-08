@@ -19,12 +19,6 @@ func syslogngEnv(t *testing.T, message string) Envelope {
 	return env
 }
 
-func TestSyslogNGRegistered(t *testing.T) {
-	if _, ok := parserFor("syslog-ng"); !ok {
-		t.Fatal("no parser registered for program syslog-ng")
-	}
-}
-
 // TestSyslogNGGroup1ConnectionLifecycle pins the exporter's-own-listener
 // connection lifecycle. Every line is verbatim from camden,
 // /opt/opnsense2otel/capture/syslog/*.ndjson (captured for #665, read

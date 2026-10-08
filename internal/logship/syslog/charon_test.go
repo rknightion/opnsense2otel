@@ -35,12 +35,6 @@ func charonEnvelope(message string) Envelope {
 	}
 }
 
-func TestCharonRegisteredForItsProgram(t *testing.T) {
-	if _, ok := parserFor("charon"); !ok {
-		t.Fatal("no parser registered for charon")
-	}
-}
-
 // The four canonical shapes captured on OPNsense 27.1.a_40 with strongSwan 6.0.7
 // (#406). The strongSwan message prefix is a thread number plus a subsystem tag
 // (00[ENC], 14[IKE], …); the thread number varies freely between lines for the

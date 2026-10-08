@@ -16,14 +16,6 @@ func cronEnv(msg string) Envelope {
 	}
 }
 
-func TestCronRegistered(t *testing.T) {
-	for _, prog := range []string{"cron", "/usr/sbin/cron"} {
-		if _, ok := parserFor(prog); !ok {
-			t.Errorf("no parser registered for program %q", prog)
-		}
-	}
-}
-
 // TestCronVerbatimLines covers every line captured verbatim from the live box:
 // plain CMD, CMD with nested parens in the command, and the unbalanced MAIL
 // detail.

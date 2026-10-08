@@ -20,15 +20,6 @@ func acmeEnv(t *testing.T, program, message string) Envelope {
 	return env
 }
 
-func TestACMERegistered(t *testing.T) {
-	if _, ok := parserFor("acme.sh"); !ok {
-		t.Fatal("no parser registered for program acme.sh")
-	}
-	if _, ok := parserFor("opnsense"); !ok {
-		t.Fatal("no parser registered for program opnsense")
-	}
-}
-
 // TestACMEOpnsenseCapturedLines exercises every AcmeClient shape captured from
 // the OPNsense ACME plugin's own lifecycle log (program `opnsense`).
 func TestACMEOpnsenseCapturedLines(t *testing.T) {

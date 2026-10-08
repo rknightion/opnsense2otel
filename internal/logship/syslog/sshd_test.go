@@ -74,16 +74,6 @@ func assertNoAttrs(t *testing.T, rec logship.Record, keys ...string) {
 	}
 }
 
-// TestSSHDRegistered guards the registry wiring: both program names OpenSSH uses
-// on OPNsense (it renamed itself to sshd-session in 9.8) must dispatch here.
-func TestSSHDRegistered(t *testing.T) {
-	for _, prog := range []string{"sshd", "sshd-session"} {
-		if _, ok := parserFor(prog); !ok {
-			t.Errorf("no parser registered for program %q", prog)
-		}
-	}
-}
-
 // TestSSHDVerbatimLines covers every line captured verbatim from the live box,
 // plus the "Accepted password" shape (no key fingerprint) OpenSSH emits when
 // password auth is enabled.

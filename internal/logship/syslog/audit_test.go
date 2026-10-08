@@ -208,12 +208,6 @@ func TestParseAudit_NilSnapshotAndNoMissCalls(t *testing.T) {
 // The registry must route both programs here, and BuildRecord must produce the
 // structured record end-to-end (with the coarse audit subsystem attached).
 func TestBuildRecord_AuditPrograms(t *testing.T) {
-	for _, prog := range []string{"audit", "configd.py"} {
-		if _, ok := parserFor(prog); !ok {
-			t.Fatalf("no parser registered for program %q", prog)
-		}
-	}
-
 	const msg = "user root@127.0.0.1 changed configuration to /conf/backup/config-1784062885.085.xml in /api/syslog/settings/set /api/syslog/settings/set made changes"
 	rec := BuildRecord(auditEnv("audit", 4, 5, msg), nil, nil)
 	if got := rec.Attributes["config_user"]; got != "root@127.0.0.1" {

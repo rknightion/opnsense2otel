@@ -13,8 +13,8 @@ a partial job fails loudly rather than shipping a dead flag; the two that do not
    collector with `--collector.poll-interval-override=<collector>=<dur>`.
 3. Add `Fetch<Subsystem>()` in `opnsense/` with its data structs and register its endpoints in
    `defaultEndpoints()` (`opnsense/client.go`). Tests build their client from `defaultEndpoints()`
-   directly and `TestNewClient_EndpointCount` asserts content-equality; bump the count in
-   `opnsense/client_test.go`. For a plugin-gated endpoint, treat 404 as "feature absent" - return
+   directly, `TestNewClient_UsesDefaultEndpoints` asserts content-equality and
+   `TestEndpointACLCoversEveryEndpoint` fails until the new endpoint has an ACL entry. For a plugin-gated endpoint, treat 404 as "feature absent" - return
    empty data and `nil`, mirroring `FetchACMECertificates` - so the collector stays silent when the
    plugin is missing.
 4. POST endpoints only (`c.do("POST", ...)` or `c.doForm(...)`): add the endpoint-name key to

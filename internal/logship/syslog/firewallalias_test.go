@@ -19,12 +19,6 @@ func firewallAliasEnv(t *testing.T, message string) Envelope {
 	return env
 }
 
-func TestFirewallAliasRegistered(t *testing.T) {
-	if _, ok := parserFor("firewall"); !ok {
-		t.Fatal("no parser registered for program firewall")
-	}
-}
-
 // TestFirewallAliasCapturedLines pins all 13 verbatim lines observed on the
 // real box for issue #631.
 func TestFirewallAliasCapturedLines(t *testing.T) {

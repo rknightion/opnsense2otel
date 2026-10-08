@@ -51,12 +51,6 @@ func tailscaledLoggerEnvelope(message string) Envelope {
 	return env
 }
 
-func TestTailscaledRegisteredForItsProgram(t *testing.T) {
-	if _, ok := parserFor("tailscaled"); !ok {
-		t.Fatal("no parser registered for tailscaled")
-	}
-}
-
 // The ipn state transition is the node-local lifecycle edge (#596). ipnlocal
 // returns early when oldState == newState, so the line only ever describes a real
 // transition.

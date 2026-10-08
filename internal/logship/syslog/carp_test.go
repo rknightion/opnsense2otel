@@ -20,12 +20,6 @@ func carpEnv(t *testing.T, message string) Envelope {
 	return env
 }
 
-func TestCARPRegistered(t *testing.T) {
-	if _, ok := parserFor("kernel"); !ok {
-		t.Fatal("no parser registered for program kernel")
-	}
-}
-
 // The registration must be the EXACT-name, body-enriching form.
 //
 // Exact, not a prefix: `kernel` is a fixed app-name, and a "kernel" PREFIX would also

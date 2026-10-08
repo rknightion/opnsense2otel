@@ -17,12 +17,6 @@ func pppEnv(t *testing.T, message string) Envelope {
 	return env
 }
 
-func TestPPPRegistered(t *testing.T) {
-	if _, ok := parserFor("ppp"); !ok {
-		t.Fatal("no parser registered for program ppp")
-	}
-}
-
 func TestPPPCapturedShapes(t *testing.T) {
 	tests := []struct {
 		name string

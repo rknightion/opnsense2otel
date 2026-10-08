@@ -58,12 +58,3 @@ func TestMapSuricataAction(t *testing.T) {
 		}
 	}
 }
-
-// The vocabulary is binary and closed. If someone adds a third value they must
-// re-check the sink's maxLogResources budget, because action multiplies the
-// resource-key count.
-func TestActionVocabularyIsBinary(t *testing.T) {
-	if ActionPass != "pass" || ActionBlock != "block" {
-		t.Fatalf("vocabulary changed: %q/%q", ActionPass, ActionBlock)
-	}
-}

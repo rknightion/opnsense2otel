@@ -97,7 +97,12 @@ func TestNewClient_ConfigurableMaxRetries(t *testing.T) {
 	}
 }
 
-func TestNewClient_EndpointCount(t *testing.T) {
+// The live Client must use exactly the canonical defaultEndpoints() table: the
+// fetch tests build their clients from defaultEndpoints() too (there is no
+// parallel copy to drift), so this certifies they exercise the production URLs
+// (#154). Endpoint-set completeness is guarded by TestEndpointACLCoversEveryEndpoint;
+// the number of endpoints is deliberately not pinned.
+func TestNewClient_UsesDefaultEndpoints(t *testing.T) {
 	cfg := options.OPNSenseConfig{
 		Protocol:  "http",
 		Host:      "localhost",
@@ -110,26 +115,8 @@ func TestNewClient_EndpointCount(t *testing.T) {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
 
-	endpoints := client.Endpoints()
-	if len(endpoints) != 204 {
-		t.Errorf("expected 204 endpoints, got %d", len(endpoints))
-	}
-
-	// Content equality, not just count: the live Client must use exactly the
-	// canonical defaultEndpoints() table. The fetch tests now build their clients
-	// from defaultEndpoints() too (there is no parallel testEndpoints() copy to
-	// drift), so this also certifies fetch tests exercise the production URLs (#154).
-	if !reflect.DeepEqual(endpoints, defaultEndpoints()) {
+	if !reflect.DeepEqual(client.Endpoints(), defaultEndpoints()) {
 		t.Errorf("client endpoints diverge from defaultEndpoints()")
-	}
-
-	// Every registered endpoint must carry an ACL classification (#442), so a new
-	// endpoint cannot ship without least-privilege guidance or an explicit
-	// "unknown" verdict. TestEndpointACLCoversEveryEndpoint names the offender;
-	// this keeps the requirement visible next to the count it travels with.
-	if len(EndpointACLs()) != len(endpoints) {
-		t.Errorf("ACL matrix covers %d endpoints, registry has %d; see opnsense/acl.go",
-			len(EndpointACLs()), len(endpoints))
 	}
 }
 

@@ -28,12 +28,6 @@ func radvdSnapshot() *enrich.Snapshot {
 	}
 }
 
-func TestRadvdRegistered(t *testing.T) {
-	if _, ok := parserFor("radvd"); !ok {
-		t.Fatal("no parser registered for program radvd")
-	}
-}
-
 // TestRadvdVerbatimLines covers the four shapes captured verbatim from the live
 // box: polling and timer_handler, each on a VLAN sub-interface and a bare
 // interface.

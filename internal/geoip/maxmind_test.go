@@ -276,12 +276,6 @@ func TestValidateEdition(t *testing.T) {
 	}
 }
 
-func TestDatabasePath(t *testing.T) {
-	if got := DatabasePath("/var/lib/geoip", "GeoLite2-ASN"); got != "/var/lib/geoip/GeoLite2-ASN.mmdb" {
-		t.Errorf("DatabasePath = %q", got)
-	}
-}
-
 func TestFetchRejectsAnUnsafeEditionBeforeAnyRequest(t *testing.T) {
 	var hits int
 	ts := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits++ }))

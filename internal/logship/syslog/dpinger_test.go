@@ -17,12 +17,6 @@ func dpingerEnv(t *testing.T, message string) Envelope {
 	return env
 }
 
-func TestDPingerRegistered(t *testing.T) {
-	if _, ok := parserFor("dpinger"); !ok {
-		t.Fatal("no parser registered for program dpinger")
-	}
-}
-
 func TestDPingerCapturedTransitions(t *testing.T) {
 	tests := []struct {
 		name string

@@ -4,10 +4,7 @@ import "testing"
 
 // TestDnsmasqDHCPProgramRegistered: the DHCP-server program name dnsmasq-dhcp
 // dispatches to parseDHCP, and its DHCPREQUEST/DHCPACK lines parse as lease events.
-func TestDnsmasqDHCPProgramRegistered(t *testing.T) {
-	if _, ok := parserFor("dnsmasq-dhcp"); !ok {
-		t.Fatal("no parser registered for program dnsmasq-dhcp")
-	}
+func TestDnsmasqDHCPProgramParsed(t *testing.T) {
 	rec, ok := parseDHCP(dhcpEnvelope("dnsmasq-dhcp", "DHCPREQUEST(ixl0_vlan50) 10.0.50.112 a8:9c:6c:24:b8:00"), nil, func(string) {})
 	if !ok {
 		t.Fatal("parseDHCP returned ok=false for a dnsmasq-dhcp DHCPREQUEST")

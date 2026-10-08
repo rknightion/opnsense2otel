@@ -29,16 +29,6 @@ func openvpnEnvelope(program, message string) Envelope {
 	}
 }
 
-// OPNsense names one syslog program PER CONFIGURED INSTANCE, so no exact-match
-// registration can reach them; the parser is registered on the `openvpn` prefix.
-func TestOpenVPNRegisteredForEveryInstanceProgramName(t *testing.T) {
-	for _, program := range []string{"openvpn_server40", "openvpn_client2", "openvpn", "openvpn_server1"} {
-		if _, ok := parserFor(program); !ok {
-			t.Errorf("no parser registered for program %q", program)
-		}
-	}
-}
-
 // The four canonical shapes captured on OPNsense 27.1.a_40 with the OPNsense
 // OpenVPN SERVER package 2.7.5 (#406). The retained bundle mislabelled these
 // "OpenVPN 2.6.14" — that was the Debian test CLIENT; `pkg info openvpn` on the

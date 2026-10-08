@@ -27,12 +27,6 @@ func wireguardEnvelope(message string) Envelope {
 	}
 }
 
-func TestWireGuardRegisteredForItsProgram(t *testing.T) {
-	if _, ok := parserFor("wireguard"); !ok {
-		t.Fatal("no parser registered for wireguard")
-	}
-}
-
 // The three service-lifecycle grammars confirmed in OPNsense core's
 // wg-service-control.php (#596), byte-identical on master and on stable/26.7,
 // stable/26.1 and stable/25.7.

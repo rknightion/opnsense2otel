@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-20 10:49'
+updated_date: '2026-10-08 20:56'
 ---
 This document carries **only what is specific to opnsense2otel**. The campaign model itself — run
 modes, the routing contract, authority and the thread pool, child lane briefs, external-contract
@@ -235,7 +235,7 @@ collector checklist in `AGENTS.md` hits them:
 | `opnsense/testdata/schemas/exemptions.json` | `missingOK` / `knownExtraTopKeys` |
 | `grafana/build_dashboard.py` | `register_subsystem_tabs` |
 
-Counts pinned in tests move with these (`TestNewClient_EndpointCount`, the golden POST count, the
+Counts pinned in tests move with these (the golden POST count, the
 docs count pins, the rule-count pins). A lane that appends without bumping its count leaves the build
 red for everyone.
 

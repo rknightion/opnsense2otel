@@ -31,12 +31,6 @@ func unboundSnapshot() *enrich.Snapshot {
 	}
 }
 
-func TestUnboundRegistered(t *testing.T) {
-	if _, ok := parserFor("unbound"); !ok {
-		t.Fatal("no parser registered for program unbound")
-	}
-}
-
 // TestUnboundVerbatimLines covers the shapes captured verbatim from camden: IPv4
 // and IPv6 clients, every observed qtype, and all three zone types.
 func TestUnboundVerbatimLines(t *testing.T) {

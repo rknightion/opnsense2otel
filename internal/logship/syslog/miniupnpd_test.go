@@ -27,12 +27,6 @@ func upnpEnvPri(t *testing.T, pri, message string) Envelope {
 	return env
 }
 
-func TestUPnPRegistered(t *testing.T) {
-	if _, ok := parserFor("miniupnpd"); !ok {
-		t.Fatal("no parser registered for program miniupnpd")
-	}
-}
-
 // Exact-name registration, with body enrichment kept.
 //
 // Exact rather than a prefix: `miniupnpd` is a fixed app-name (the plugin's

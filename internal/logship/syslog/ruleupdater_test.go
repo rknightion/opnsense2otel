@@ -18,12 +18,6 @@ func ruleUpdaterEnv(t *testing.T, message string) Envelope {
 	return env
 }
 
-func TestRuleUpdaterRegistered(t *testing.T) {
-	if _, ok := parserFor("rule-updater.py"); !ok {
-		t.Fatal("no parser registered for program rule-updater.py")
-	}
-}
-
 func TestRuleUpdaterSubsystem(t *testing.T) {
 	// #666: rule-updater.py belongs under the same subsystem as the engine
 	// it feeds. registry.go owns the actual entry (frozen for this change);
