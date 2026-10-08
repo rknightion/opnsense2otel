@@ -1,5 +1,5 @@
 ---
-id: OPN-0105
+id: OPN-0118
 title: Emit native (exponential) histograms instead of classical buckets
 status: To Do
 assignee: []
