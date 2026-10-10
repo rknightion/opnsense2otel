@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.1.1](https://github.com/rknightion/opnsense2otel/compare/v5.1.0...v5.1.1) (2026-10-10)
+
+
+### Documentation
+
+* publish canonical agent documents ([b880faf](https://github.com/rknightion/opnsense2otel/commit/b880fafbc8d2817d887847f210f97c17a34d1cab))
+
 ## [5.1.0](https://github.com/rknightion/opnsense2otel/compare/v5.0.0...v5.1.0) (2026-10-08)
 
 
