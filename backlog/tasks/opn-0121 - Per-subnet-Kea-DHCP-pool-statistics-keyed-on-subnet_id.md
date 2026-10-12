@@ -1,9 +1,11 @@
 ---
 id: OPN-0121
 title: Per-subnet Kea DHCP pool statistics keyed on subnet_id
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop10'
 created_date: '2026-10-08 21:56'
+updated_date: '2026-10-12 21:20'
 labels:
   - kea
   - feature
@@ -31,3 +33,9 @@ The 2026-09-20 canary triage (OPN-0119) found keaSubnets4/keaSubnets6 search row
 - [ ] #1 just check
 - [ ] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Establish from current upstream OPNsense source whether REST exposes native Kea per-subnet statistics. If absent, return source SHA/path evidence for root notes and conditional no-code close. If present, implement within frozen files with bounded CIDR-labelled gauges, schema/dashboard generation, failing-first proof and guarded review. No live firewall/testbed calls.
+<!-- SECTION:PLAN:END -->
