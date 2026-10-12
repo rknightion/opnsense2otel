@@ -28,7 +28,7 @@ default:
 # install the repo-local release tooling and warm the module cache (idempotent)
 setup: _tool-go-licenses _tool-syft _tool-kubeconform _tool-govulncheck _tool-goreleaser
     go mod download
-    @command -v golangci-lint >/dev/null 2>&1 || echo "note: golangci-lint is not on PATH — install it (brew install golangci-lint); CI pins v2.13.2 via golangci/golangci-lint-action"
+    @command -v golangci-lint >/dev/null 2>&1 || echo "note: golangci-lint is not on PATH — install it (brew install golangci-lint); CI pins v2.14.0 via golangci/golangci-lint-action"
     @echo "setup: .tools populated, modules downloaded"
 
 # ── check ───────────────────────────────────────────────────────────────────
