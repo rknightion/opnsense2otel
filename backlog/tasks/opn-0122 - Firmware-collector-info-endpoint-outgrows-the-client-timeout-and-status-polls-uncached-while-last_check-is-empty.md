@@ -3,11 +3,11 @@ id: OPN-0122
 title: >-
   Firmware collector: info endpoint outgrows the client timeout and status polls
   uncached while last_check is empty
-status: In Progress
+status: Done
 assignee:
   - '@loop10'
 created_date: '2026-10-12 19:06'
-updated_date: '2026-10-12 19:57'
+updated_date: '2026-10-12 22:01'
 labels:
   - firmware
   - api-client
@@ -27,7 +27,7 @@ Since 2026-10-07 api/core/firmware/info on the production box takes 27-35s to an
 <!-- AC:BEGIN -->
 - [x] #1 firmware/info is fetched with a per-endpoint timeout long enough for a ~35s response without raising the global client timeout, and a test against a slow fake server that fails at the 15s default passes with the change
 - [x] #2 A firmware/status body with an empty last_check is cached for a bounded short TTL (not zero, not the full TTL), so polls of the endpoint drop from ~360/h to at most a few per hour while the box has never checked; a test pins the bound
-- [ ] #3 Live proof after deploy: opnsense_exporter_scrape_collector_success{collector=firmware} is 1 on the production exporter and the api/core/firmware/status request rate is within the bound
+- [x] #3 Live proof after deploy: opnsense_exporter_scrape_collector_success{collector=firmware} is 1 on the production exporter and the api/core/firmware/status request rate is within the bound
 <!-- AC:END -->
 
 ## Definition of Done
@@ -46,4 +46,12 @@ Implement the firmware request/cache seam; fail reproduction tests before fixes;
 
 <!-- SECTION:NOTES:BEGIN -->
 loop10: source candidate passed public-client fail-first/pass proof and exact full gate; security review PASS and completed CodeRabbit with zero findings. Firmware info now gets a request-local 60s floor, global remains 15s and caller context wins. Empty/omitted/whitespace last_check uses min(configured TTL,15m), four requests/hour for successful sequential resident-cache use at defaults; checked status retains configured TTL, zero disables. Newly completed checks can lag 15m. TestClient_CacheRefusesFirmwareStatusWithoutLastCheck intentionally updated to bounded-caching behavior; unrelated interim tests preserved. One implementation attempt, one uncharged lint-lock infrastructure retry. Source will land under root publication; AC3 remains In Progress until exact-build rollout and two cold-tier polls plus status request bound are observed.
+
+loop10: 1 implementation cycle, completed. Exact firmware source SHA passed local/composed gate, guarded review, CodeRabbit and CI; exact build observed within the rollout bound. Stable later prerelease build maps through the annotated Git tag to an unchanged firmware/cache descendant; two consecutive cold-tier success polls and status request increase 3.064747 per hour meet the unchanged four/hour bound. Watcher identity false-negatives (stale old version series and semantic version labels) were resolved from actual sample timestamps/tag ancestry, never by relaxing acceptance.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Per-endpoint 60s firmware-info timeout preserves 15s global timeout and caller deadlines; unchecked status cache min(configured TTL,15m) bounds successful sequential requests while retaining checked TTL. Real slow-server and fake-clock fail/pass tests, full gates, guarded review, CodeRabbit, exact CI and live cold-poll/request-rate proof verified.
+<!-- SECTION:FINAL_SUMMARY:END -->
