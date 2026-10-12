@@ -1,11 +1,11 @@
 ---
 id: OPN-0118
 title: Emit native (exponential) histograms instead of classical buckets
-status: In Progress
+status: Parked
 assignee:
-  - '@claude'
+  - '@loop10'
 created_date: '2026-09-15 13:00'
-updated_date: '2026-10-08 21:21'
+updated_date: '2026-10-12 19:44'
 labels:
   - observability
   - cardinality
@@ -56,6 +56,8 @@ Note the earlier assumption that this came from the Alloy opnsense-exporter-717 
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Add native-histogram options (factor 1.1, 160 buckets, 1h reset) alongside the classic buckets on the two observed histograms, so /metrics is unchanged and the OTLP Prometheus bridge emits base2 exponential histograms. 2. Leave the two const histograms (unbound recursion, flow delta ratio) classic: pre-bucketed data. 3. Make the health-dashboard p95/heatmap queries classic-or-native. 4. Document in docs/configuration.md. 5. Contract test through the real bridge, seen failing without the options.
+
+Root reads datasource-proxy evidence for OTLP job only: remaining bucket families and native histograms for both instrumented families; complete or park from observed evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -64,4 +66,6 @@ Note the earlier assumption that this came from the Alloy opnsense-exporter-717 
 AC2: the split is endpoint x opnsense_instance. endpoint is the client's registered api/* path TEMPLATE (requestObserverAtPath passes the template, never a parameterised path), pre-seeded for every registered endpoint, so it is bounded by the endpoint registry (~200 per instance). 2,448 = ~175 endpoints x 14 (11 buckets + +Inf + _sum + _count): the cost was the bucket multiplier, not the label. As a native histogram it becomes ~175 series. Justified, not reduced. The env var OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION the task proposed does NOT apply: it only affects OTel SDK instruments, and every histogram here is a Prometheus client histogram bridged as pre-aggregated data. AC1/AC4 literal 'no _bucket families' is unreachable for the two const histograms (137 series); they stay classic by design.
 
 Contract test internal/server/native_histogram_test.go goes through the real Prometheus bridge (seen failing as metricdata.Histogram without the options). Health dashboard p95/heatmap panels query classic-or-native (heatmap uses or on(instance,label) so a datasource holding both forms is not double-drawn); promqlcheck validates them. AC1/AC4 need a deployed build and a query against the m7kni stack, so the task stays In Progress until then.
+
+loop10: read-only close-out, 0 implementation attempts. At 2026-10-12T19:43Z on deployed build 218129e (Go 1.27.2), OTLP job opnsense2otel has 204 API-duration and 3 server-duration native histogram series (histogram_count and direct histogram JSON verified). Instrumented duration bucket count is 0, but all-job bucket families still include 84 flow-source-delta-ratio and 41 unbound-recursion series. Goal requires parking if any bucket families remain. AC1/AC4 remain unchecked; resume when owner re-grades const-histogram scope or authorizes its conversion. Evidence is local to the loop report.
 <!-- SECTION:NOTES:END -->

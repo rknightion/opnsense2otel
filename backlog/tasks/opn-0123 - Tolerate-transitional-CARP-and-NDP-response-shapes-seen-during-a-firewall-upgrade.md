@@ -3,9 +3,11 @@ id: OPN-0123
 title: >-
   Tolerate transitional CARP and NDP response shapes seen during a firewall
   upgrade
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop10'
 created_date: '2026-10-12 19:08'
+updated_date: '2026-10-12 19:44'
 labels:
   - carp
   - ndp
@@ -33,3 +35,15 @@ During the 2026-10-12 production upgrade to 26.7.6 the box answered api/diagnost
 - [ ] #1 just check
 - [ ] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement transitional CARP/NDP decoding within owned files; fail reproductions before fixes; staged candidate after local gate for root security review, CodeRabbit and publication.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop10: pre-mutation ownership gap, 0 implementation attempts. Empty HTTP200 NDP classification must precede shared client observer/cache. Root amended ownership for an endpoint-specific client.go check and serializes this lane after firmware landing to avoid shared-file ownership. Observer behavior tests remain in ndp_test.go.
+<!-- SECTION:NOTES:END -->

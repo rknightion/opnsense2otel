@@ -3,9 +3,11 @@ id: OPN-0122
 title: >-
   Firmware collector: info endpoint outgrows the client timeout and status polls
   uncached while last_check is empty
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop10'
 created_date: '2026-10-12 19:06'
+updated_date: '2026-10-12 19:42'
 labels:
   - firmware
   - api-client
@@ -33,3 +35,9 @@ Since 2026-10-07 api/core/firmware/info on the production box takes 27-35s to an
 - [ ] #1 just check
 - [ ] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement the firmware request/cache seam; fail reproduction tests before fixes; return staged candidate after local gate for root security review, CodeRabbit, root publish and exact-SHA CI/live proof.
+<!-- SECTION:PLAN:END -->
