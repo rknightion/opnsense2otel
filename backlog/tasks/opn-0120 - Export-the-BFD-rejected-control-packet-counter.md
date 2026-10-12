@@ -1,11 +1,11 @@
 ---
 id: OPN-0120
 title: Export the BFD rejected-control-packet counter
-status: In Progress
+status: Done
 assignee:
   - '@loop10'
 created_date: '2026-10-08 21:56'
-updated_date: '2026-10-12 21:19'
+updated_date: '2026-10-12 21:43'
 labels:
   - frr
   - feature
@@ -44,4 +44,12 @@ Investigate existing FRR counter/metric seam, add presence-aware bad-input count
 
 <!-- SECTION:NOTES:BEGIN -->
 loop10: 2 implementation cycles. Presence-aware rejected-control counter uses existing peer/instance labels; older missing/null key emits no series and present zero emits counter zero. Public HTTP client/collector proof failed before implementation, parser tag-omission proof failed then exact source restored; race checks and full final gate passed. Synthetic fixtures use symbolic peers with no literal addresses, schema opportunity consumed and golden regenerated; existing control-rate dashboard exposes rate with no zero fill. Guarded security PASS and completed CodeRabbit zero findings across all 18 final paths. Root integration, exact CI, Grafana sync and deploy readback pending; not Done yet.
+
+loop10: 2 implementation cycles, completed. Exact landed SHA passed composed full gate and ci-success after one uncharged dependency-fetch infrastructure retry. Both Grafana jobs succeeded: live GitSync verifier matched dashboards, rules prune no-op and 80 resources pushed without errors (no independent rule-content verifier claimed). Exact build observed; FRR collector success is 1. Production has zero rejected-counter series, so local real HTTP-client/collector fixtures prove emission and missing-key compatibility, not a live rejected-packet event.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added presence-aware per-peer rejected BFD control counter with unchanged control-counter labels; missing/null keys omit series, present zero emits zero. Consumed schema opportunity, regenerated golden/docs and extended rate panel without zero fill. Fail-first client/collector proof, source/composed gates, guarded review, CodeRabbit, exact CI and actual dashboard delivery verified.
+<!-- SECTION:FINAL_SUMMARY:END -->

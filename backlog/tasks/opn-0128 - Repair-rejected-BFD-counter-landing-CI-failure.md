@@ -1,11 +1,11 @@
 ---
 id: OPN-0128
 title: Repair rejected BFD counter landing CI failure
-status: In Progress
+status: Done
 assignee:
   - '@loop10'
 created_date: '2026-10-12 21:24'
-updated_date: '2026-10-12 21:26'
+updated_date: '2026-10-12 21:43'
 labels: []
 dependencies: []
 priority: high
@@ -22,13 +22,13 @@ The rejected BFD counter landing passed local source and guarded review, but its
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The exact failing job and cause are evidenced and classified.
-- [ ] #2 A permitted repair or justified infrastructure retry yields ci-success on the owning exact SHA, without weakening checks or reverting foreign work.
+- [x] #2 A permitted repair or justified infrastructure retry yields ci-success on the owning exact SHA, without weakening checks or reverting foreign work.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -41,4 +41,12 @@ Read exact-SHA failed CI evidence; choose smallest authorised source repair or i
 
 <!-- SECTION:NOTES:BEGIN -->
 loop10: no implementation attempt; exact CI failure is module ZIP transport INTERNAL_ERROR while installing existing GoReleaser pin. All other required jobs passed, no BFD assertion failed. Root initiated one authorised same-run failed-job infrastructure retry; no workflow/tool/gate/source edit and no Grafana rerun/cancellation. Dashboard live verifier matched files; rule prune no-op and push completed. Exact retry conclusion pending.
+
+loop10: 0 implementation attempts; 1 uncharged same-SHA infrastructure retry. CI run 38309921161 attempt 2 completed success on the exact BFD landing SHA; ci-success passed. Module ZIP fetch transport failure resolved without code, workflow, tool-pin or gate edits. Exact composed gate already passed; no generated artifact changed for this repair. Main CI red cleared, no foreign revert.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Classified the release snapshot failure as proxy HTTP2 transport INTERNAL_ERROR. Retried failed jobs once on the same SHA; exact CI completed success with all required jobs, preserving initial source/review and delivery evidence.
+<!-- SECTION:FINAL_SUMMARY:END -->
