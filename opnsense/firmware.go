@@ -359,24 +359,26 @@ func parseLastCheckTimestamp(raw string) float64 {
 	return 0
 }
 
-// firmwareStatusCacheable is the response-cache admission rule for the firmware
-// status endpoint (cacheAdmissionRules). The box answers 200 with an empty
-// last_check while an update check is running and right after the stored status
-// is cleared; that body carries no check result, and FetchFirmwareStatus's
-// LastCheck gate below turns it into "every check-dependent series absent".
-// Caching it would hold that absence for the full --exporter.firmware-cache-ttl
-// (12h by default) while the box finished its check seconds later — GitHub issue
-// 724. So a body without a last_check is decoded and served but never stored;
-// the next poll asks the firewall again. Anything that does not decode is
-// refused too: put() must never hold a body do() would not have accepted.
-func firmwareStatusCacheable(body []byte) bool {
+// firmwareUncheckedCacheTTL bounds both polling load on a box that has never
+// checked for updates (at most four successful refreshes/hour with default
+// caching) and the delay before a newly completed check becomes visible.
+// Never hold an unchecked body for the full 12h firmware TTL.
+const firmwareUncheckedCacheTTL = 15 * time.Minute
+
+// firmwareStatusCacheTTL selects a response-dependent TTL, capped by the
+// operator's configured TTL. Zero still disables caching; malformed bodies
+// are never stored. A checked status retains the full configured TTL.
+func firmwareStatusCacheTTL(body []byte, ttl time.Duration) time.Duration {
 	var probe struct {
 		LastCheck string `json:"last_check"`
 	}
 	if err := json.Unmarshal(body, &probe); err != nil {
-		return false
+		return 0
 	}
-	return strings.TrimSpace(probe.LastCheck) != ""
+	if strings.TrimSpace(probe.LastCheck) == "" {
+		return min(ttl, firmwareUncheckedCacheTTL)
+	}
+	return ttl
 }
 
 func (c *Client) FetchFirmwareStatus() (FirmwareStatus, *APICallError) {
@@ -419,7 +421,7 @@ func (c *Client) FetchFirmwareStatus() (FirmwareStatus, *APICallError) {
 	// OPNsense >= 25.x no longer flips the status field; a populated
 	// last_check is the signal that an update check has run and the rest of
 	// the payload is meaningful (upstream PR #101 / issue #100).
-	if resp.LastCheck != "" {
+	if strings.TrimSpace(resp.LastCheck) != "" {
 		data.CheckPresent = true
 		// os_version (the FreeBSD version) is NOT present under product.* —
 		// unlike the three identity fields above, it genuinely only exists
@@ -628,6 +630,10 @@ func firmwareInfoCacheable(body []byte) bool {
 	return len(probe.Package) > 0
 }
 
+// firmwareInfoTimeout allows the package query's observed 27–35s response
+// time with headroom, without lengthening other endpoints' 15s default.
+const firmwareInfoTimeout = 60 * time.Second
+
 func (c *Client) FetchFirmwareInfo() (FirmwareInfo, *APICallError) {
 	var resp firmwareInfoResponse
 	var data FirmwareInfo
@@ -641,7 +647,17 @@ func (c *Client) FetchFirmwareInfo() (FirmwareInfo, *APICallError) {
 		}
 	}
 
-	if err := c.do("GET", url, nil, &resp); err != nil {
+	// Copy both clients rather than mutating the shared HTTP client: firmware
+	// polls overlap with other collectors. The transport, redirect policy,
+	// cache, observer and caller context remain shared/preserved. A caller
+	// deadline still wins, and an explicitly longer timeout is respected.
+	clone := *c
+	httpClient := *c.httpClient
+	if httpClient.Timeout < firmwareInfoTimeout {
+		httpClient.Timeout = firmwareInfoTimeout
+	}
+	clone.httpClient = &httpClient
+	if err := clone.do("GET", url, nil, &resp); err != nil {
 		return data, err
 	}
 

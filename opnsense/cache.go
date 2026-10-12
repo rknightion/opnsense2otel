@@ -40,11 +40,15 @@ type responseCache struct {
 	// admit holds per-endpoint admission rules for SUCCESS bodies: put refuses to
 	// store a 2xx body the rule rejects, so the next call fetches live. It exists
 	// for endpoints whose 200 can carry "nothing to report yet" rather than a
-	// result — a firmware status mid-check (GitHub issue 724) — where caching the
+	// result — an empty package catalogue mid-upgrade — where caching the
 	// interim body would pin an absence for the whole TTL. Endpoints without a
 	// rule cache every 2xx body as before. Rules never apply to a 404: route
 	// absence is not a body property.
-	admit   map[EndpointPath]func(body []byte) bool
+	admit map[EndpointPath]func(body []byte) bool
+	// bodyTTL selects a shorter TTL (or rejects with zero) based on a success
+	// body. Firmware status uses it to bound unchecked-state polling without
+	// freezing that state for the full checked-status TTL.
+	bodyTTL map[EndpointPath]func([]byte, time.Duration) time.Duration
 	entries map[EndpointPath]cacheEntry
 	order   *list.List
 	bytes   int
@@ -69,6 +73,7 @@ func newResponseCache() *responseCache {
 		ttls:       make(map[EndpointPath]time.Duration),
 		absentTTLs: make(map[EndpointPath]time.Duration),
 		admit:      make(map[EndpointPath]func([]byte) bool),
+		bodyTTL:    make(map[EndpointPath]func([]byte, time.Duration) time.Duration),
 		entries:    make(map[EndpointPath]cacheEntry),
 		order:      list.New(),
 	}
@@ -122,6 +127,21 @@ func (rc *responseCache) setAdmission(path EndpointPath, rule func(body []byte) 
 		return
 	}
 	rc.admit[path] = rule
+}
+
+// setBodyTTL installs a response-dependent success TTL selector during setup.
+// It does not affect negative caching or evict an existing entry.
+func (rc *responseCache) setBodyTTL(path EndpointPath, rule func([]byte, time.Duration) time.Duration) {
+	if rc == nil {
+		return
+	}
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rule == nil {
+		delete(rc.bodyTTL, path)
+		return
+	}
+	rc.bodyTTL[path] = rule
 }
 
 // get returns the cached entry for path when one is held and unexpired.
@@ -186,6 +206,12 @@ func (rc *responseCache) put(path EndpointPath, statusCode int, body []byte) boo
 		if rule := rc.admit[path]; rule != nil && !rule(body) {
 			return false
 		}
+		if rule := rc.bodyTTL[path]; rule != nil {
+			ttl = min(ttl, rule(body, ttl))
+			if ttl <= 0 {
+				return false
+			}
+		}
 	}
 	rc.remove(path)
 	for rc.bytes+len(body) > maxResponseCacheBytes {
@@ -240,21 +266,27 @@ func (c *Client) SetEndpointCacheTTL(name EndpointName, ttl time.Duration) {
 	}
 	c.cache.setTTL(path, ttl)
 	c.cache.setAdmission(path, cacheAdmissionRules[name])
+	c.cache.setBodyTTL(path, cacheBodyTTLRules[name])
 }
 
 // cacheAdmissionRules names the endpoints whose SUCCESS body must pass a check
 // before the response cache may hold it, and the check. Add an endpoint here when
-// its 200 can legitimately carry "no result yet" instead of a result — the shape
-// GitHub issue 724 reported for the firmware status — so that interim body is
-// re-fetched on the next poll rather than pinned for the TTL. An endpoint absent
-// from this map caches every 2xx body under its TTL as before.
+// its 200 can legitimately carry "no result yet" instead of a result, such as
+// an empty package catalogue during an upgrade, so that interim body is
+// re-fetched on the next poll rather than pinned for the TTL. Endpoints absent
+// from this map admit every 2xx body; cacheBodyTTLRules may still cap its TTL.
 var cacheAdmissionRules = map[EndpointName]func(body []byte) bool{
-	"firmware":               firmwareStatusCacheable,
 	"firmwareInfo":           firmwareInfoCacheable,
 	"unboundLocalZones":      unboundDiagnosticsCacheable,
 	"unboundLocalData":       unboundDiagnosticsCacheable,
 	"unboundInsecureDomains": unboundDiagnosticsCacheable,
 	"idsRulesets":            idsRulesetsCacheable,
+}
+
+// cacheBodyTTLRules selects response-dependent success TTLs. Endpoints absent
+// from this map use their configured TTL for every admitted body.
+var cacheBodyTTLRules = map[EndpointName]func([]byte, time.Duration) time.Duration{
+	"firmware": firmwareStatusCacheTTL,
 }
 
 // SetEndpointAbsentTTL caches a 404 from the named endpoint for ttl, so a
@@ -407,9 +439,8 @@ type CacheEntryView struct {
 	// StatusCode is the cached response's status: 200 for a positive
 	// (success-body) entry, 404 for a negative ("plugin absent") entry.
 	StatusCode int
-	// TTL is the configured TTL for this entry's status class: the
-	// positive TTL (SetEndpointCacheTTL) for a 200, or the absent TTL
-	// (SetEndpointAbsentTTL) for a 404.
+	// TTL is the effective lifetime of this stored entry, including any
+	// response-dependent cap (such as firmware status before its first check).
 	TTL time.Duration
 	// Remaining is how much longer the entry is valid for (expiresAt - now);
 	// it may be negative if the entry has just expired but not yet been
@@ -449,12 +480,7 @@ func (c *Client) CacheSnapshot() []CacheEntryView {
 	now := rc.now()
 	out := make([]CacheEntryView, 0, len(rc.entries))
 	for path, entry := range rc.entries {
-		var ttl time.Duration
-		if entry.statusCode == http.StatusNotFound {
-			ttl = rc.absentTTLs[path]
-		} else {
-			ttl = rc.ttls[path]
-		}
+		ttl := entry.expiresAt.Sub(entry.storedAt)
 		name := rev[path]
 		out = append(out, CacheEntryView{
 			Endpoint:    string(name),

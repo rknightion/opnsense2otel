@@ -34,7 +34,7 @@ const (
 var (
 	firmwareCacheTTL = kingpin.Flag(
 		"exporter.firmware-cache-ttl",
-		"How long to cache firmware API responses (status and, when enabled, package details). The firmware data OPNsense serves is the stored result of the box's own update check, which it refreshes roughly daily, so re-fetching it on every poll only costs firewall CPU. A status body whose last_check is empty (no check stored yet, or one in progress) is never cached, so it cannot pin the check-dependent series absent for the TTL; the next poll fetches live. Set to 0 to fetch on every poll.",
+		"How long to cache firmware API responses (status and, when enabled, package details). The firmware data OPNsense serves is the stored result of the box's own update check, which it refreshes roughly daily, so re-fetching it on every poll only costs firewall CPU. A status body whose last_check is empty (no check stored yet, or one in progress) is cached for at most 15m, capped by this setting: with the default TTL, successful sequential polls make at most four requests/hour while unchecked, and a newly completed check can take up to 15m to appear. Set to 0 to fetch on every poll.",
 	).Envar("OPN2OTEL_FIRMWARE_CACHE_TTL").Default(DefaultFirmwareCacheTTL.String()).Duration()
 
 	cacheTTL = kingpin.Flag(

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@loop10'
 created_date: '2026-10-12 19:06'
-updated_date: '2026-10-12 19:42'
+updated_date: '2026-10-12 19:57'
 labels:
   - firmware
   - api-client
@@ -25,15 +25,15 @@ Since 2026-10-07 api/core/firmware/info on the production box takes 27-35s to an
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 firmware/info is fetched with a per-endpoint timeout long enough for a ~35s response without raising the global client timeout, and a test against a slow fake server that fails at the 15s default passes with the change
-- [ ] #2 A firmware/status body with an empty last_check is cached for a bounded short TTL (not zero, not the full TTL), so polls of the endpoint drop from ~360/h to at most a few per hour while the box has never checked; a test pins the bound
+- [x] #1 firmware/info is fetched with a per-endpoint timeout long enough for a ~35s response without raising the global client timeout, and a test against a slow fake server that fails at the 15s default passes with the change
+- [x] #2 A firmware/status body with an empty last_check is cached for a bounded short TTL (not zero, not the full TTL), so polls of the endpoint drop from ~360/h to at most a few per hour while the box has never checked; a test pins the bound
 - [ ] #3 Live proof after deploy: opnsense_exporter_scrape_collector_success{collector=firmware} is 1 on the production exporter and the api/core/firmware/status request rate is within the bound
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -41,3 +41,9 @@ Since 2026-10-07 api/core/firmware/info on the production box takes 27-35s to an
 <!-- SECTION:PLAN:BEGIN -->
 Implement the firmware request/cache seam; fail reproduction tests before fixes; return staged candidate after local gate for root security review, CodeRabbit, root publish and exact-SHA CI/live proof.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop10: source candidate passed public-client fail-first/pass proof and exact full gate; security review PASS and completed CodeRabbit with zero findings. Firmware info now gets a request-local 60s floor, global remains 15s and caller context wins. Empty/omitted/whitespace last_check uses min(configured TTL,15m), four requests/hour for successful sequential resident-cache use at defaults; checked status retains configured TTL, zero disables. Newly completed checks can lag 15m. TestClient_CacheRefusesFirmwareStatusWithoutLastCheck intentionally updated to bounded-caching behavior; unrelated interim tests preserved. One implementation attempt, one uncharged lint-lock infrastructure retry. Source will land under root publication; AC3 remains In Progress until exact-build rollout and two cold-tier polls plus status request bound are observed.
+<!-- SECTION:NOTES:END -->

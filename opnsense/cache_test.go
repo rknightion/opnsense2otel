@@ -396,15 +396,11 @@ func TestPluginGatedIncludesVnstatGetJsonData(t *testing.T) {
 	}
 }
 
-// TestClient_CacheRefusesFirmwareStatusWithoutLastCheck pins the fix for GitHub
-// issue 724 (OPN-0095): api/core/firmware/status answers 200 with an empty
-// last_check while a check is running or right after the stored status was
-// cleared. Such a body carries no check result, so caching it would make every
-// check-dependent series absent for the whole --exporter.firmware-cache-ttl
-// (12h by default) even though the box finishes its check seconds later. The
-// cache must refuse it and the next poll must fetch live; a body WITH a
-// last_check is still cached for the TTL as before.
-func TestClient_CacheRefusesFirmwareStatusWithoutLastCheck(t *testing.T) {
+// TestClient_CacheBoundsFirmwareStatusWithoutLastCheck pins the intended
+// firmware policy: unchecked status is cached briefly to limit polling load,
+// not for the full configured TTL. A completed check becomes visible after
+// that short window, and then retains the full checked-status TTL.
+func TestClient_CacheBoundsFirmwareStatusWithoutLastCheck(t *testing.T) {
 	var requests atomic.Int64
 	server, client := newTestClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		n := requests.Add(1)
@@ -417,7 +413,7 @@ func TestClient_CacheRefusesFirmwareStatusWithoutLastCheck(t *testing.T) {
 	defer server.Close()
 
 	client.SetEndpointCacheTTL("firmware", 12*time.Hour)
-	withFakeClock(t, client)
+	clock := withFakeClock(t, client)
 
 	first, err := client.FetchFirmwareStatus()
 	if err != nil {
@@ -426,9 +422,14 @@ func TestClient_CacheRefusesFirmwareStatusWithoutLastCheck(t *testing.T) {
 	if first.CheckPresent {
 		t.Fatalf("fixture error: the first body must carry no check result, got %+v", first)
 	}
-	if snap := client.CacheSnapshot(); len(snap) != 0 {
-		t.Fatalf("a firmware body with an empty last_check must not be cached, got %+v", snap)
+	if snap := client.CacheSnapshot(); len(snap) != 1 || snap[0].TTL != 15*time.Minute {
+		t.Fatalf("unchecked firmware body must have a short 15m TTL, got %+v", snap)
 	}
+	clock.Advance(15*time.Minute - time.Second)
+	if cached, err := client.FetchFirmwareStatus(); err != nil || cached.CheckPresent || requests.Load() != 1 {
+		t.Fatalf("unchecked body must be cached before expiry: %+v, err=%v, requests=%d", cached, err, requests.Load())
+	}
+	clock.Advance(time.Second)
 
 	second, err := client.FetchFirmwareStatus()
 	if err != nil {
@@ -441,11 +442,22 @@ func TestClient_CacheRefusesFirmwareStatusWithoutLastCheck(t *testing.T) {
 		t.Fatalf("second call must decode the live body, got %+v", second)
 	}
 
+	if snap := client.CacheSnapshot(); len(snap) != 1 || snap[0].TTL != 12*time.Hour {
+		t.Fatalf("checked status must retain full 12h TTL, got %+v", snap)
+	}
+	clock.Advance(12*time.Hour - time.Second)
 	if _, err := client.FetchFirmwareStatus(); err != nil {
 		t.Fatalf("third call: %v", err)
 	}
 	if got := requests.Load(); got != 2 {
 		t.Errorf("a body with a last_check must still be cached, got %d upstream requests", got)
+	}
+	clock.Advance(time.Second)
+	if _, err := client.FetchFirmwareStatus(); err != nil {
+		t.Fatalf("checked status expiry: %v", err)
+	}
+	if requests.Load() != 3 {
+		t.Fatal("checked status must expire at the full configured TTL")
 	}
 }
 
@@ -466,7 +478,6 @@ func TestCacheAdmissionRulesRefuseInterimBodies(t *testing.T) {
 		interim  string
 		real     string
 	}{
-		{"firmware", `{"last_check":"","product_id":"opnsense"}`, `{"last_check":"2024-01-15T10:30:00Z","product_id":"opnsense"}`},
 		{"firmwareInfo", `{"product_id":"opnsense","product_version":"24.1.1","package":[],"plugin":[]}`,
 			`{"product_id":"opnsense","product_version":"24.1.1","package":[{"name":"opnsense"}],"plugin":[]}`},
 		{"unboundLocalZones", `{"status":"failed"}`, `{"status":"ok","data":[]}`},
@@ -495,7 +506,9 @@ func TestCacheAdmissionRulesRefuseInterimBodies(t *testing.T) {
 	// Every body-cached endpoint that shells out to a daemon or pkg has a rule.
 	// Config reads (MVC model gets, certificate inventory, NAT/auth tables) do not
 	// need one: their 200 is always the current configuration.
-	for _, name := range []EndpointName{"firmware", "firmwareInfo", "unboundLocalZones", "unboundLocalData", "unboundInsecureDomains", "idsRulesets"} {
+	// Firmware status uses a response-dependent TTL instead; its unchecked
+	// and checked behavior is covered by TestClient_CacheBoundsFirmwareStatusWithoutLastCheck.
+	for _, name := range []EndpointName{"firmwareInfo", "unboundLocalZones", "unboundLocalData", "unboundInsecureDomains", "idsRulesets"} {
 		if _, ok := cacheAdmissionRules[name]; !ok {
 			t.Errorf("%s: expected an admission rule", name)
 		}
