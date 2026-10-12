@@ -5,7 +5,7 @@ FRR tab — FRR Routing (BGP/OSPF/BFD) metrics via the os-frr (quagga) plugin
 Plugin-gated: tab and all rows hidden unless FRR metrics are present.
 
 Counters (bgp_peer_messages_received/sent_total,
-bfd_peer_control_packets_received/sent_total,
+bfd_peer_control_packets_received/sent/rejected_total,
 bfd_peer_session_up/down_events_total, ospf_area_spf_executed_total,
 bgp_peer_connections_established/dropped_total, bgp_peer_messages_by_type_total)
 are cumulative -> rate().
@@ -475,9 +475,13 @@ def build(b: Builder):
              "{{peer}} recv"),
             (f'rate({sel("opnsense_frr_bfd_peer_control_packets_sent_total")}[{RATE}])',
              "{{peer}} sent"),
+            (f'rate({sel("opnsense_frr_bfd_peer_control_packets_rejected_total")}[{RATE}])',
+             "{{peer}} rejected"),
         ],
         unit="ops", w=12, h=8,
-        desc="BFD control packet receive/send rates per peer.",
+        desc="BFD control packet receive/send/rejection rates per peer. Rejections are "
+             "invalid control packets (for example malformed packet fields). Older FRR "
+             "builds that omit controlPacketBadInput have no rejection series, not zero.",
     )
     bfd_events = b.ts(
         "BFD Session Up/Down Events",

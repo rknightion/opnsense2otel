@@ -620,6 +620,10 @@ type frrBFDCounterEntry struct {
 	Peer       string  `json:"peer"`
 	ControlIn  float64 `json:"control-packet-input"`
 	ControlOut float64 `json:"control-packet-output"`
+	// FRR 10.7.1 bfdd/bfdd_vty.c emits this camelCase key from
+	// stats.rx_bad_ctrl_pkt. Older builds omit it; a pointer preserves that
+	// absence separately from a present zero rejected-packet count.
+	ControlBadInput *float64 `json:"controlPacketBadInput"`
 	// FRR names these "session-up"/"session-down" (bfdd/bfdd_vty.c). They were
 	// tagged "session-up-events"/"session-down-events" until #480 — names that
 	// exist nowhere in FRR on master or on any release in the support window, so
@@ -656,6 +660,8 @@ type FRRBFDPeer struct {
 	DowntimeSeconds                    float64
 	HasCounters                        bool
 	ControlIn, ControlOut              float64
+	HasControlBadInput                 bool
+	ControlBadInput                    float64
 	SessionUpEvents, SessionDownEvents float64
 }
 
@@ -765,6 +771,10 @@ func (c *Client) FetchFRRBFD() (FRRBFD, *APICallError) {
 			data.Peers[i].HasCounters = true
 			data.Peers[i].ControlIn = ctr.ControlIn
 			data.Peers[i].ControlOut = ctr.ControlOut
+			if ctr.ControlBadInput != nil {
+				data.Peers[i].HasControlBadInput = true
+				data.Peers[i].ControlBadInput = *ctr.ControlBadInput
+			}
 			data.Peers[i].SessionUpEvents = ctr.SessionUpEvents
 			data.Peers[i].SessionDownEvents = ctr.SessionDownEvents
 		}

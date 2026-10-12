@@ -1002,6 +1002,53 @@ func TestFetchFRRBFD_CounterTagsMatchFRRWireNames(t *testing.T) {
 	}
 }
 
+// Fixtures follow FRR's per-peer numeric counter shape. Missing keys represent
+// older builds; null is a synthetic defensive tolerance case.
+func TestFetchFRRBFD_RejectedControlPackets(t *testing.T) {
+	for _, tc := range []struct {
+		name, field string
+		present     bool
+		value       float64
+	}{
+		{"rejected", `,"controlPacketBadInput":17`, true, 17},
+		{"zero", `,"controlPacketBadInput":0`, true, 0},
+		{"older-missing-key", "", false, 0},
+		{"null", `,"controlPacketBadInput":null`, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, mux, client := newTestClientWithMux(t)
+			defer server.Close()
+			mux.HandleFunc("/api/quagga/diagnostics/bfdneighbors", func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"response":{
+				"peer-alpha":{"peer":"peer-alpha","local":"local-peer","interface":"if-alpha","status":"up","uptime":3600,"diagnostic":"ok","remote-diagnostic":"ok","rtt-min":500,"rtt-avg":750,"rtt-max":1200,"id":1,"remote-id":2},
+				"peer-beta":{"peer":"peer-beta","local":"local-peer","interface":"if-beta","status":"down","downtime":120,"diagnostic":"neighbor signaled session down","remote-diagnostic":"control detection time expired","rtt-min":0,"rtt-avg":0,"rtt-max":0,"id":3,"remote-id":4},
+				"peer-gamma":{"peer":"peer-gamma","local":"local-peer","interface":"if-gamma","status":"init","diagnostic":"ok","remote-diagnostic":"ok","rtt-min":0,"rtt-avg":0,"rtt-max":0,"id":5,"remote-id":6}}}`))
+			})
+			mux.HandleFunc("/api/quagga/diagnostics/bfdcounters", func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"response":{"peer-alpha":{"peer":"peer-alpha","control-packet-input":101` + tc.field + `},"peer-beta":{"peer":"peer-beta","control-packet-input":201}}}`))
+			})
+			data, err := client.FetchFRRBFD()
+			if err != nil || !data.Present {
+				t.Fatalf("FetchFRRBFD: data=%+v err=%v", data, err)
+			}
+			seen := false
+			for _, peer := range data.Peers {
+				if peer.Peer == "peer-alpha" {
+					seen = true
+					if !peer.HasCounters || peer.ControlIn != 101 || peer.HasControlBadInput != tc.present || peer.ControlBadInput != tc.value {
+						t.Errorf("rejected counter decode: peer=%+v want presence=%v value=%v", peer, tc.present, tc.value)
+					}
+				} else if peer.HasControlBadInput {
+					t.Errorf("peer %s must not inherit another peer's rejected counter", peer.Peer)
+				}
+			}
+			if !seen {
+				t.Fatal("matched peer missing")
+			}
+		})
+	}
+}
+
 func TestFetchFRRBFD_CountersMissing(t *testing.T) {
 	// Neighbors endpoint returns data, but counters endpoint returns 404.
 	server, mux, client := newTestClientWithMux(t)
@@ -1025,8 +1072,8 @@ func TestFetchFRRBFD_CountersMissing(t *testing.T) {
 		t.Fatalf("expected 3 peers, got %d", len(data.Peers))
 	}
 	for _, p := range data.Peers {
-		if p.HasCounters {
-			t.Errorf("peer %s: expected HasCounters=false when counters endpoint absent", p.Peer)
+		if p.HasCounters || p.HasControlBadInput {
+			t.Errorf("peer %s: expected counters absent when counters endpoint absent", p.Peer)
 		}
 	}
 }

@@ -71978,7 +71978,7 @@
         "spec": {
           "id": 692,
           "title": "BFD Control Packet Rate",
-          "description": "BFD control packet receive/send rates per peer.",
+          "description": "BFD control packet receive/send/rejection rates per peer. Rejections are invalid control packets (for example malformed packet fields). Older FRR builds that omit controlPacketBadInput have no rejection series, not zero.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -72030,6 +72030,32 @@
                         "expr": "max without (job, service_instance_id, service_name, service_version) (rate(opnsense_frr_bfd_peer_control_packets_sent_total{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))",
                         "refId": "B",
                         "legendFormat": "{{peer}} sent",
+                        "instant": false,
+                        "range": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "datasource": {
+                      "type": "prometheus",
+                      "uid": "${datasource}"
+                    },
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "prometheus",
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "spec": {
+                        "expr": "max without (job, service_instance_id, service_name, service_version) (rate(opnsense_frr_bfd_peer_control_packets_rejected_total{opnsense_instance=~\"$opnsense_instance\"}[$__rate_interval]))",
+                        "refId": "C",
+                        "legendFormat": "{{peer}} rejected",
                         "instant": false,
                         "range": true
                       }

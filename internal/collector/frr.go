@@ -92,6 +92,7 @@ type frrCollector struct {
 	bfdPeerUptimeSec       *prometheus.Desc
 	bfdPeerCtrlIn          *prometheus.Desc
 	bfdPeerCtrlOut         *prometheus.Desc
+	bfdPeerCtrlRejected    *prometheus.Desc
 	bfdPeerSessionUpEvents *prometheus.Desc
 	bfdPeerSessionDnEvents *prometheus.Desc
 
@@ -350,6 +351,9 @@ func (c *frrCollector) Register(namespace, instanceLabel string, log *slog.Logge
 		"Cumulative BFD control packets received from this peer", peerOnlyLabels)
 	c.bfdPeerCtrlOut = buildPrometheusDesc(c.subsystem, "bfd_peer_control_packets_sent_total",
 		"Cumulative BFD control packets sent to this peer", peerOnlyLabels)
+	c.bfdPeerCtrlRejected = buildPrometheusDesc(c.subsystem, "bfd_peer_control_packets_rejected_total",
+		"Cumulative BFD control packets rejected as invalid from this peer. Absent (not zero) "+
+			"on older FRR builds that do not report controlPacketBadInput.", peerOnlyLabels)
 	c.bfdPeerSessionUpEvents = buildPrometheusDesc(c.subsystem, "bfd_peer_session_up_events_total",
 		"Cumulative BFD session-up events for this peer", peerOnlyLabels)
 	c.bfdPeerSessionDnEvents = buildPrometheusDesc(c.subsystem, "bfd_peer_session_down_events_total",
@@ -477,7 +481,7 @@ func (c *frrCollector) Describe(ch chan<- *prometheus.Desc) {
 		c.ospfv3SPFLastDurationSec, c.ospfv3AreaSPFLastExecutedTimestamp,
 		c.bfdPeersTotal, c.bfdSummaryPeerInfo, c.bfdSummaryPeers,
 		c.bfdPeerUp, c.bfdPeerUptimeSec,
-		c.bfdPeerCtrlIn, c.bfdPeerCtrlOut,
+		c.bfdPeerCtrlIn, c.bfdPeerCtrlOut, c.bfdPeerCtrlRejected,
 		c.bfdPeerSessionUpEvents, c.bfdPeerSessionDnEvents,
 		c.bfdPeerDiagnosticInfo, c.bfdPeerRTTMin, c.bfdPeerRTTAvg, c.bfdPeerRTTMax,
 		c.bfdPeerDowntimeSec,
@@ -744,6 +748,10 @@ func (c *frrCollector) Update(ctx context.Context, client *opnsense.Client, ch c
 					prometheus.CounterValue, peer.ControlIn, peer.Peer, c.instance)
 				ch <- prometheus.MustNewConstMetric(c.bfdPeerCtrlOut,
 					prometheus.CounterValue, peer.ControlOut, peer.Peer, c.instance)
+				if peer.HasControlBadInput {
+					ch <- prometheus.MustNewConstMetric(c.bfdPeerCtrlRejected,
+						prometheus.CounterValue, peer.ControlBadInput, peer.Peer, c.instance)
+				}
 				ch <- prometheus.MustNewConstMetric(c.bfdPeerSessionUpEvents,
 					prometheus.CounterValue, peer.SessionUpEvents, peer.Peer, c.instance)
 				ch <- prometheus.MustNewConstMetric(c.bfdPeerSessionDnEvents,

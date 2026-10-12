@@ -7,9 +7,9 @@ The `opnsense_instance` label is applied to all metrics.
 
 ## Summary
 
-- **Total metrics:** 1047
+- **Total metrics:** 1048
 - **Gauges:** 698
-- **Counters:** 349
+- **Counters:** 350
 
 ## General
 
@@ -309,6 +309,7 @@ The `opnsense_instance` label is applied to all metrics.
 | opnsense_frr_bfd_peer_uptime_seconds | Gauge | peer | Uptime of this BFD peer session in seconds | --exporter.disable-frr |
 | opnsense_frr_bfd_peer_control_packets_received_total | Counter | peer | Cumulative BFD control packets received from this peer | --exporter.disable-frr |
 | opnsense_frr_bfd_peer_control_packets_sent_total | Counter | peer | Cumulative BFD control packets sent to this peer | --exporter.disable-frr |
+| opnsense_frr_bfd_peer_control_packets_rejected_total | Counter | peer | Cumulative BFD control packets rejected as invalid from this peer. Absent (not zero) on older FRR builds that do not report controlPacketBadInput. | --exporter.disable-frr |
 | opnsense_frr_bfd_peer_session_up_events_total | Counter | peer | Cumulative BFD session-up events for this peer | --exporter.disable-frr |
 | opnsense_frr_bfd_peer_session_down_events_total | Counter | peer | Cumulative BFD session-down events for this peer | --exporter.disable-frr |
 | opnsense_frr_bfd_peer_diagnostic_info | Gauge | peer, diagnostic, remote_diagnostic | FRR BFD peer diagnostic reason (value is always 1; use labels). diagnostic/remote_diagnostic are FRR's diag2str() enum: ok, control detection time expired, echo function failed, neighbor signaled session down, forwarding plane reset, path down, concatenated path down, administratively down, reverse concatenated path down, unknown. | --exporter.disable-frr |

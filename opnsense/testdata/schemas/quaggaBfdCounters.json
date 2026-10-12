@@ -24,6 +24,10 @@
       "kind": "number"
     },
     {
+      "path": "response.*.controlPacketBadInput",
+      "kind": "number"
+    },
+    {
       "path": "response.*.peer",
       "kind": "string"
     },

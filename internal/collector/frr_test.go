@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 )
 
@@ -242,6 +243,91 @@ func TestFRRCollector_Update_Normal(t *testing.T) {
 				t.Error("expected frr_bgp_peer_uptime_seconds to be skipped for peer with 0 uptime")
 			}
 		}
+	}
+}
+
+// TestFRRCollector_Update_BFDRejectedControlPackets exercises the public client
+// and real collector against source-derived FRR counter fixtures. Missing keys
+// model older FRR builds; null is a synthetic defensive decoding case.
+func TestFRRCollector_Update_BFDRejectedControlPackets(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		counter string
+		present bool
+		value   float64
+	}{
+		{"rejected", `,"controlPacketBadInput":17`, true, 17},
+		{"zero", `,"controlPacketBadInput":0`, true, 0},
+		{"older-missing-key", "", false, 0},
+		{"null", `,"controlPacketBadInput":null`, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fallback := frrCollectorMux(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/quagga/diagnostics/bfdneighbors" {
+					w.Write([]byte(`{"response":{
+					"peer-alpha":{"peer":"peer-alpha","local":"local-peer","interface":"if-alpha","status":"up","uptime":3600,"diagnostic":"ok","remote-diagnostic":"ok","rtt-min":500,"rtt-avg":750,"rtt-max":1200},
+					"peer-beta":{"peer":"peer-beta","local":"local-peer","interface":"if-beta","status":"down","downtime":120,"diagnostic":"neighbor signaled session down","remote-diagnostic":"control detection time expired","rtt-min":0,"rtt-avg":0,"rtt-max":0},
+					"peer-gamma":{"peer":"peer-gamma","local":"local-peer","interface":"if-gamma","status":"init","diagnostic":"ok","remote-diagnostic":"ok","rtt-min":0,"rtt-avg":0,"rtt-max":0}}}`))
+					return
+				}
+				if r.URL.Path == "/api/quagga/diagnostics/bfdcounters" {
+					// Two matched peers and an unmatched counter row pin peer-key
+					// merging, not map iteration order or the embedded peer field.
+					w.Write([]byte(`{"response":{
+					"peer-alpha":{"peer":"peer-alpha","control-packet-input":101,"control-packet-output":102` + tc.counter + `},
+					"peer-beta":{"peer":"peer-beta","control-packet-input":201,"control-packet-output":202},
+					"peer-orphan":{"peer":"peer-orphan","controlPacketBadInput":999}}}`))
+					return
+				}
+				fallback.ServeHTTP(w, r)
+			}))
+			defer server.Close()
+			c := &frrCollector{subsystem: FRRSubsystem}
+			c.Register(namespace, "test", promslog.NewNopLogger())
+			metrics := collectMetrics(t, c, newCollectorTestClient(t, server))
+			seen := 0
+			var receivedLabels map[string]string
+			var rejectedLabels map[string]string
+			for _, m := range metrics {
+				labels := getMetricLabels(m)
+				if strings.Contains(m.Desc().String(), "frr_bfd_peer_control_packets_received_total") && labels["peer"] == "peer-alpha" {
+					receivedLabels = labels
+				}
+				if !strings.Contains(m.Desc().String(), "frr_bfd_peer_control_packets_rejected_total") {
+					continue
+				}
+				seen++
+				rejectedLabels = labels
+				if labels["peer"] != "peer-alpha" || getMetricValue(m) != tc.value {
+					t.Errorf("unexpected rejected counter: labels=%v value=%v", labels, getMetricValue(m))
+				}
+				var wire dto.Metric
+				if err := m.Write(&wire); err != nil || wire.Counter == nil {
+					t.Errorf("rejected packets must be a counter: metric=%v err=%v", &wire, err)
+				}
+			}
+			want := 0
+			if tc.present {
+				want = 1
+			}
+			if seen != want {
+				t.Errorf("rejected series: got %d, want %d", seen, want)
+			}
+			if receivedLabels == nil {
+				t.Fatal("existing received counter missing")
+			}
+			if tc.present {
+				if len(rejectedLabels) != len(receivedLabels) {
+					t.Errorf("label set differs: rejected=%v received=%v", rejectedLabels, receivedLabels)
+				}
+				for k, v := range receivedLabels {
+					if rejectedLabels[k] != v {
+						t.Errorf("label %s: got %q want %q", k, rejectedLabels[k], v)
+					}
+				}
+			}
+		})
 	}
 }
 
