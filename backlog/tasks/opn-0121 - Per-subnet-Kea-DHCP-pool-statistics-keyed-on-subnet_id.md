@@ -1,11 +1,11 @@
 ---
 id: OPN-0121
 title: Per-subnet Kea DHCP pool statistics keyed on subnet_id
-status: In Progress
+status: Done
 assignee:
   - '@loop10'
 created_date: '2026-10-08 21:56'
-updated_date: '2026-10-12 21:33'
+updated_date: '2026-10-12 22:02'
 labels:
   - kea
   - feature
@@ -30,8 +30,8 @@ The 2026-09-20 canary triage (OPN-0119) found keaSubnets4/keaSubnets6 search row
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -44,6 +44,8 @@ Establish from current upstream OPNsense source whether REST exposes native Kea 
 
 <!-- SECTION:NOTES:BEGIN -->
 loop10: read-only investigation, 0 implementation attempts. Public opnsense/core at 8e6f3f34a90051ca6819e23c22e84a5afca856bf inspected through concrete routing, dispatcher, every Kea controller/base chain and actions_kea.conf. Management REST exposes configuration, aggregate lease record counts and lifecycle/status, but no native statistic-get-all/per-subnet assigned/total capacity chain. Optional separate native Kea Control Agent HTTP listener exists, disabled/loopback by default; it is not the management API auth/ACL surface and would require a separately agreed access/security design. Independent guarded evidence review PASS. No exporter/schema/dashboard code changed; both subnet_id opportunity entries retained. AC2/AC3 conditional on such endpoint are N/A, not implemented or falsely checked. Root metadata publication/final gate pending; CodeRabbit skipped read-only.
+
+loop10: 0 implementation attempts, completed by explicit D8 no-code branch. Independent guarded source evidence accepted; management stats route absent at pinned upstream commit, separate optional native-agent HTTP seam explicitly excluded. AC2/AC3 remain N/A conditional, ledger/goldens untouched. Task-specific goal gate is none for read-only investigation; default just-check/gen DoD marked satisfied by N/A no-code disposition, not a fabricated lane run. Root final integrated gate/publication will cover tracker-only closure.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
