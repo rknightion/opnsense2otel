@@ -1,9 +1,11 @@
 ---
 id: OPN-0120
 title: Export the BFD rejected-control-packet counter
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop10'
 created_date: '2026-10-08 21:56'
+updated_date: '2026-10-12 20:00'
 labels:
   - frr
   - feature
@@ -31,3 +33,9 @@ The 2026-09-20 canary triage (OPN-0119) found FRR's BFD peer counters now carry 
 - [ ] #1 just check
 - [ ] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Investigate existing FRR counter/metric seam, add presence-aware bad-input counter with public-client/collector compatibility tests, consume schema ledger, generate dashboard/docs, serialize full gate, return staged candidate for guarded review and root publication.
+<!-- SECTION:PLAN:END -->
