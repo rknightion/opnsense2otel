@@ -62,6 +62,22 @@ func parseCapturedRecord(env Envelope, snap *enrich.Snapshot) (logship.Record, b
 				enrichEndpoint(set, snap, prefix, ip, "", "")
 			}
 		}
+		if rule.event == "elasticsearch_log" {
+			// Console PRI describes the rc wrapper, not Elasticsearch's level.
+			// Preserve the inner level and promote warnings/errors accordingly.
+			level := strings.TrimSpace(rec.Attributes["elasticsearch.level"])
+			rec.Attributes["elasticsearch.level"] = level
+			switch level {
+			case "INFO":
+				rec.Severity = logship.SeverityInfo
+			case "ERROR":
+				rec.Severity = logship.SeverityError
+			case "WARN":
+				rec.Severity = logship.SeverityWarn
+			case "DEBUG", "TRACE":
+				rec.Severity = logship.SeverityDebug
+			}
+		}
 		// Preserve the generic body enrichment these formerly unparsed lines had.
 		// Positional endpoint enrichment above is separate from the peer.* body scan.
 		addCommon(&rec, env, snap, true)

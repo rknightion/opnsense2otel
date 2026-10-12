@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@loop10'
 created_date: '2026-10-12 19:08'
-updated_date: '2026-10-12 19:42'
+updated_date: '2026-10-12 20:35'
 labels:
   - syslog
   - zenarmor
@@ -29,15 +29,15 @@ The production firewall reboot during the 26.7.6 upgrade (2026-10-12, about 09:5
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every program/shape in the 2026-10-12 capture has a disposition in internal/logship/syslog: a parser, a documented known pass-through, or a documented drop reason, with synthesised fixtures pinning each new rule
-- [ ] #2 The Zenarmor web parse_error is reproduced from a synthesised document of the same shape and either parsed or rejected with a documented reason, pinned by a test
-- [ ] #3 Replaying the private snapshot through the parser leaves no record classified unknown
+- [x] #1 Every program/shape in the 2026-10-12 capture has a disposition in internal/logship/syslog: a parser, a documented known pass-through, or a documented drop reason, with synthesised fixtures pinning each new rule
+- [x] #2 The Zenarmor web parse_error is reproduced from a synthesised document of the same shape and either parsed or rejected with a documented reason, pinned by a test
+- [x] #3 Replaying the private snapshot through the parser leaves no record classified unknown
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -45,3 +45,9 @@ The production firewall reboot during the 26.7.6 upgrade (2026-10-12, about 09:5
 <!-- SECTION:PLAN:BEGIN -->
 Classify private capture shapes with synthetic parser fixtures and redacted replay totals; fail reproductions before fixes; staged candidate after local gate for root security review, CodeRabbit and publication.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop10: 3 implementation cycles. Private manifest verified; local production-ingress replay ships 257 records (128 parsed, 129 documented known pass-through), zero corpus unknown; synthetic unknown positive control captured. Web parse_error reproduced as unescaped JSON control bytes; intentionally rejected with reason, raw body still ships, capture remains. New fixtures synthesized from shape, literal-address source fence corrected without changing runtime messages/assertions; guarded original and delta review PASS. CodeRabbit completed zero findings across all six original files, no repeat for trivial fixture construction delta. Exact full gate passed on corrected staged candidate. Root integration, exact-SHA CI and post-auto-deploy readback are pending; not Done yet.
+<!-- SECTION:NOTES:END -->

@@ -141,6 +141,9 @@ func parseDoc(family string, doc []byte, snap *enrich.Snapshot) (logship.Record,
 func parseDocFull(family string, doc []byte, snap *enrich.Snapshot) (logship.Record, *zenDoc, bool) {
 	var d zenDoc
 	if err := json.Unmarshal(doc, &d); err != nil {
+		// This includes the reboot web shape with unescaped control bytes in
+		// method. Reject malformed JSON intentionally; never repair sender bytes
+		// or emit partial attributes. The raw document still ships and captures.
 		return logship.Record{Body: string(doc)}, nil, false
 	}
 
