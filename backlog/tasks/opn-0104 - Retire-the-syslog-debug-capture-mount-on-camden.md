@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-06 14:30'
-updated_date: '2026-09-06 18:44'
+updated_date: '2026-10-12 19:08'
 labels: []
 dependencies: []
 references:
@@ -63,4 +63,6 @@ Live implementation delivered at 22a903c4bde60cf0d21ce9e85dfb6e994dd50971. CI ru
 Live proof: three marked receiver-local synthetic UDP controls arrived in Loki as parsed/package_upgraded, known/dhclient_script_side_effect and unknown; only the unknown control entered active capture (one file, one record). Initial loopback TCP control was correctly peer-rejected; no receiver/firewall allowlist was changed. UDP controls used the configured permitted source address and were explicitly synthetic, not genuine firewall evidence. Separate authenticated read-back found 10 recent genuine parsed syslog records from service version 22a903c after the fresh restart. At the sampled boundary syslog shipped=8318, Zenarmor shipped=9271, NetFlow decoded=14159; log shipping errors, pipeline drops and capture drops were zero. NetFlow had 943 no_template records during startup and 527 intentional vlan_duplicate records, so do not claim zero flow drops. No new retained unidentified NetFlow payload required decoding.
 
 Evidence remains private in the capture-review directory: ci-implementation-green.json, publication-implementation.json, image-pull.log, loki-controls-udp.json, loki-genuine-live.json and metrics-live-proof.prom. All 4093 refreshed corpus records had prior ingress proof, with 1429 parsed and 2664 known. Keep OPN-0104 In Progress: AC3 remains unfulfilled pending a full observation week. The active corpus currently includes the clearly marked unknown positive control. Earliest quiet-week review is 2026-09-13 after 18:39 UTC, reset by any genuine new unknown shape. Retain the shared capture directory/mount while NetFlow unidentified capture uses it; no retirement action was taken.
+
+2026-10-12: the 26.7.6 upgrade reboot added 257 unparsed syslog shapes and one Zenarmor parse_error to the camden capture; AC3's week-quiet clock restarts from 2026-10-12. Classification is tracked as its own task (boot-time syslog shapes from the 2026-10-12 capture).
 <!-- SECTION:NOTES:END -->
