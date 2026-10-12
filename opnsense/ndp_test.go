@@ -2,8 +2,61 @@ package opnsense
 
 import (
 	"net/http"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/rknightion/opnsense2otel/v5/internal/fetchshare"
 )
+
+func TestFetchNDPTable_EmptyBodyTransientFailure(t *testing.T) {
+	requests := 0
+	server, client := newTestClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/diagnostics/interface/get_ndp" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		requests++
+		if requests > 1 {
+			_, _ = w.Write([]byte(`[]`))
+		}
+	})
+	defer server.Close()
+	observer := &fakeResultObserver{}
+	client.SetRequestObserver(observer)
+	client.SetEndpointCacheTTL("ndpTable", time.Hour)
+	seam := fetchshare.New()
+	client.SetResultSeam(seam)
+	got, apiErr := client.FetchNDPTable()
+	if apiErr == nil {
+		t.Fatal("empty HTTP200 body fabricated success")
+	}
+	if apiErr.StatusCode != http.StatusOK || apiErr.PartialDecode || !strings.Contains(apiErr.Message, "transient") || strings.Contains(apiErr.Message, "unmarshal") {
+		t.Fatalf("expected transient fetch failure, got %+v", apiErr)
+	}
+	if got.TotalEntries != 0 || len(got.Entries) != 0 {
+		t.Fatalf("unexpected data: %+v", got)
+	}
+	if _, ok := fetchshare.Fresh[NDPTable](seam, fetchshare.KeyNDPTable, time.Minute); ok {
+		t.Fatal("failed fetch published fabricated zero table")
+	}
+	calls := observer.snapshot()
+	if len(calls) != 1 || calls[0].apiErr != apiErr || calls[0].code != http.StatusOK {
+		t.Fatalf("failure not observed: %+v", calls)
+	}
+	if _, err := client.FetchNDPTable(); err != nil {
+		t.Fatalf("recovery failed: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("empty response cached: requests=%d", requests)
+	}
+	if _, ok := fetchshare.Fresh[NDPTable](seam, fetchshare.KeyNDPTable, time.Minute); !ok {
+		t.Fatal("valid empty array did not publish success")
+	}
+	calls = observer.snapshot()
+	if len(calls) != 2 || calls[1].apiErr != nil {
+		t.Fatalf("recovery not observed: %+v", calls)
+	}
+}
 
 func TestFetchNDPTable_Success(t *testing.T) {
 	server, client := newTestClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {

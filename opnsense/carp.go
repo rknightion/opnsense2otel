@@ -1,5 +1,10 @@
 package opnsense
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 // carpVIPRow is the raw JSON row returned by the CARP VIP status API
 // (get_vip_status). On OPNsense 26.1 the row has no "vip" key — the VIP address
 // is carried in "subnet" (getVipStatusAction sets 'subnet' => $subnet['ipaddr']).
@@ -18,6 +23,22 @@ type carpInfo struct {
 	Demotion        string `json:"demotion"`
 	Allow           string `json:"allow"`
 	MaintenanceMode bool   `json:"maintenancemode"`
+}
+
+// carpInfoObject is the actual object decode target, without UnmarshalJSON.
+// Naming it lets schema descent retain all consumed CARP fields.
+type carpInfoObject carpInfo
+
+// UnmarshalJSON accepts the empty array emitted during restart windows, but
+// retains ordinary object decoding and rejects nonempty arrays and scalars.
+func (c *carpInfo) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("[]")) {
+		// The legacy boolean parser treats an empty string as enabled.
+		// Explicitly mark absent info as disabled instead.
+		*c = carpInfo{Allow: "0"}
+		return nil
+	}
+	return json.Unmarshal(data, (*carpInfoObject)(c))
 }
 
 // carpStatusResponse is the top-level JSON structure for the CARP status API.

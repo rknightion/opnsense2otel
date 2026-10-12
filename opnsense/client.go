@@ -841,6 +841,17 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 		}
 	}
 
+	// get_ndp can briefly return HTTP200 without a body while its service
+	// restarts. This is a failed fetch, not an empty table or a schema error;
+	// reject it before request-result observation and positive caching.
+	if path == EndpointPath("api/diagnostics/interface/get_ndp") && len(bytes.TrimSpace(respBody)) == 0 {
+		return &APICallError{
+			Endpoint:   string(path),
+			Message:    "transient fetch failure: empty NDP response body",
+			StatusCode: resp.StatusCode,
+		}
+	}
+
 	if err := unmarshalBody(path, respBody, resp.StatusCode, responseStruct); err != nil {
 		return err
 	}

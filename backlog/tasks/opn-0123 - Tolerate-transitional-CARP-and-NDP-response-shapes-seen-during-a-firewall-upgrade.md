@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@loop10'
 created_date: '2026-10-12 19:08'
-updated_date: '2026-10-12 19:44'
+updated_date: '2026-10-12 21:10'
 labels:
   - carp
   - ndp
@@ -26,14 +26,14 @@ During the 2026-10-12 production upgrade to 26.7.6 the box answered api/diagnost
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A carp value of [] decodes as 'no CARP info' without failing the fetch, pinned by a fixture taken from the observed body shape; a non-empty object still decodes as before
-- [ ] #2 An empty 200 body from get_ndp is reported as a transient fetch failure (counted, no panic, no fabricated zero series) rather than a JSON decode error, pinned by a test
+- [x] #1 A carp value of [] decodes as 'no CARP info' without failing the fetch, pinned by a fixture taken from the observed body shape; a non-empty object still decodes as before
+- [x] #2 An empty 200 body from get_ndp is reported as a transient fetch failure (counted, no panic, no fabricated zero series) rather than a JSON decode error, pinned by a test
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -46,4 +46,6 @@ Implement transitional CARP/NDP decoding within owned files; fail reproductions 
 
 <!-- SECTION:NOTES:BEGIN -->
 loop10: pre-mutation ownership gap, 0 implementation attempts. Empty HTTP200 NDP classification must precede shared client observer/cache. Root amended ownership for an endpoint-specific client.go check and serializes this lane after firmware landing to avoid shared-file ownership. Observer behavior tests remain in ndp_test.go.
+
+loop10: 4 implementation cycles, final permitted candidate passed full gate. CARP restart [] decodes disabled/no-info while ordinary objects retain behavior; empty successful NDP body returns a transient failure before request-result observation/cache/publication, with actual failed-observer/no-cache proof. Named CARP object descent preserves introspection. Guarded review caught and closed a major false-pass from unnecessary Heterogeneous; strict canonical object schema already tolerates PHP empty arrays and retains invalid-container and new-key checks. New registered-validator regression failed before correction then passed. Final security PASS and completed CodeRabbit zero findings across all six final paths. Root integration, exact-SHA CI and auto-deploy readback remain pending; not Done yet.
 <!-- SECTION:NOTES:END -->

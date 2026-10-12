@@ -269,7 +269,7 @@ var schemaRegistry = map[EndpointName]any{
 	"captivePortalServiceStatus": serviceStatusResponse{},
 	"captivePortalSessions":      captivePortalSessionSearch{},
 	"captivePortalZones":         captivePortalZoneMap{},
-	"carpStatus":                 carpStatusResponse{},
+	"carpStatus":                 envelopeDescent{Envelope: carpStatusResponse{}, Field: "carp", Inner: carpInfoObject{}}, // KindObject already tolerates restart-window [].
 	"certificates":               certificateSearchResponse{},
 	"chronyServiceStatus":        serviceStatusResponse{},
 	"chronySources":              chronyResponseEnvelope{},

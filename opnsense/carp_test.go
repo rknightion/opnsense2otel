@@ -2,8 +2,92 @@ package opnsense
 
 import (
 	"net/http"
+	"os"
+	"slices"
 	"testing"
 )
+
+// Synthetic drift cases must be checked against the real registration: an empty
+// PHP object may be [], but populated arrays/scalars are not valid CARP info.
+func TestCARPRegisteredSchemaValidation(t *testing.T) {
+	target, ok := schemaRegistry["carpStatus"]
+	if !ok {
+		t.Fatal("CARP schema is not registered")
+	}
+	schema, err := schemaForRegistryEntry("carpStatus", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name           string
+		carp           string
+		wantMismatches []Mismatch
+		wantUnknown    []string
+	}{
+		{name: "empty array", carp: `[]`},
+		{name: "valid object", carp: `{"allow":"1","demotion":"0","maintenancemode":false}`},
+		{name: "number", carp: `1`, wantMismatches: []Mismatch{{Path: "carp", Expected: KindObject, Got: "number"}}},
+		{name: "string", carp: `"invalid"`, wantMismatches: []Mismatch{{Path: "carp", Expected: KindObject, Got: "string"}}},
+		{name: "populated array", carp: `[{}]`, wantMismatches: []Mismatch{{Path: "carp", Expected: KindObject, Got: "array"}}},
+		{name: "allow drift", carp: `{"allow":1,"demotion":"0","maintenancemode":false}`, wantMismatches: []Mismatch{{Path: "carp.allow", Expected: KindString, Got: "number"}}},
+		{name: "demotion drift", carp: `{"allow":"1","demotion":0,"maintenancemode":false}`, wantMismatches: []Mismatch{{Path: "carp.demotion", Expected: KindString, Got: "number"}}},
+		{name: "maintenance drift", carp: `{"allow":"1","demotion":"0","maintenancemode":"false"}`, wantMismatches: []Mismatch{{Path: "carp.maintenancemode", Expected: KindBool, Got: "string"}}},
+		{name: "new key opportunity", carp: `{"allow":"1","demotion":"0","maintenancemode":false,"new_field":true}`, wantUnknown: []string{"carp.new_field"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := ValidateResponseSchema(schema, []byte(`{"rows":[],"carp":`+tc.carp+`}`), SchemaExemption{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(res.Mismatches, tc.wantMismatches) {
+				t.Errorf("Mismatches = %v, want %v", res.Mismatches, tc.wantMismatches)
+			}
+			if !slices.Equal(res.UnknownPaths, tc.wantUnknown) {
+				t.Errorf("UnknownPaths = %v, want %v", res.UnknownPaths, tc.wantUnknown)
+			}
+			wantClean := len(tc.wantMismatches) == 0 && len(tc.wantUnknown) == 0
+			if res.Clean() != wantClean {
+				t.Errorf("Clean() = %v, want %v: %+v", res.Clean(), wantClean, res)
+			}
+			if tc.name == "empty array" {
+				for _, path := range []string{"carp", "carp.allow", "carp.demotion", "carp.maintenancemode"} {
+					if !slices.Contains(res.Unverified, path) {
+						t.Errorf("empty array must leave %s unverified; got %v", path, res.Unverified)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestFetchCARPStatus_TransitionalShapes(t *testing.T) {
+	body, err := os.ReadFile("testdata/carp_empty_array.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, body string
+		wantError  bool
+	}{
+		{"empty array", string(body), false},
+		{"nonempty array", `{"rows":[],"carp":[{}]}`, true},
+		{"string", `{"rows":[],"carp":"invalid"}`, true},
+		{"number", `{"rows":[],"carp":1}`, true},
+		{"invalid object field", `{"rows":[],"carp":{"demotion":5}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, client := newTestClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(tc.body)) })
+			defer server.Close()
+			got, apiErr := client.FetchCARPStatus()
+			if (apiErr != nil) != tc.wantError {
+				t.Fatalf("error = %v, wantError = %v", apiErr, tc.wantError)
+			}
+			if !tc.wantError && (len(got.VIPs) != 0 || got.Demotion != 0 || got.Allow || got.MaintenanceMode) {
+				t.Fatalf("expected no CARP info, got %+v", got)
+			}
+		})
+	}
+}
 
 func TestFetchCARPStatus_WithVIPs(t *testing.T) {
 	server, client := newTestClientWithServer(t, func(w http.ResponseWriter, r *http.Request) {
