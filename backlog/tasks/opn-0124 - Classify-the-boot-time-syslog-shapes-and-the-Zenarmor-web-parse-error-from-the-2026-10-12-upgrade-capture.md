@@ -3,11 +3,11 @@ id: OPN-0124
 title: >-
   Classify the boot-time syslog shapes and the Zenarmor web parse error from the
   2026-10-12 upgrade capture
-status: In Progress
+status: Done
 assignee:
   - '@loop10'
 created_date: '2026-10-12 19:08'
-updated_date: '2026-10-12 20:35'
+updated_date: '2026-10-12 21:02'
 labels:
   - syslog
   - zenarmor
@@ -50,4 +50,12 @@ Classify private capture shapes with synthetic parser fixtures and redacted repl
 
 <!-- SECTION:NOTES:BEGIN -->
 loop10: 3 implementation cycles. Private manifest verified; local production-ingress replay ships 257 records (128 parsed, 129 documented known pass-through), zero corpus unknown; synthetic unknown positive control captured. Web parse_error reproduced as unescaped JSON control bytes; intentionally rejected with reason, raw body still ships, capture remains. New fixtures synthesized from shape, literal-address source fence corrected without changing runtime messages/assertions; guarded original and delta review PASS. CodeRabbit completed zero findings across all six original files, no repeat for trivial fixture construction delta. Exact full gate passed on corrected staged candidate. Root integration, exact-SHA CI and post-auto-deploy readback are pending; not Done yet.
+
+loop10: attempts 3, completed. Corrected source landed, exact integrated full gate and ci-success passed; auto-deployed build observed through the granted datasource proxy. Local private replay proves classification and raw-body retention; live readback proves rollout, not a new production reboot replay.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Classified all captured reboot shapes with anchored parsers or documented pass-through: 257 local ingress records shipped, 128 parsed, 129 known, zero unknown. Synthesized Zenarmor web malformed-control-byte case intentionally rejects while retaining raw shipping/capture. Tests preserved, source literals corrected, guarded reviews and full gates passed; deployed build observed.
+<!-- SECTION:FINAL_SUMMARY:END -->
