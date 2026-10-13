@@ -58,6 +58,11 @@ lint:
 test filter="":
     go test -race -timeout 15m {{ if filter != "" { "-run " + filter } else { "" } }} ./...
 
+# verify registered API contracts against an explicitly configured live lab
+[group('dev')]
+live-contract:
+    go test -tags live -run 'TestLive' -count=1 -timeout 20m ./cmd/apidrift
+
 # write an atomic coverage profile to coverage.out (uploaded to Codacy by CI)
 [group('check')]
 test-coverage:

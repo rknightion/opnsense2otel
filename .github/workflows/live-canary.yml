@@ -9,30 +9,15 @@ name: OPNsense Live-Box Canary
 #
 # Runs once per probe target (nightly = devel-channel box, release-vm =
 # release-channel box), each filing into its OWN issue so neither can close the
-# other's findings. camden runs the third target, prod, on a systemd timer.
+# other's findings. Production firewall probing is retired.
 #
 # Reports and logs carry key paths + JSON type names only — never payload
 # values (the box's data must not leak into a public repo).
 
-# DISPATCH ONLY, and ON DEMAND. The testbed is off by default. When a change
-# needs live validation, the main session raises the lab on `oli`
-# (opnsense-testbed-power.sh up <hold>), dispatches this workflow, then releases
-# the hold and takes the lab down. oli's opnsense-testbed-up.timer and
-# opnsense-testbed-canary.timer, which used to do this every morning, are
-# deliberately disabled; do not re-enable them.
-#
-# This used to carry `cron: '47 6 * * *'`, sized against the 06:00-08:30 UTC
-# testbed power window #625 introduced. GitHub does not run scheduled workflows
-# at the requested time: every scheduled run from 2026-08-02 to 2026-08-05 started
-# between 08:55 and 10:26 UTC — 2h08 to 3h39 late — so the runner dialled boxes
-# that were already shut down and the canary failed four days running with
-# `pre-flight probe failed - box unreachable`. Scheduled runs are documented as
-# best-effort with no upper bound on the delay, so there is no cron time that fixes
-# it and no window width short of most of the day, which is the cost #625 exists to
-# avoid.
-#
-# Do NOT add a `schedule:` back: it would fire against a lab nobody raised, or
-# race an on-demand run, and report either as drift.
+# DISPATCH ONLY. Each matrix job raises the lab, holds it while updating and
+# probing, then releases the hold and shuts down in its always() teardown.
+# Startup/canary timers remain disabled. The five-minute watchdog bounds an
+# abandoned run after its hold expires. Never overlap another testbed consumer.
 on:
   workflow_dispatch: {}
 
@@ -87,11 +72,11 @@ jobs:
             key_secret: DEVBOX2_API_KEY
             secret_secret: DEVBOX2_API_SECRET
     # Hardening, since this workflow holds tailnet credentials in a public
-    # repo: it triggers only on schedule + manual dispatch (never on
+    # repo: it triggers only on manual dispatch (never on
     # pull_request, so fork PRs can neither run it nor see its secrets), the
     # secrets live in the `tailnet` environment whose deployment-branch policy
     # is main-only, and the repository guard stops forks' copies from even
-    # attempting scheduled runs. timeout-minutes bounds how long the ephemeral
+    # attempting runs. timeout-minutes bounds how long the ephemeral
     # node can exist if something hangs.
     if: github.repository == 'rknightion/opnsense2otel'
     name: canary (${{ matrix.target }})
@@ -109,6 +94,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
 
       - name: Join tailnet
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
@@ -162,6 +151,18 @@ jobs:
             echo "::warning::Firmware update did not confirm both boxes at their channel heads; probing anyway" \
               | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Live API contracts
+        id: contract
+        continue-on-error: true
+        env:
+          OPN2OTEL_LIVE_REQUIRED: 'true'
+          OPN2OTEL_LIVE_RESULT: ${{ runner.temp }}/live-contract-result
+          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }}
+          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }}
+          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }}
+          CANARY_PROFILE: ${{ matrix.target }}
+        run: just live-contract
 
       - name: Schema canary (apidrift)
         id: drift
@@ -303,8 +304,35 @@ jobs:
           # Job failure is decided after the issue steps, so a smoke failure
           # still files/updates the drift issue first.
 
+      - name: Record live contract outcome
+        id: contract_report
+        if: always()
+        env:
+          CONTRACT_RESULT: ${{ runner.temp }}/live-contract-result
+          CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
+          CONTRACT_FINGERPRINT: ${{ steps.contract.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          # Fixed workflow outcome only: never copy test logs or API payloads.
+          case "$CONTRACT_OUTCOME" in
+            success|failure|cancelled|skipped) ;;
+            *) CONTRACT_OUTCOME=unknown ;;
+          esac
+          mkdir -p out
+          printf '\n## Live API contracts\n\n- outcome: %s\n' "$CONTRACT_OUTCOME" \
+            | tee -a out/report.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$CONTRACT_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]] && [ -f "$CONTRACT_RESULT" ]; then
+            echo 'observed=true' >> "$GITHUB_OUTPUT"
+            # Suite output contains only allowlisted endpoint identities/classes.
+            { printf '\nContract failure identities:\n```text\n'; cat "$CONTRACT_RESULT"; printf '```\n'; } \
+              | tee -a out/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'observed=false' >> "$GITHUB_OUTPUT"
+            printf '\nContract result: unobserved\n' | tee -a out/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Ensure api-drift label exists
-        if: github.event_name != 'pull_request'
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -312,12 +340,14 @@ jobs:
             --description "OPNsense API contract drift detected by CI" 2>/dev/null || true
 
       - name: Open or update drift issue
-        if: steps.drift.outputs.drift == 'true' || steps.drift.outputs.warnings == 'true' || steps.smoke.outputs.failed == '1'
+        if: ${{ !cancelled() && (steps.drift.outputs.drift == 'true' || steps.drift.outputs.warnings == 'true' || steps.smoke.outputs.failed == '1' || steps.contract.outcome == 'failure') }}
         env:
           GH_TOKEN: ${{ github.token }}
           CANARY_TARGET: ${{ matrix.target }}
           DRIFT_FINGERPRINT: ${{ steps.drift.outputs.fingerprint }}
           SMOKE_FINGERPRINT: ${{ steps.smoke.outputs.smoke_fingerprint }}
+          CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
+          CONTRACT_FINGERPRINT: ${{ steps.contract.outputs.fingerprint }}
           # Days of silence before a heartbeat, so a canary that STOPPED running
           # is distinguishable from one that keeps finding nothing. Without it,
           # "quiet" and "dead" look identical (OPN-0112).
@@ -339,7 +369,7 @@ jobs:
           # verdict, which apidrift cannot know because the smoke runs after it.
           # parseFingerprintMarker takes the LAST marker in a body, so appending
           # this one lets it win over the digest-only marker apidrift wrote.
-          combined="${DRIFT_FINGERPRINT}-smoke${SMOKE_FINGERPRINT}"
+          combined="${DRIFT_FINGERPRINT}-smoke${SMOKE_FINGERPRINT}-contract${CONTRACT_OUTCOME}-${CONTRACT_FINGERPRINT:-unobserved}"
           printf '\n<!-- canary-fingerprint: %s -->\n' "$combined" >> out/report.md
 
           if [ -z "$existing" ]; then
@@ -404,9 +434,8 @@ jobs:
           fi
 
       - name: Close drift issue when clean
-        # Any clean run closes the issue — scheduled or manually dispatched;
-        # both exercise the identical validation against the same box.
-        if: steps.drift.outputs.drift == 'false' && steps.drift.outputs.warnings == 'false' && steps.smoke.outputs.failed == '0'
+        # Close only after all checks in this profile's on-demand run succeed.
+        if: steps.drift.outputs.drift == 'false' && steps.drift.outputs.warnings == 'false' && steps.smoke.outputs.failed == '0' && steps.contract.outcome == 'success' && steps.contract_report.outputs.observed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CANARY_TARGET: ${{ matrix.target }}
@@ -448,8 +477,8 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
             "opn-ci@${OLI_HOST}" down
 
-      - name: Fail the job on drift or smoke failure
-        if: steps.drift.outputs.drift == 'true' || steps.smoke.outputs.failed == '1'
+      - name: Fail the job on drift, smoke or contract failure
+        if: ${{ !cancelled() && (steps.drift.outputs.drift == 'true' || steps.smoke.outputs.failed == '1' || steps.contract.outcome != 'success' || steps.contract_report.outputs.observed != 'true') }}
         run: |
-          echo "Live-box drift or smoke failure (see the run summary / the api-drift issue)." >&2
+          echo "Live-box drift, smoke or contract failure (see the run summary / the api-drift issue)." >&2
           exit 1

@@ -39,6 +39,9 @@ func loadExemptions(path string) (map[string]opnsense.SchemaExemption, error) {
 // one short pause — no exponential backoff, no third attempt.
 const retryPause = 2 * time.Second
 
+// Only a manifest-declared plugin helper may turn a resolver failure into absence.
+var errPluginSourceAbsent = errors.New("plugin parameter source absent")
+
 // probeResult is the outcome of validating one endpoint against the live box.
 type probeResult struct {
 	Endpoint     string
@@ -117,6 +120,10 @@ func (p *prober) probeOne(s opnsense.EndpointSchema, ex opnsense.SchemaExemption
 		if req.Parameterized {
 			param, err := p.resolveParam(s.Endpoint)
 			if err != nil {
+				if errors.Is(err, errPluginSourceAbsent) {
+					res.SkippedParam = true
+					return res
+				}
 				res.ProbeErr = fmt.Sprintf("resolving request parameter: %v", err)
 				return res
 			}
@@ -144,6 +151,10 @@ func (p *prober) probeOne(s opnsense.EndpointSchema, ex opnsense.SchemaExemption
 		// (leaving method GET) for the captive-portal voucher endpoints.
 		segs, err := resolver(p)
 		if err != nil {
+			if errors.Is(err, errPluginSourceAbsent) {
+				res.SkippedParam = true
+				return res
+			}
 			res.ProbeErr = fmt.Sprintf("resolving path parameter: %v", err)
 			return res
 		}
@@ -406,7 +417,11 @@ func (p *prober) probeSource(endpoint string) ([]byte, int, error) {
 	if req, ok := opnsense.CaptureRequestFor(opnsense.EndpointName(endpoint)); ok {
 		method, contentType, body = "POST", req.ContentType, req.Body
 	}
-	return p.fetchRaw(method, string(ec.Path), contentType, body)
+	raw, status, err := p.fetchRaw(method, string(ec.Path), contentType, body)
+	if status == http.StatusNotFound && pluginGatedSet()[endpoint] {
+		return raw, status, errPluginSourceAbsent
+	}
+	return raw, status, err
 }
 
 // fetchRaw performs one authenticated request and returns the raw body.

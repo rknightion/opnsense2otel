@@ -71,6 +71,11 @@ type pipeline struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	// stopCtx is published before producer cancellation. Already-running batches
+	// retain p.ctx (so stuck exports are interrupted); subsequently drained batches
+	// get one delivery attempt per chunk bounded by the stop caller's context.
+	stopMu  sync.Mutex
+	stopCtx context.Context
 	// afterSourcesStopped bridges producers outside the source registry into the
 	// shutdown order. It runs after pollerWG reaches zero and before queue.close.
 	afterSourcesStopped func()
@@ -245,7 +250,7 @@ func Start(
 	deps.Logger.Info("log shipping enabled", "sink", cfg.Sink, "sources", names,
 		"poll_interval", cfg.PollInterval.String(), "buffer_size", cfg.BufferSize,
 		"buffer_max_bytes", cfg.BufferMaxBytes, "max_record_bytes", cfg.MaxRecordBytes,
-		"ship_max_attempts", cfg.ShipMaxAttempts)
+		"ship_max_attempts", cfg.ShipMaxAttempts, "ship_max_elapsed", cfg.ShipMaxElapsed.String())
 
 	return p.stop, nil
 }
@@ -387,17 +392,11 @@ func (p *pipeline) pollOnce(s Source, name string) {
 	}
 }
 
-// shipRetryBase and shipRetryMax bound the exponential backoff between failed export
-// attempts. The emitter retries a failed batch in memory (records stay queued, never
-// re-fetched) rather than dropping it, so a transient endpoint outage is ridden out for
-// as long as the bounded queue behind it holds — the at-least-once-within-a-run contract
-// (#290), up to the --logs.ship-max-attempts cap. Loss during a run happens only four
-// ways, all counted on logs_dropped_total: the queue overflows its count cap or byte
-// budget (reason="overflow"), a record is rejected at ingest for exceeding
-// --logs.max-record-bytes (reason="record_too_large"), the sink refuses a batch for
-// --logs.ship-max-attempts consecutive attempts (reason="ship_failed_permanent"), or
-// shutdown abandons a still-failing batch (reason="ship_failed"). It does NOT survive a
-// process restart mid-outage — that is the in-memory tier's documented boundary.
+// shipRetryBase and shipRetryMax bound the exponential backoff between failed
+// attempts. Retention is in memory until acknowledgement, elapsed/attempt budget
+// exhaustion, or shutdown. Queue overflow, oversized records, terminal rejection,
+// budget exhaustion and shutdown abandonment are all counted separately. Process
+// restart survival is outside this delivery policy.
 const (
 	shipRetryBase = 200 * time.Millisecond
 	shipRetryMax  = 5 * time.Second
@@ -441,72 +440,32 @@ func (p *pipeline) runEmitter() {
 	}
 }
 
-// shipBatch exports one batch, retrying on failure until it is acknowledged, the
-// attempt cap is reached, or the pipeline is shutting down. Each failed attempt counts
-// logs_ship_errors_total; a confirmed export counts logs_shipped_total per record. It
-// uses a background context for the export itself so records queued at shutdown still
-// get a delivery attempt, but the retry backoff is interruptible by pipeline
-// cancellation so stop() stays bounded: once shutdown begins, a still-failing batch is
-// abandoned and counted logs_dropped_total{reason="ship_failed"} rather than blocking
-// the drain — the records could not be delivered, and that loss is made visible rather
-// than silently skipped.
+// shipBatch uses one monotonic elapsed deadline for the entire batch. Every Emit
+// and wait shares that deadline; partial success and chunk splitting cannot extend
+// it. A positive ShipMaxAttempts adds the existing failed-attempt cap. Acknowledged
+// and terminally rejected records leave the pending set immediately, so only the
+// retryable remainder and unattempted tail can expire. Retry ambiguity at the wire
+// still means at-least-once delivery, not exactly-once.
 //
-// Retries are bounded by --logs.ship-max-attempts (#325a). There is exactly ONE emitter
-// goroutine, so an unbounded loop on a batch the sink permanently refuses (an oversized
-// record, a schema rejection, a bad credential, an exhausted quota) never returns to
-// drainUpTo: delivery halts for the life of the process while everything behind it
-// silently oldest-drops as the queue fills. On exhaustion the batch is DROPPED and
-// counted under reason="ship_failed_permanent" — deliberately trading "never lose a
-// deliverable batch" for "never wedge", and keeping the two loss modes distinguishable
-// from the shutdown-time ship_failed. 0 attempts restores the old unlimited behaviour.
-// Since #392 the retry set SHRINKS as partitions succeed. Only the entries the sink
-// reported as retryable are re-Emitted; anything it acknowledged is counted shipped and
-// removed from the batch, and anything it reported terminally rejected is counted
-// dropped{reason="rejected"} and likewise removed. That is what stops an acknowledged
-// resource partition being resent — and therefore duplicated downstream — because a
-// SIBLING partition failed.
-// A RATE LIMIT IS NOT A GENERIC TRANSIENT FAILURE, and the difference is the whole of
-// #663. When the destination answers HTTP 429 / gRPC RESOURCE_EXHAUSTED the request was
-// refused for its SIZE against a bytes-per-second budget, so a byte-identical resend is
-// guaranteed to fail again — the observed shape was the same 2777-record, 7.5 MB batch
-// refused seven times in a row over eight minutes while every unrelated record behind it
-// oldest-dropped out of the queue. So a rate limit does two things nothing else does:
-// it HALVES the chunk size (down to shipRateLimitMinChunk) and it sets a PACE that is
-// honoured before every subsequent chunk, decaying back to full speed as chunks land.
-// The batch is delivered in pieces the tenant can actually accept instead of being
-// dropped whole.
-//
-// WORST-CASE TIME ON ONE UNDELIVERABLE BATCH, which #663 also asks to be bounded and
-// stated. BOTH retry layers are in the arithmetic, which is the part that was missing
-// before: the OTLP SDK runs its own retry loop INSIDE a single Emit, and the pipeline
-// counted that whole thing as one attempt. Writing E for the SDK's pinned max-elapsed
-// (otlpRetryPolicy, 5s), T for the OTLP export timeout
-// (OTEL_EXPORTER_OTLP_LOGS_TIMEOUT, default 10s), N for --logs.ship-max-attempts and W
-// for the longest wait the pipeline can insert between attempts —
-// max(shipRetryMax 5s, maxRetryAfter 30s) = 30s:
-//
-//	t_worst  =  N × (E + T)  +  (N-1) × W
-//	         =  10 × 15s + 9 × 30s  =  420s (7 min) at the defaults, and only when the
-//	            destination advertises the maximum Retry-After on every single attempt.
-//	            With no Retry-After advertised the pacing floor is 2s and the ordinary
-//	            backoff caps at 5s, giving 10 × 15s + 9 × 5s = 195s (~3¼ min).
-//
-// Before #663 E was the SDK's own 60s default and nothing in the code knew it existed:
-// 10 × 70s = 700s, which is what produced the ~8-minute observation on the live box.
-//
-// Attempts are counted GLOBALLY across the whole shipBatch call, not per chunk, so
-// splitting can never multiply that bound: N caps wire attempts whatever shape they
-// take. A chunk that lands cleanly costs no attempt, which is what lets a split batch
-// finish delivering inside the same budget.
-//
-// DROP ACCOUNTING IS UNCHANGED, and must stay that way: the batch that could not be
-// delivered is counted reason="ship_failed_permanent" (or reason="ship_failed" when
-// shutdown abandons it), while records evicted from the queue because the emitter was
-// busy are counted reason="overflow" by noteOverflow. Those answer different operator
-// questions — "this payload/destination is broken" versus "we were too slow" — and
-// collapsing them would hide exactly the collateral damage this change exists to reduce.
+// Shutdown cancels both an active export and its backoff. Expiry and attempt-cap
+// exhaustion use ship_failed_permanent; shutdown uses ship_failed. New batches
+// drained during stop get one attempt per chunk under its caller context. Queue overflow
+// continues to be counted separately and may occur before the elapsed limit.
 func (p *pipeline) shipBatch(batch []Entry) {
 	maxAttempts := p.cfg.ShipMaxAttempts
+	maxElapsed := p.cfg.ShipMaxElapsed
+	if maxElapsed <= 0 {
+		maxElapsed = options.DefaultShipMaxElapsed
+	}
+	deadline := time.Now().Add(maxElapsed)
+	p.stopMu.Lock()
+	parent := p.ctx
+	if p.stopCtx != nil {
+		parent = p.stopCtx
+	}
+	p.stopMu.Unlock()
+	deliveryCtx, cancel := context.WithDeadline(parent, deadline)
+	defer cancel()
 	pending := batch
 	// chunk starts at the learned cap, or at the whole batch when nothing has been
 	// learned — so absent any rate limit the behaviour is exactly the pre-#663 one, one
@@ -520,7 +479,11 @@ func (p *pipeline) shipBatch(batch []Entry) {
 	limited := false
 
 	for len(pending) > 0 {
-		if pace > 0 && !p.waitOrAbandon(pace, pending) {
+		if time.Until(deadline) <= 0 {
+			p.abandonDelivery(pending)
+			return
+		}
+		if pace > 0 && !p.waitOrAbandon(deliveryCtx, pace, pending) {
 			return
 		}
 		n := chunk
@@ -532,7 +495,7 @@ func (p *pipeline) shipBatch(batch []Entry) {
 		}
 		head, rest := pending[:n], pending[n:]
 
-		res := p.sink.Emit(context.Background(), head)
+		res := p.sink.Emit(deliveryCtx, head)
 		p.noteAcked(res.Acked)
 		p.noteRejected(res.Rejected)
 
@@ -570,6 +533,11 @@ func (p *pipeline) shipBatch(batch []Entry) {
 			return
 		}
 
+		if p.ctx.Err() != nil || deliveryCtx.Err() != nil || time.Until(deadline) <= 0 {
+			p.abandonDelivery(pending)
+			return
+		}
+
 		if maxAttempts > 0 && attempt >= maxAttempts {
 			for _, e := range pending {
 				p.metrics.dropped.WithLabelValues(e.Source, dropReasonShipFailedPermanent).Inc()
@@ -602,7 +570,7 @@ func (p *pipeline) shipBatch(batch []Entry) {
 		if p.limiter.Allow("ship") {
 			p.log.Warn("log sink export failed; retrying", "attempt", attempt, "count", len(pending), "err", res.Err)
 		}
-		if !p.waitOrAbandon(shipBackoff(attempt), pending) {
+		if !p.waitOrAbandon(deliveryCtx, shipBackoff(attempt), pending) {
 			return
 		}
 	}
@@ -632,21 +600,35 @@ func (p *pipeline) relaxShipChunk() {
 	p.shipChunk = next
 }
 
-// waitOrAbandon sleeps for d unless the pipeline is shutting down, in which case it
-// counts every outstanding record logs_dropped_total{reason="ship_failed"} and reports
-// false so the caller returns. Keeping the abandon path in one place is what stops a
-// second wait site (the pacing one) inventing a third loss mode.
-func (p *pipeline) waitOrAbandon(d time.Duration, pending []Entry) bool {
+// waitOrAbandon includes pacing and backoff in the same delivery deadline.
+func (p *pipeline) waitOrAbandon(ctx context.Context, d time.Duration, pending []Entry) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
 	select {
-	case <-p.ctx.Done():
-		for _, e := range pending {
-			p.metrics.dropped.WithLabelValues(e.Source, dropReasonShipFailed).Inc()
-		}
-		consoleDropped.Add(uint64(len(pending)))
-		p.log.Error("log batch abandoned during shutdown; records lost", "count", len(pending))
+	case <-ctx.Done():
+		p.abandonDelivery(pending)
 		return false
-	case <-time.After(d):
+	case <-timer.C:
+		if ctx.Err() != nil {
+			p.abandonDelivery(pending)
+			return false
+		}
 		return true
+	}
+}
+
+func (p *pipeline) abandonDelivery(pending []Entry) {
+	reason := dropReasonShipFailedPermanent
+	if p.ctx.Err() != nil {
+		reason = dropReasonShipFailed
+	}
+	for _, e := range pending {
+		p.metrics.dropped.WithLabelValues(e.Source, reason).Inc()
+	}
+	consoleDropped.Add(uint64(len(pending)))
+	if p.limiter.Allow(reason) {
+		p.log.Error("log delivery budget exhausted or shutdown interrupted delivery; records lost",
+			"reason", reason, "count", len(pending))
 	}
 }
 
@@ -768,6 +750,9 @@ func (p *pipeline) runStateFlusher() {
 // were delivered (#290). The emitter goroutine still exits shortly after, when its
 // in-flight export returns and it observes the cancelled context.
 func (p *pipeline) stop(ctx context.Context) error {
+	p.stopMu.Lock()
+	p.stopCtx = ctx
+	p.stopMu.Unlock()
 	if p.selfLog != nil {
 		p.selfLog.Unbind()
 	}

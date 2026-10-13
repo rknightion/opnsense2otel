@@ -88,6 +88,8 @@ Tracker traps:
 - `docs/compatibility.md` - the record of data upstream removed and the support window it is kept for.
 - `reference/unbound-histogram-alternatives.md` - read before changing Unbound histogram
   representation; covers source precision, censored tails, reset epochs and transport limitations.
+- `reference/live-api-contracts.md` - read before running the live contract suite; it shares the
+  on-demand canary's lab lifecycle and keeps missing CI configuration from passing as a skip.
 
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.50.1 -->

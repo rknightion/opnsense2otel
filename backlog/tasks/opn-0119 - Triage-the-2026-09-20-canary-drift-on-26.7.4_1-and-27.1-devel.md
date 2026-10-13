@@ -1,11 +1,11 @@
 ---
 id: OPN-0119
 title: Triage the 2026-09-20 canary drift on 26.7.4_1 and 27.1 devel
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-08 20:48'
-updated_date: '2026-10-13 12:43'
+updated_date: '2026-10-13 12:56'
 labels:
   - canary
   - api-drift
@@ -25,13 +25,13 @@ GitHub #726 (release-vm) and #727 (nightly) carry new unexpected-nested-key find
 - [x] #1 Every finding in the latest #726 and #727 comments has one verdict (box-state/absorb/chase/drop/opportunity) backed by an upstream source citation
 - [x] #2 exemptions.json carries a knownExtraPaths or missingOK entry with a note and prune trigger for every exempted path
 - [x] #3 just check passes
-- [ ] #4 A fresh canary run on both profiles reports none of the triaged paths, and #726/#727 close
+- [x] #4 A fresh canary on both profiles reports none of the triaged paths or new unexpected fields; umbrella issues may remain open solely for explicit unexercised coverage gaps.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -44,4 +44,12 @@ All 30 nested-key findings from the latest #726/#727 comments are opportunity (u
 Fresh dual-profile canary run38396847166 at7d5168cda507cc87b457e6a56f8a578bebed1ac2 passed schema execution and exporter smoke; teardown verified lab off/no hold. Previously triaged paths absent. Issues726/727 remain open for six new nested fields across interfaceConfig,keaSubnets4,systemDisk; source-first triage in progress. Workflow success does not satisfy issue-close acceptance yet.
 
 Added six exact source-backed knownExtraPaths with prune triggers. Real validator proof failed before, then accepted six additions while retaining three nearby unledgered controls. Exemption consistency and full just check passed. Fresh post-publication dual-profile canary still required.
+
+2026-10-13 Rob approved separating completed drift remediation from ongoing coverage. AC4 revised explicitly; umbrella issues726/727 remain open for visible coverage gaps, including intentionally absent stable-profile IPsec.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Completed at bc81e0a28ff0d77b881ea1821f53908950885b0c. Full just check and required CI38399447821 passed. Fresh dual-profile canary38399461195 reports zero type drift,missing paths,unexpected fields and probe errors; exporter smoke passed; teardown independently confirmed lab off/no hold. Narrow source-cited exemptions leave unrelated controls visible. Coverage umbrella issues intentionally remain open by owner decision.
+<!-- SECTION:FINAL_SUMMARY:END -->

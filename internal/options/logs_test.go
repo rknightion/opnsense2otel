@@ -20,6 +20,7 @@ func TestLogsConfigValidate(t *testing.T) {
 		mutate func(*LogsConfig)
 		want   string
 	}{
+		{"negative elapsed budget", func(c *LogsConfig) { c.ShipMaxElapsed = -time.Second }, "ship-max-elapsed"},
 		{"bad sink", func(c *LogsConfig) { c.Sink = "kafka" }, "sink"},
 		{"below poll floor", func(c *LogsConfig) { c.PollInterval = time.Second }, "poll-interval"},
 		{"zero buffer", func(c *LogsConfig) { c.BufferSize = 0 }, "buffer-size"},
@@ -89,9 +90,11 @@ func TestLogsFlagDefaults(t *testing.T) {
 		def   string
 		envar string
 	}{
-		"logs.buffer-size":      {"65536", "OPN2OTEL_LOGS_BUFFER_SIZE"},
-		"logs.batch-max":        {"5000", "OPN2OTEL_LOGS_BATCH_MAX"},
-		"logs.ship-concurrency": {"8", "OPN2OTEL_LOGS_SHIP_CONCURRENCY"},
+		"logs.ship-max-attempts": {"0", "OPN2OTEL_LOGS_SHIP_MAX_ATTEMPTS"},
+		"logs.ship-max-elapsed":  {"15m", "OPN2OTEL_LOGS_SHIP_MAX_ELAPSED"},
+		"logs.buffer-size":       {"65536", "OPN2OTEL_LOGS_BUFFER_SIZE"},
+		"logs.batch-max":         {"5000", "OPN2OTEL_LOGS_BATCH_MAX"},
+		"logs.ship-concurrency":  {"8", "OPN2OTEL_LOGS_SHIP_CONCURRENCY"},
 	}
 
 	found := map[string]bool{}
@@ -126,4 +129,16 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestLogsRejectsDisabledElapsedBudget(t *testing.T) {
+	oldEnabled, oldElapsed := *logsEnabled, *logsShipMaxElapsed
+	t.Cleanup(func() { *logsEnabled = oldEnabled; *logsShipMaxElapsed = oldElapsed })
+	*logsEnabled = true
+	for _, duration := range []time.Duration{0, -time.Second} {
+		*logsShipMaxElapsed = duration
+		if _, _, err := Logs(); err == nil || !contains(err.Error(), "ship-max-elapsed") {
+			t.Fatalf("duration=%s: got%v, want elapsed validation error", duration, err)
+		}
+	}
 }

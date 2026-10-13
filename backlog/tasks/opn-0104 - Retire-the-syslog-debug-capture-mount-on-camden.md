@@ -5,7 +5,8 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-06 14:30'
-updated_date: '2026-10-13 12:28'
+updated_date: '2026-10-13 13:24'
+due_date: '2026-10-20'
 labels: []
 dependencies: []
 references:
@@ -27,7 +28,7 @@ The camden compose bind-mounts /opt/opnsense2otel/capture and sets OPN2OTEL_LOGS
 <!-- AC:BEGIN -->
 - [x] #1 Every distinct program/shape present in the camden syslog capture files has an explicit disposition: either a parser (or a documented pass-through) in internal/logship/syslog, or a documented reason it is dropped
 - [x] #2 dhclient lines specifically are either parsed into a structured record or deliberately ignored, with a test pinning the choice
-- [ ] #3 Once nothing new appears in the capture for a week, the camden compose drops OPN2OTEL_LOGS_SYSLOG_DEBUG_CAPTURE, OPN2OTEL_LOGS_ZENARMOR_DEBUG_CAPTURE, OPN2OTEL_LOGS_DEBUG_CAPTURE_DIR and the /capture bind mount, and the capture directory is archived rather than deleted
+- [ ] #3 After a verified full week with no new unclassified syslog or Zenarmor shapes, disable only syslog and Zenarmor debug capture and archive their retained evidence. Preserve the shared capture directory and mount for bounded NetFlow unidentified diagnostics.
 - [x] #4 The NetFlow "unidentified" capture is reviewed at the same time and kept only if it is still bounded and useful
 <!-- AC:END -->
 
@@ -67,4 +68,8 @@ Evidence remains private in the capture-review directory: ci-implementation-gree
 2026-10-12: the 26.7.6 upgrade reboot added 257 unparsed syslog shapes and one Zenarmor parse_error to the camden capture; AC3's week-quiet clock restarts from 2026-10-12. Classification is tracked as its own task (boot-time syslog shapes from the 2026-10-12 capture).
 
 2026-10-13 complete private snapshot replay at current source: 573 envelopes; syslog 240 parsed,249 known,83 unknown including one retained synthetic control. Remaining 82 records span16 programs and need dispositions under OPN-0134 (remaining capture shape dispositions). Latest noncontrol unknown today means the quiet-week prerequisite is not satisfied; no capture settings or retained files changed. NetFlow still needs the shared mount. Retention scope decision is pending.
+
+2026-10-13 Rob approved syslog/Zenarmor-only retirement after the quiet week, preserving shared storage for NetFlow. AC3 explicitly revised; no retirement or archive move performed yet.
+
+Capture disposition build bc81e0a28ff0d77b881ea1821f53908950885b0c observed running on Camden, process start2026-10-13T12:50:15.100079932Z. At12:50:57Z retained12 files/270965 bytes had zero modifications since start. This is a prospective quiet baseline, not seven-day proof. Earliest retirement review2026-10-20 after12:50:15Z, reset by any new unclassified shape; retain historical evidence and NetFlow shared storage.
 <!-- SECTION:NOTES:END -->

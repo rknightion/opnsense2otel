@@ -376,9 +376,9 @@ func TestPipeline_PermanentShipFailureDoesNotWedgeEmitter(t *testing.T) {
 	p.emitterWG.Wait()
 }
 
-// ShipMaxAttempts = 0 must preserve the pre-#325 unlimited-retry behaviour: a
-// transient failure is ridden out rather than dropped.
-func TestPipeline_ShipMaxAttemptsZeroRetriesUnbounded(t *testing.T) {
+// ShipMaxAttempts = 0 uses the elapsed ceiling alone: a short transient failure
+// is ridden out rather than dropped.
+func TestPipeline_ShipMaxAttemptsZeroUsesElapsedBound(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	p, cancel := newDeliveryPipeline(&flakySink{failN: 3}, reg)
 	defer cancel()
@@ -387,7 +387,7 @@ func TestPipeline_ShipMaxAttemptsZeroRetriesUnbounded(t *testing.T) {
 	p.shipBatch([]Entry{{Source: "firewall", Record: Record{Body: "a"}}})
 
 	if got := counterValue(t, p.metrics.shipped.WithLabelValues("firewall")); got != 1 {
-		t.Fatalf("logs_shipped_total{source=firewall} = %v, want 1 (unlimited retries must ride out 3 failures)", got)
+		t.Fatalf("logs_shipped_total{source=firewall} = %v, want 1 (elapsed-bound retries must ride out 3 failures)", got)
 	}
 	if got := counterValue(t, p.metrics.dropped.WithLabelValues("firewall", dropReasonShipFailedPermanent)); got != 0 {
 		t.Fatalf("logs_dropped_total{reason=%s} = %v, want 0 with ShipMaxAttempts=0", dropReasonShipFailedPermanent, got)

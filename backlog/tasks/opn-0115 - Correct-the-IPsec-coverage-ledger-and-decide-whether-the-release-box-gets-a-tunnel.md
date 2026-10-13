@@ -3,10 +3,10 @@ id: OPN-0115
 title: >-
   Correct the IPsec coverage ledger and decide whether the release box gets a
   tunnel
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-20 18:43'
-updated_date: '2026-10-08 21:21'
+updated_date: '2026-10-13 12:44'
 labels:
   - testbed
   - canary
@@ -30,12 +30,20 @@ Note the nightly tunnel is established by the container, so it comes back when 1
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Part 1 done: the nine ipsec exercise texts in coverage.json now describe the real road-warrior tunnel (traffgen container -> devel firewall) and state that the release profile is unobtainable by construction. Part 2 (give the release box its own tunnel) remains an open decision for Rob.
+
+2026-10-13 Rob decided to retain development-only IPsec coverage and explicitly accept the stable-release profile gap. The corrected ledger already describes the real traffic-generator-to-development-firewall tunnel. No second tunnel, PSK or VPN configuration is authorized or needed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Owner decision settled: retain development-only IPsec coverage; stable profile intentionally has no tunnel and remains explicitly unverified for populated IPsec rows. Existing ledger correction retained. No runtime change or new test needed for this decision-only closeout.
+<!-- SECTION:FINAL_SUMMARY:END -->

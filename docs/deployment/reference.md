@@ -979,14 +979,15 @@ services:
       # of N partitions previously cost N sequential round-trips. 1 restores the old
       # fully-sequential behaviour. Values below 1 are normalised to 1.
       # OPN2OTEL_LOGS_SHIP_CONCURRENCY: "8"
-      # Maximum delivery attempts for one batch before it is dropped and counted
-      # (logs_dropped_total{reason="ship_failed_permanent"}). Retries are exponentially
-      # backed off. Without this bound a batch the sink permanently refuses is retried
-      # forever by the single emitter goroutine, wedging all subsequent delivery. The
-      # OTLP exporter's own in-request retry loop is pinned small so the two layers
-      # compose to a stated worst case (N x 15s plus backoff, ~7min at the defaults)
-      # rather than multiplying. 0 restores unlimited retries.
-      # OPN2OTEL_LOGS_SHIP_MAX_ATTEMPTS: "10"
+      # Maximum failed delivery attempts for one batch before it is dropped and counted.
+      # 0 uses only the ship-max-elapsed time bound; a positive value adds a stricter
+      # attempt cap.
+      # OPN2OTEL_LOGS_SHIP_MAX_ATTEMPTS: "0"
+      # Maximum elapsed delivery time for a batch from its first attempt, including
+      # retries and pacing. Must be positive. Expiry drops the undelivered remainder and
+      # counts ship_failed_permanent. In-memory only; queue capacity can cause earlier
+      # loss and restart survival is not provided.
+      # OPN2OTEL_LOGS_SHIP_MAX_ELAPSED: "15m"
       # Log shipping sink: otlp (OTLP logs, reuses the --otlp.* transport) or stdout
       # (one JSON line per event).
       # OPN2OTEL_LOGS_SINK: "otlp"

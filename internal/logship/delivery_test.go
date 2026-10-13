@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -393,4 +397,239 @@ func TestShipBatch_CleanDeliveryCountsNoShipError(t *testing.T) {
 	if v := s[`opnsense_exporter_logs_shipped_total{source="firewall"}`]; v != 1 {
 		t.Fatalf("shipped=%v, want 1", v)
 	}
+}
+
+// The elapsed budget must cap the whole batch, including successful partial
+// progress, and count only its undelivered remainder when it expires.
+func TestShipBatch_ElapsedBudgetSurvivesPartialAcknowledgement(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		sink := &partitionedSink{result: func(batch []Entry) SinkResult {
+			time.Sleep(500 * time.Millisecond)
+			return ackedResult(batch)
+		}}
+		p, cancel := newDeliveryPipeline(sink, reg)
+		defer cancel()
+		p.cfg.ShipMaxElapsed = time.Second
+		p.shipChunk = 1
+		start := time.Now()
+		p.shipBatch([]Entry{{Source: "firewall"}, {Source: "firewall"}, {Source: "firewall"}, {Source: "firewall"}})
+		if elapsed := time.Since(start); elapsed != time.Second {
+			t.Fatalf("elapsed=%v: deadline was reset by progress", elapsed)
+		}
+		series := gatherSeries(t, reg)
+		if got := series[`opnsense_exporter_logs_dropped_total{reason="ship_failed_permanent",source="firewall"}`]; got != 2 {
+			t.Fatalf("expired remainder=%v, want2", got)
+		}
+	})
+}
+
+func TestShipBatch_ElapsedBudgetExpiresRetryAndCountsLoss(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		sink := &flakySink{always: true}
+		p, cancel := newDeliveryPipeline(sink, reg)
+		defer cancel()
+		p.cfg.ShipMaxElapsed = time.Second
+		// Bound the old implementation too, so the red test terminates.
+		p.cfg.ShipMaxAttempts = 20
+		start := time.Now()
+		p.shipBatch([]Entry{{Source: "firewall"}, {Source: "firewall"}})
+		if elapsed := time.Since(start); elapsed != time.Second {
+			t.Fatalf("elapsed=%v, want1s", elapsed)
+		}
+		series := gatherSeries(t, reg)
+		if got := series[`opnsense_exporter_logs_dropped_total{reason="ship_failed_permanent",source="firewall"}`]; got != 2 {
+			t.Fatalf("expired=%v, want2", got)
+		}
+	})
+}
+
+func TestPipeline_WANOutageEightMinutesThenRecovery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		start := time.Now()
+		failures := 0
+		var delivered []string
+		sink := &partitionedSink{result: func(batch []Entry) SinkResult {
+			if time.Since(start) < 8*time.Minute {
+				failures++
+				return retryResult(batch, errors.New("WAN unreachable"))
+			}
+			for _, e := range batch {
+				delivered = append(delivered, e.Record.Body)
+			}
+			return ackedResult(batch)
+		}}
+		p, cancel := newDeliveryPipeline(sink, reg)
+		defer cancel()
+		// These are the public defaults. Exercise the real queue/emitter path.
+		p.cfg.ShipMaxElapsed = 15 * time.Minute
+		p.cfg.ShipMaxAttempts = 0
+		p.cfg.BatchMax = 1
+		p.queue.push(Entry{Source: "firewall", Record: Record{Body: "first"}})
+		p.queue.push(Entry{Source: "firewall", Record: Record{Body: "second"}})
+		p.queue.close()
+		p.emitterWG.Add(1)
+		p.runEmitter()
+		if failures <= 10 {
+			t.Fatalf("only%d failures, need to exceed the former attempt cap", failures)
+		}
+		if !slices.Equal(delivered, []string{"first", "second"}) {
+			t.Fatalf("delivered=%v", delivered)
+		}
+		series := gatherSeries(t, reg)
+		if got := series[`opnsense_exporter_logs_shipped_total{source="firewall"}`]; got != 2 {
+			t.Fatalf("shipped=%v, want2", got)
+		}
+		if got := series[`opnsense_exporter_logs_dropped_total{reason="ship_failed_permanent",source="firewall"}`]; got != 0 {
+			t.Fatalf("dropped=%v, want0", got)
+		}
+	})
+}
+
+// Real HTTP I/O proves the remaining budget reaches the SDK, rather than just
+// limiting sleeps between otherwise unbounded export attempts.
+func TestShipBatch_HTTPAttemptBoundedByElapsedAndShutdown(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		name := "elapsed"
+		if shutdown {
+			name = "shutdown"
+		}
+		t.Run(name, func(t *testing.T) {
+			started := make(chan struct{}, 1)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case started <- struct{}{}:
+				default:
+				}
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(300 * time.Millisecond):
+				}
+				w.Header().Set("Content-Type", "application/x-protobuf")
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+			reg := prometheus.NewRegistry()
+			p, cancel := newDeliveryPipeline(newSinkOverEndpoint(t, "http/protobuf", srv.URL), reg)
+			defer cancel()
+			p.cfg.ShipMaxElapsed = 50 * time.Millisecond
+			if shutdown {
+				p.cfg.ShipMaxElapsed = 15 * time.Minute
+				go func() {
+					select {
+					case <-started:
+						cancel()
+					case <-time.After(time.Second):
+						cancel()
+					}
+				}()
+			}
+			p.shipBatch([]Entry{{Source: "firewall", Record: Record{Body: "outage"}}})
+			reason := dropReasonShipFailedPermanent
+			if shutdown {
+				reason = dropReasonShipFailed
+			}
+			series := gatherSeries(t, reg)
+			if got := series[`opnsense_exporter_logs_dropped_total{reason="`+reason+`",source="firewall"}`]; got != 1 {
+				t.Fatalf("dropped=%v, want1 (export must be cancelled before server acknowledges)", got)
+			}
+			if got := series[`opnsense_exporter_logs_shipped_total{source="firewall"}`]; got != 0 {
+				t.Fatalf("shipped=%v,want0", got)
+			}
+		})
+	}
+}
+
+func TestStop_HTTPDrainsFinalRecordsUsingShutdownContext(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	reg := prometheus.NewRegistry()
+	p, _ := newDeliveryPipeline(newSinkOverEndpoint(t, "http/protobuf", srv.URL), reg)
+	p.cfg.BatchMax = 1
+	p.afterSourcesStopped = func() {
+		// The final producer flush happens after the run context is cancelled.
+		p.queue.push(Entry{Source: "firewall", Record: Record{Body: "final-one"}})
+		p.queue.push(Entry{Source: "firewall", Record: Record{Body: "final-two"}})
+	}
+	p.emitterWG.Add(1)
+	go p.runEmitter()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := p.stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Fatalf("HTTP requests=%d, want2 healthy final-flush deliveries", got)
+	}
+	series := gatherSeries(t, reg)
+	if got := series[`opnsense_exporter_logs_shipped_total{source="firewall"}`]; got != 2 {
+		t.Fatalf("shipped=%v,want2", got)
+	}
+	if got := series[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="firewall"}`]; got != 0 {
+		t.Fatalf("shutdown dropped=%v,want0", got)
+	}
+}
+
+func TestStop_HTTPDrainStopsAtCallerDeadlineWithoutRetry(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	reg := prometheus.NewRegistry()
+	p, _ := newDeliveryPipeline(newSinkOverEndpoint(t, "http/protobuf", srv.URL), reg)
+	p.afterSourcesStopped = func() { p.queue.push(Entry{Source: "firewall", Record: Record{Body: "final"}}) }
+	p.emitterWG.Add(1)
+	go p.runEmitter()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_ = p.stop(ctx)
+	p.emitterWG.Wait()
+	if elapsed := time.Since(start); elapsed >= 400*time.Millisecond {
+		t.Fatalf("drain elapsed=%v: caller deadline did not bound export", elapsed)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("HTTP requests=%d, want1 bounded final delivery attempt", got)
+	}
+	if got := gatherSeries(t, reg)[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="firewall"}`]; got != 1 {
+		t.Fatalf("shutdown dropped=%v,want1", got)
+	}
+}
+
+func TestStop_DrainDoesNotRetryFailedAttempt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sink := &flakySink{failN: 1}
+		reg := prometheus.NewRegistry()
+		p, _ := newDeliveryPipeline(sink, reg)
+		p.afterSourcesStopped = func() { p.queue.push(Entry{Source: "firewall"}) }
+		p.emitterWG.Add(1)
+		go p.runEmitter()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := p.stop(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if got := sink.callCount(); got != 1 {
+			t.Fatalf("delivery attempts=%d,want1 without shutdown retry", got)
+		}
+		if got := gatherSeries(t, reg)[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="firewall"}`]; got != 1 {
+			t.Fatalf("shutdown dropped=%v,want1", got)
+		}
+	})
 }

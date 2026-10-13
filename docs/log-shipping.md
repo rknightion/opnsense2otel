@@ -92,7 +92,7 @@ accepted**. These still print:
 
 So the console never goes silent about a record the pipeline refused to take.
 A record it accepted can still be lost later - evicted by queue overflow, or
-dropped after `--logs.ship-max-attempts` - and those are reported by the drop
+dropped when the elapsed delivery budget or optional attempt cap is exhausted - and those are reported by the drop
 counters and the delivery diagnostics, not by a stderr copy. Only the
 queue-refused ones are also counted on
 `opnsense_exporter_logs_dropped_total{source="exporter"}`; a record evicted from
@@ -613,8 +613,16 @@ Stated honestly, because this pipeline is pull-based over a lossy source:
   is sent again. Permanent HTTP/gRPC failures and OTLP partial-success rejections are
   terminal: they are counted once under `reason="rejected"` and are not retried.
   Transient failures are **retried in memory** (the records stay queued, never
-  re-fetched) until the endpoint recovers or `--logs.ship-max-attempts` is reached, so a
-  transient outage is ridden out for as long as the bounded queue behind it holds.
+  re-fetched) for up to **15 minutes from the batch's first delivery attempt** by
+  default (`--logs.ship-max-elapsed`, `OPN2OTEL_LOGS_SHIP_MAX_ELAPSED`). The elapsed
+  budget includes export calls, SDK retries, pacing and backoff; successful partial
+  delivery cannot reset it. `--logs.ship-max-attempts` now defaults to **0**, meaning
+  elapsed-bound retries only. An explicitly positive attempt cap remains a stricter
+  additional limit. The existing queue holds at most **65,536 records / 128 MiB
+  estimated retained bytes**, plus the existing bounded in-flight batch. Capacity can
+  cause earlier overflow: 15 minutes is a delivery time limit, not a guaranteed outage
+  retention period at every ingest rate. Queue residence before the first attempt is
+  not part of this time limit.
   Every loss path is counted: queue overflow, an oversized input record, a terminal
   destination rejection, exhausted retries, or a batch abandoned during shutdown. Each
   attempt that does not fully deliver is visible as
@@ -723,7 +731,8 @@ The pipeline flags are listed in the [Configuration reference](configuration.md)
 The complete top-level pipeline set is `--logs.enabled`, `--logs.sink`,
 `--logs.poll-interval` (floor 5s), `--logs.buffer-size`,
 `--logs.buffer-max-bytes`, `--logs.batch-max`, `--logs.max-record-bytes`,
-`--logs.max-export-bytes`, `--logs.ship-max-attempts`, `--logs.ship-concurrency`,
+`--logs.max-export-bytes`, `--logs.ship-max-attempts`, `--logs.ship-max-elapsed`,
+`--logs.ship-concurrency`,
 `--logs.max-metric-keys`, and `--logs.state-file`.
 Per-source `--logs.<source>.enabled` flags are documented alongside each source
 above as they land.
@@ -796,17 +805,23 @@ The gRPC path detects the rate limit but does not read an advertised delay
 (`google.rpc.RetryInfo` would need a new direct module dependency); the 2s pacing
 floor applies there instead.
 
-Worst-case time spent on one undeliverable batch is bounded and accounts for **both**
-retry layers — the pipeline's `--logs.ship-max-attempts` and the OTLP exporter's own
-in-request retry, which is pinned to a 5s max-elapsed rather than the SDK's default of
-one minute so the two compose instead of multiplying:
+Time spent delivering one batch is bounded by `--logs.ship-max-elapsed` (default
+**15m**, must be positive). Its monotonic deadline reaches both the SDK export calls
+and every pipeline wait, including advertised `Retry-After`. The SDK's own retry
+window remains pinned to 5s. Expiry drops only the unacknowledged remainder under
+`reason="ship_failed_permanent"`; the existing counted-loss alert covers this reason.
+A positive `--logs.ship-max-attempts` additionally caps failed delivery attempts across
+the whole batch, never per chunk. Cleanly acknowledged chunks do not consume that
+attempt count, but still consume elapsed time. Shutdown cancels active exports and
+retry waits promptly. Newly drained records, including the final producer flush, get
+a delivery attempt bounded by the shutdown caller deadline and the batch elapsed
+limit. The pipeline does not retry a failed shutdown attempt; undelivered records are counted
+under `reason="ship_failed"`.
 
-    t_worst  =  attempts x (sdk_max_elapsed + export_timeout)  +  (attempts - 1) x max_wait
-             =  10 x (5s + 10s) + 9 x 30s  =  420s
-
-420s is the pathological case where the destination advertises the maximum
-`Retry-After` on every attempt; with none advertised it is 195s. Attempts are counted
-across the whole batch rather than per chunk, so splitting never multiplies the bound.
+There is no disk spool in this policy. A tmpfs spool would still use volatile memory;
+restart survival would require a separately designed persistent spool. Retries cannot
+promise exactly-once wire delivery: a lost acknowledgement may cause an accepted
+request to be retried.
 
 Over HTTP the client's idle-connection pool is sized to the concurrency
 automatically. Note that an endpoint which does not negotiate HTTP/2 needs one TCP
