@@ -1,5 +1,58 @@
 # Changelog
 
+## [5.2.0](https://github.com/rknightion/opnsense2otel/compare/v5.1.0...v5.2.0) (2026-10-13)
+
+
+### Features
+
+* **frr:** export rejected BFD control packets with presence semantics ([43221d6](https://github.com/rknightion/opnsense2otel/commit/43221d61f45924e12528261abb902e94e7bbdf78))
+
+
+### Bug Fixes
+
+* classify retained syslog shapes and ledger additive API fields ([bc81e0a](https://github.com/rknightion/opnsense2otel/commit/bc81e0a28ff0d77b881ea1821f53908950885b0c))
+* **deps:** build and scan with Go 1.27.2 (GO-2026-6611, -6612, -6613, -6617) ([218129e](https://github.com/rknightion/opnsense2otel/commit/218129e298c6ee6815c027a4bc63bc4a730dcda1))
+* **deps:** bump golang.org/x/net to v0.60.0 (GO-2026-6617) ([05213f7](https://github.com/rknightion/opnsense2otel/commit/05213f71600b7fb69f1b07cf0e482480ec4747e8))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.8.0 ([#837](https://github.com/rknightion/opnsense2otel/issues/837)) ([f8d8ff7](https://github.com/rknightion/opnsense2otel/commit/f8d8ff7917e9b336681e037dc3031515b44924bd))
+* **deps:** update module github.com/prometheus/common to v0.72.1 ([#835](https://github.com/rknightion/opnsense2otel/issues/835)) ([27a9542](https://github.com/rknightion/opnsense2otel/commit/27a9542cce559912ab9a863be07fa8f1ac693b79))
+* **firmware:** bound unchecked caching and allow slow package queries ([d14e30b](https://github.com/rknightion/opnsense2otel/commit/d14e30b7e7a01ed1aa893a64ef0dc0759e574107))
+* **logship:** classify reboot log shapes and document malformed web JSON ([8fc2c7f](https://github.com/rknightion/opnsense2otel/commit/8fc2c7fd4df9d90545e0113d4ca85feb2b67ebff))
+* **opnsense:** tolerate reboot CARP and classify empty NDP failures ([9b02b04](https://github.com/rknightion/opnsense2otel/commit/9b02b04aa204617f86a67b6e0ebe991c9af82e70))
+* preserve histogram metadata and native heatmap samples ([42040c8](https://github.com/rknightion/opnsense2otel/commit/42040c863ae0b986915f749f952a822b2aaffbdd))
+* retain logs through bounded WAN outages and verify live API contracts ([5a8ffec](https://github.com/rknightion/opnsense2otel/commit/5a8ffec125424713ff561dde6080ccfc2ec267b8))
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.247 ([#827](https://github.com/rknightion/opnsense2otel/issues/827)) ([def471f](https://github.com/rknightion/opnsense2otel/commit/def471fe3cfbf6818fa97ac42912dd68afef5657))
+* **deps:** update dependency pydantic to v2.14.1 ([#833](https://github.com/rknightion/opnsense2otel/issues/833)) ([cef75da](https://github.com/rknightion/opnsense2otel/commit/cef75da80ed19ebd2aff9ab34922d20d4a21568e))
+* **deps:** update mirror.gcr.io/library/golang:1.27.2-alpine docker digest to f92b6ef ([#831](https://github.com/rknightion/opnsense2otel/issues/831)) ([e87935c](https://github.com/rknightion/opnsense2otel/commit/e87935c8a11fa32cc1894f6a924aa37773796c10))
+* **deps:** update module github.com/goreleaser/goreleaser/v2 to v2.18.3 ([#830](https://github.com/rknightion/opnsense2otel/issues/830)) ([26cb3ee](https://github.com/rknightion/opnsense2otel/commit/26cb3eed852f2b9d481502f114f6735aa22e3e0c))
+* **deps:** update module golang.org/x/vuln to v1.9.0 ([#836](https://github.com/rknightion/opnsense2otel/issues/836)) ([9a092e6](https://github.com/rknightion/opnsense2otel/commit/9a092e6ac7e540c1c5faa834ddc89d4218a8ea26))
+* **deps:** update opnsense-docs digest to ccab76a ([#829](https://github.com/rknightion/opnsense2otel/issues/829)) ([27a780f](https://github.com/rknightion/opnsense2otel/commit/27a780fc0b3f622f3417d0ab7bf622e9fcfc98cb))
+* **deps:** update opnsense-docs digest to cd7262a ([#838](https://github.com/rknightion/opnsense2otel/issues/838)) ([7d5168c](https://github.com/rknightion/opnsense2otel/commit/7d5168cda507cc87b457e6a56f8a578bebed1ac2))
+* **deps:** update rknightion/.github action to v1.25.7 ([#834](https://github.com/rknightion/opnsense2otel/issues/834)) ([101fb61](https://github.com/rknightion/opnsense2otel/commit/101fb61d4cc91d61021c15559237fdb379011f91))
+
+
+### Documentation
+
+* **backlog:** close BFD delivery and same-SHA CI repair ([8e32e65](https://github.com/rknightion/opnsense2otel/commit/8e32e657401875c699956f508bc0007f6609c081))
+* **backlog:** close composed gate isolation repair ([1ce687f](https://github.com/rknightion/opnsense2otel/commit/1ce687fc550103ffe874624e1543b315f5b30131))
+* **backlog:** close deployed CARP NDP compatibility fix ([91c5f29](https://github.com/rknightion/opnsense2otel/commit/91c5f29abd88ea66e3b2b3b3837fcb105e6b4ea3))
+* **backlog:** close Kea management API gap without code ([526c77d](https://github.com/rknightion/opnsense2otel/commit/526c77da653486d9e3c5fb3f17f3eb729db75160))
+* **backlog:** close live-verified firmware timeout and cache fix ([7300e72](https://github.com/rknightion/opnsense2otel/commit/7300e72f91c695973e3ac792dcb60c23e2050f0a))
+* **backlog:** close verified reboot parser fix ([91e320e](https://github.com/rknightion/opnsense2otel/commit/91e320e8f380059ee57226fbbad4c73520ee7bb9))
+* **backlog:** record Kea upstream gap and CI retry evidence ([3be448e](https://github.com/rknightion/opnsense2otel/commit/3be448eaa1f84ec2c05b5aea0e087d5fdc8a93e5))
+* **backlog:** record loop10 admission and native histogram evidence ([fe052d8](https://github.com/rknightion/opnsense2otel/commit/fe052d8199c857b707484da96ea4ed2e0d992632))
+* **backlog:** start source-first Kea statistics investigation ([d00e8dc](https://github.com/rknightion/opnsense2otel/commit/d00e8dcc0d28732d26bf789d902ca1195f2277e8))
+* **backlog:** track composed gate isolation and timeout help follow-up ([6a14ae8](https://github.com/rknightion/opnsense2otel/commit/6a14ae8f009cbaefe0f1702ea5a85b8f24160799))
+* **backlog:** track exact BFD landing CI repair ([ab133c8](https://github.com/rknightion/opnsense2otel/commit/ab133c801dba775892c8ba21bcc25e96eb96527b))
+* clarify firmware request timeout budget and caller deadlines ([fadd658](https://github.com/rknightion/opnsense2otel/commit/fadd6585958b7018180399696089777c9a0b7e3a))
+* finalize firmware timeout and histogram design task records ([2c47639](https://github.com/rknightion/opnsense2otel/commit/2c47639474d30469e469041adde132a29b5643a4))
+* prepare histogram conversion design and clarify canary power ([1f29427](https://github.com/rknightion/opnsense2otel/commit/1f294272d0d41ceea2a2902ad32846f8745502a9))
+* publish canonical agent documents ([b880faf](https://github.com/rknightion/opnsense2otel/commit/b880fafbc8d2817d887847f210f97c17a34d1cab))
+* record reviewed pre-bucketed histogram conversion design ([2287225](https://github.com/rknightion/opnsense2otel/commit/228722564e802019106f93402941c8e9f730cba4))
+
 ## [5.1.0](https://github.com/rknightion/opnsense2otel/compare/v5.0.0...v5.1.0) (2026-10-08)
 
 
