@@ -1186,7 +1186,8 @@ def build_diagnostics(b: Builder):
         "API Request Latency Distribution",
         f'sum {grp("le", "endpoint")} (rate({api_p95_buckets}[{RATE}])) '
         f'or on (opnsense_instance, endpoint) sum {grp("endpoint")} (rate({api_p95_native}[{RATE}]))',
-        unit="s", w=12, h=8,
+        # sum already removes transport labels; max deduplication drops native histograms.
+        unit="s", w=12, h=8, dedupe=False,
         desc="Full request-latency histogram by endpoint. This keeps the distribution visible "
              "beside p95 so a broad slowdown and a narrow tail are not mistaken for one another.")
 
@@ -1358,7 +1359,8 @@ def build_diagnostics(b: Builder):
         "Metrics Handler Latency Distribution",
         f'sum {grp("le", "status")} (rate({server_p95_buckets}[{RATE}])) '
         f'or on (opnsense_instance, status) sum {grp("status")} (rate({server_p95_native}[{RATE}]))',
-        unit="s", w=12, h=8,
+        # Preserve native samples, as for the API heatmap above.
+        unit="s", w=12, h=8, dedupe=False,
         desc="Full request-duration histogram by response status, complementing the p95 panel "
              "with the shape and density of the serving-path latency distribution.")
 

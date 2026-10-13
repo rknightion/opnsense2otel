@@ -320,23 +320,23 @@ func (c *unboundDNSCollector) Register(namespace, instanceLabel string, log *slo
 		nil,
 	)
 
-	// Reply-time histogram (#581). A real histogram, not per-bucket gauges:
-	// unbound's buckets are cumulative-since-start counters and the client has
-	// already made them cumulative in the ascending sense Prometheus needs, so
-	// histogram_quantile() over rate(..._bucket[...]) answers "what is my DNS p99"
-	// correctly. _sum is real too — see UnboundRecursionHistogram for how it is
-	// recovered from the mean unbound divides it out of.
+	// Reply-time histogram (#581). The client accumulates Unbound's per-bucket
+	// counts across bounds for Prometheus. Quantiles interpolate within those
+	// buckets; the last bucket censors the tail. Sum is reconstructed from the
+	// truncated mean, not an exact accumulated wait (see UnboundRecursionHistogram).
 	c.recursionHistogram = buildPrometheusDesc(c.subsystem, "recursion_time_seconds",
 		"How long Unbound's recursive lookups took, bucketed - the p50/p99 companion to the "+
-			"recursion_time_avg_seconds and recursion_time_median_seconds gauges. Buckets are "+
-			"unbound's own: exponential, doubling from 1us to 2^19s. Cumulative since the "+
-			"resolver started, so query it through rate(). "+
-			"ONLY EXISTS WHEN THE RESOLVER RUNS WITH extended-statistics: yes, which is OFF by "+
-			"default from OPNsense 26.7 - unbound does not compute the histogram's output at all "+
-			"otherwise, and the exporter emits no series rather than a fabricated empty one. "+
-			"The _sum is reconstructed by multiplying unbound's reported mean back by this "+
-			"histogram's own count, which is exact to the microsecond that mean is printed at; "+
-			"unbound never publishes the accumulated total directly.",
+			"recursion_time_avg_seconds and recursion_time_median_seconds gauges. Upper bounds "+
+			"double from 1us to 524288us, then from 1s to 2^19s. Durations beyond 2^19s are "+
+			"folded into the last finite bucket, censoring the tail. Counts accumulate until "+
+			"resolver restart or statistics reset; query through rate(). "+
+			"Only emitted when the resolver reports the histogram, normally requiring "+
+			"extended-statistics: yes (off by default from OPNsense 26.7). Unbound measures "+
+			"the histogram even when its output is disabled; absence produces no series. "+
+			"The _sum estimates accumulated wait as the truncated reported mean times this "+
+			"histogram's count. Source truncation understates the total by less than 2us per "+
+			"observation for nonnegative, nonoverflowing arithmetic, before floating-point "+
+			"error; Unbound does not publish the accumulated total directly.",
 		nil,
 	)
 	c.validationOperations = buildPrometheusDesc(c.subsystem, "validation_operations_total",

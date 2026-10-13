@@ -86,6 +86,8 @@ Tracker traps:
 - `grafana/tabs/AUTHORING.md` and `grafana/README.md` - read before adding dashboard panels or
   alert rules.
 - `docs/compatibility.md` - the record of data upstream removed and the support window it is kept for.
+- `reference/unbound-histogram-alternatives.md` - read before changing Unbound histogram
+  representation; covers source precision, censored tails, reset epochs and transport limitations.
 
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.50.1 -->

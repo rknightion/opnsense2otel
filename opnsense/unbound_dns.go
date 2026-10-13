@@ -29,33 +29,26 @@ type unboundHistogramBucket struct {
 	Value flexInt   `json:"value"`
 }
 
-// UnboundRecursionHistogram is unbound's reply-time histogram in the exact shape
-// prometheus.MustNewConstHistogram consumes: Buckets maps each finite upper bound
-// (in seconds) to the CUMULATIVE count at or below it, and Count is the implicit
-// +Inf bucket. unbound's top bucket ends at 2^19 seconds, so nothing can land past
-// the last finite bound and Count always equals the top cumulative bucket.
+// UnboundRecursionHistogram has the shape prometheus.MustNewConstHistogram
+// consumes: Buckets maps finite upper bounds in seconds to cumulative counts,
+// and Count is the implicit +Inf bucket. Unbound folds durations above 2^19
+// seconds into its last finite bucket, so Count equals that bucket even when
+// observations exceeded the bound. The exported tail is therefore censored.
 //
-// Present is false when the box did not report data.histogram at all — the OPNsense
-// 26.7 default, `extended-statistics: no`. That is BOX STATE, not drift, and the
-// metric simply does not exist there. Synthesising 40 empty buckets instead would
-// be strictly worse than no metric: it publishes a sub-microsecond p99 for a
-// resolver nobody is actually measuring.
+// Present is false when the box did not report data.histogram at all, including
+// the OPNsense 26.7 default with extended-statistics disabled. Emit no histogram
+// in that case rather than fabricate an empty distribution.
 //
-// SUM IS RECONSTRUCTED, AND THAT IS SOUND RATHER THAN A GUESS. unbound never prints
-// its accumulated wait total; it prints the MEAN,
-// total.recursion.time.avg = mesh->replies_sum_wait / mesh->replies_sent
-// (daemon/remote.c print_stats, via timeval_divide). Multiplying that mean back by
-// the histogram's own count inverts exactly that division, so this is algebra on
-// two numbers describing one population, not an estimate — mesh_send_reply
-// increments replies_sent, adds the duration into replies_sum_wait and inserts it
-// into the histogram in three consecutive statements (services/mesh.c), and the
-// histogram insert is NOT gated on stat_extended, only its printing is. The single
-// loss is unbound printing the mean at microsecond resolution, which caps the error
-// at half a microsecond per observation.
+// Sum is an estimate: the reported mean multiplied by the histogram's own count.
+// Unbound measures both from the same mesh reply population, but timeval_divide
+// truncates two fractional terms before printing the mean to six decimal places.
+// For nonnegative, nonoverflowing source arithmetic and N > 0, reconstruction
+// understates the source accumulated wait by less than 2*N microseconds, before
+// float64 parsing/multiplication error. It is not exact or rounded to half a
+// microsecond per observation. The API does not expose the accumulated wait.
 //
-// Emitting Sum as 0 instead was rejected: rate(_sum)/rate(_count) would then read a
-// flat zero-second average latency, a lie with no tell. Dropping the histogram for
-// want of a sum was rejected too — histogram_quantile() never reads _sum.
+// Source evidence and the reset/transport limitations are recorded in
+// https://github.com/rknightion/opnsense2otel/blob/main/reference/unbound-histogram-alternatives.md
 type UnboundRecursionHistogram struct {
 	Present bool
 	Count   uint64

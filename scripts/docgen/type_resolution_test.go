@@ -53,6 +53,14 @@ func TestMetricTypesFromEmission(t *testing.T) {
 			t.Errorf("%s: documented type = %q, want Counter (emitted with CounterValue)", name, got[name])
 		}
 	}
+	for _, name := range []string{
+		"opnsense_flow_source_byte_delta_ratio",
+		"opnsense_unbound_dns_recursion_time_seconds",
+	} {
+		if got[name] != "Histogram" {
+			t.Errorf("%s: documented type = %q, want Histogram (const histogram emission)", name, got[name])
+		}
+	}
 }
 
 // TestMetricTypeSuffixFallback covers the retained fallback (#100 acceptance #5): a desc whose
@@ -67,6 +75,8 @@ import "github.com/prometheus/client_golang/prometheus"
 func (c *x) Register() {
 	c.foo = buildPrometheusDesc(c.subsystem, "foo_total", "help", nil)
 	c.bar = buildPrometheusDesc(c.subsystem, "bar", "help", nil)
+	c.duration = buildPrometheusDesc(c.subsystem, "duration_total", "help", nil)
+	c.ratio = buildPrometheusDesc(c.subsystem, "ratio", "help", nil)
 }
 
 func (c *x) Update(ch chan<- prometheus.Metric) {
@@ -75,6 +85,9 @@ func (c *x) Update(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 1)
 	// bar emitted directly with CounterValue -> resolved from emission despite no _total suffix.
 	ch <- prometheus.MustNewConstMetric(c.bar, prometheus.CounterValue, 1)
+	ch <- prometheus.MustNewConstHistogram(c.duration, 1, 1, nil)
+	metric, _ := prometheus.NewConstHistogram(c.ratio, 1, 1, nil)
+	ch <- metric
 }
 `
 	fset := token.NewFileSet()
@@ -90,6 +103,11 @@ func (c *x) Update(ch chan<- prometheus.Metric) {
 	}
 	if byName["foo_total"] != "Counter" {
 		t.Errorf("foo_total: got %q, want Counter (unresolved emission -> _total suffix fallback)", byName["foo_total"])
+	}
+	for _, name := range []string{"duration_total", "ratio"} {
+		if byName[name] != "Histogram" {
+			t.Errorf("%s: got %q, want Histogram (constructor overrides name)", name, byName[name])
+		}
 	}
 	if byName["bar"] != "Counter" {
 		t.Errorf("bar: got %q, want Counter (resolved from CounterValue emission, not suffix)", byName["bar"])

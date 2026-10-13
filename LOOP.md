@@ -41,3 +41,4 @@ Public repository: no account identifier, token, IP literal or personal data in 
 
 - One `grafana-sync` writes the stack at a time and is never cancelled mid-write.
 - One live delivery proof runs at a time.
+- Live canary and delivery proof share one testbed: never run them concurrently.
