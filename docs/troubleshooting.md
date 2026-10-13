@@ -119,8 +119,15 @@ to isolate stale data or a background collector missing its schedule:
 - Check `opnsense_exporter_endpoint_errors_total` and per-endpoint request latency
   to identify the slow or failing OPNsense call.
 - `--exporter.max-scrape-duration` is now the outer deadline for one background
-  collector poll. `--opnsense.timeout` × `--opnsense.max-retries` bounds an endpoint
-  attempt sequence inside it; keep that product below the poll deadline.
+  collector poll. The HTTP request-timeout budget for an endpoint attempt sequence is
+  `--opnsense.timeout` × `--opnsense.max-retries`, except firmware info
+  (`core/firmware/info`) uses a request-local 60s floor: its budget is
+  `max(--opnsense.timeout, 60s)` × `--opnsense.max-retries`. Longer configured
+  timeouts are preserved; other endpoints and the global default are unchanged.
+  This budget excludes retry backoff and concurrency-slot queue waits; it is not
+  an elapsed-time bound. Allow room for both below the poll deadline. Caller
+  deadlines, including the poll deadline, bound elapsed time and can end the
+  sequence sooner, even when shorter than the firmware info floor.
 - Lower `--opnsense.max-concurrent-requests` to protect a low-power appliance, or
   raise it when independent polls are queuing behind the concurrency cap.
 - The `activity` collector runs a `top(1)`-equivalent snapshot and is commonly the

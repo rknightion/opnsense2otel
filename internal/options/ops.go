@@ -33,11 +33,11 @@ var (
 	).Envar("OPN2OTEL_OPS_INSECURE").Default("false").Bool()
 	opnsenseTimeout = kingpin.Flag(
 		"opnsense.timeout",
-		"Per-request HTTP timeout for calls to the OPNsense API. Combined with --opnsense.max-retries this bounds one endpoint attempt sequence inside a background collector poll (timeout x retries). Keep that product below --exporter.max-scrape-duration so the poll deadline, rather than a request retry, remains the outer bound. Prometheus scrape_timeout applies only to replaying /metrics.",
+		"Per-request HTTP timeout for calls to the OPNsense API. Firmware info (core/firmware/info) uses a request-local 60s floor, preserving longer configured timeouts without changing other endpoints. Combined with --opnsense.max-retries, the effective timeout x attempts is an HTTP request-timeout budget, not an elapsed-time bound: retry backoff and concurrency-slot queue waits are excluded. Allow room for both below --exporter.max-scrape-duration. Caller deadlines, including the poll deadline, bound elapsed time and remain authoritative even when shorter than the firmware info floor. Prometheus scrape_timeout applies only to replaying /metrics.",
 	).Envar("OPN2OTEL_OPS_TIMEOUT").Default("15s").Duration()
 	opnsenseMaxRetries = kingpin.Flag(
 		"opnsense.max-retries",
-		"Number of attempts for a failed OPNsense API request (transport errors / retryable 5xx). Worst-case block time is --opnsense.timeout x this value.",
+		"Number of attempts for a failed OPNsense API request (transport errors / retryable 5xx). The HTTP request-timeout budget is --opnsense.timeout x this value, except firmware info uses max(--opnsense.timeout, 60s) x this value. This excludes retry backoff and concurrency-slot queue waits; it is not an elapsed-time bound. Caller deadlines bound elapsed time and may end the sequence sooner.",
 	).Envar("OPN2OTEL_OPS_MAX_RETRIES").Default("3").Int()
 	opnsenseMaxConcurrentRequests = kingpin.Flag(
 		"opnsense.max-concurrent-requests",
