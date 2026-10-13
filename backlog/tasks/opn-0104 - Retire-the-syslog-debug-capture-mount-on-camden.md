@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-06 14:30'
-updated_date: '2026-10-12 19:08'
+updated_date: '2026-10-13 12:28'
 labels: []
 dependencies: []
 references:
@@ -65,4 +65,6 @@ Live proof: three marked receiver-local synthetic UDP controls arrived in Loki a
 Evidence remains private in the capture-review directory: ci-implementation-green.json, publication-implementation.json, image-pull.log, loki-controls-udp.json, loki-genuine-live.json and metrics-live-proof.prom. All 4093 refreshed corpus records had prior ingress proof, with 1429 parsed and 2664 known. Keep OPN-0104 In Progress: AC3 remains unfulfilled pending a full observation week. The active corpus currently includes the clearly marked unknown positive control. Earliest quiet-week review is 2026-09-13 after 18:39 UTC, reset by any genuine new unknown shape. Retain the shared capture directory/mount while NetFlow unidentified capture uses it; no retirement action was taken.
 
 2026-10-12: the 26.7.6 upgrade reboot added 257 unparsed syslog shapes and one Zenarmor parse_error to the camden capture; AC3's week-quiet clock restarts from 2026-10-12. Classification is tracked as its own task (boot-time syslog shapes from the 2026-10-12 capture).
+
+2026-10-13 complete private snapshot replay at current source: 573 envelopes; syslog 240 parsed,249 known,83 unknown including one retained synthetic control. Remaining 82 records span16 programs and need dispositions under OPN-0134 (remaining capture shape dispositions). Latest noncontrol unknown today means the quiet-week prerequisite is not satisfied; no capture settings or retained files changed. NetFlow still needs the shared mount. Retention scope decision is pending.
 <!-- SECTION:NOTES:END -->

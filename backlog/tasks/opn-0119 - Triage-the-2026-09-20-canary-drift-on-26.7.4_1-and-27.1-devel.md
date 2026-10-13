@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-10-08 20:48'
-updated_date: '2026-10-08 21:21'
+updated_date: '2026-10-13 12:43'
 labels:
   - canary
   - api-drift
@@ -38,4 +38,10 @@ GitHub #726 (release-vm) and #727 (nightly) carry new unexpected-nested-key find
 
 <!-- SECTION:NOTES:BEGIN -->
 All 30 nested-key findings from the latest #726/#727 comments are opportunity (upstream additions in 26.7.2-26.7.4 and master scrub_*), each ledgered in knownExtraPaths with core/plugins/FRR/tailscale source citations and a prune trigger. pfStatsInfo rate / nbrPriority were already ledgered by 955a418d; the Kea lease flapping was empty-lease box-state. Replayed all 30 through ValidateResponseSchema: 30/30 flagged on the old ledger, 0/30 on the new, unledgered controls still flagged. Roadmap candidates: BFD controlPacketBadInput, Kea subnet_id (per-subnet stats join key), BGP receivedPrefixDup. Not pre-ledgered: SNAT/configured-DNAT rows[].audit (unobserved; the canary will flag them when a box has such a rule).
+
+2026-10-13 direct follow-up: current lab host status reachable from operator Mac, no hold, all testbed guests stopped. This is not CI identity proof. Dispatching existing self-powered canary to test current CI path and obtain fresh dual-profile evidence; no concurrent delivery proof.
+
+Fresh dual-profile canary run38396847166 at7d5168cda507cc87b457e6a56f8a578bebed1ac2 passed schema execution and exporter smoke; teardown verified lab off/no hold. Previously triaged paths absent. Issues726/727 remain open for six new nested fields across interfaceConfig,keaSubnets4,systemDisk; source-first triage in progress. Workflow success does not satisfy issue-close acceptance yet.
+
+Added six exact source-backed knownExtraPaths with prune triggers. Real validator proof failed before, then accepted six additions while retaining three nearby unledgered controls. Exemption consistency and full just check passed. Fresh post-publication dual-profile canary still required.
 <!-- SECTION:NOTES:END -->

@@ -1,9 +1,11 @@
 ---
 id: OPN-0125
 title: Keep OTLP log delivery through a WAN outage longer than the retry budget
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-10-12 19:08'
+updated_date: '2026-10-13 12:22'
 labels:
   - logship
   - otlp
@@ -31,3 +33,9 @@ When the production firewall rebooted on 2026-10-12 the exporter host lost its o
 - [ ] #1 just check
 - [ ] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13 owner authorized direct work on remaining follow-ups. First priority is WAN-outage resilience; buffering bounds and approach will be selected from current-path evidence before implementation.
+<!-- SECTION:NOTES:END -->
