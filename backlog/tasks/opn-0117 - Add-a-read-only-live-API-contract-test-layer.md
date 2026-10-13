@@ -1,11 +1,11 @@
 ---
 id: OPN-0117
 title: Add a read-only live API contract test layer
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-25 08:05'
-updated_date: '2026-10-13 13:40'
+updated_date: '2026-10-13 13:56'
 labels:
   - testing
 dependencies: []
@@ -20,15 +20,15 @@ The 2026-09-25 test audit found no integration, e2e or live build tags in this r
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A //go:build live suite exercises the endpoints the collectors depend on, read-only
-- [ ] #2 The on-demand canary runs the suite for both profiles using its existing scoped CI credentials and workflow-owned lab lifecycle; local runs skip cleanly when credentials are absent
-- [ ] #3 A deliberately broken fixture or shape assumption makes the live test fail for the right reason
+- [x] #1 A //go:build live suite exercises the endpoints the collectors depend on, read-only
+- [x] #2 The on-demand canary runs the suite for both profiles using its existing scoped CI credentials and workflow-owned lab lifecycle; local runs skip cleanly when credentials are absent
+- [x] #3 A deliberately broken fixture or shape assumption makes the live test fail for the right reason
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -46,3 +46,9 @@ Tagged live endpoint suite plus ordinary-CI HTTP/config fixtures implemented. Re
 
 Final full just check passed. CodeRabbit found reporting sequencing and fingerprint gaps: fixed continuation+final failure, prevented false issue close, emitted sanitized endpoint/class fingerprint. Final delta had only minor preflight-class finding, fixed and focused tagged tests passed; no remaining findings. Still requires actual new-suite dual-profile run after publication.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Delivered in5a8ffec125424713ff561dde6080ccfc2ec267b8 with CI38406976676 green and live canary38406996344 passing the new contract suite on nightly and stable profiles. Required config fails closed, plugin/core absence distinguished, real HTTP fixtures fail first for broken shape, sanitized failure identities preserve issue updates. Schema/smoke also passed; root independently confirmed lab off/no hold. Schedule explicitly replaced by owner-approved on-demand operation.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,11 +1,11 @@
 ---
 id: OPN-0125
 title: Keep OTLP log delivery through a WAN outage longer than the retry budget
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-10-12 19:08'
-updated_date: '2026-10-13 13:40'
+updated_date: '2026-10-13 13:56'
 labels:
   - logship
   - otlp
@@ -23,15 +23,15 @@ When the production firewall rebooted on 2026-10-12 the exporter host lost its o
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The chosen approach and its memory/disk bound are recorded in the task notes before implementation
-- [ ] #2 A test simulating an unreachable endpoint for longer than today's retry budget but within the new bound delivers every record once the endpoint returns
-- [ ] #3 Beyond the bound, loss is still counted and the existing loss alert still fires
+- [x] #1 The chosen approach and its memory/disk bound are recorded in the task notes before implementation
+- [x] #2 A test simulating an unreachable endpoint for longer than today's retry budget but within the new bound delivers every record once the endpoint returns
+- [x] #3 Beyond the bound, loss is still counted and the existing loss alert still fires
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check
-- [ ] #2 just gen (if any generated artifact changed) and the diff committed
+- [x] #1 just check
+- [x] #2 just gen (if any generated artifact changed) and the diff committed
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,3 +53,9 @@ Alert compatibility proof: existing LogShippingAlertTest and ClassificationCompl
 
 Final full just check passed; security review passed. CodeRabbit full candidate and subsequent workflow-only corrections completed; no remaining major/critical findings. Existing zero-attempt test renamed to reflect approved elapsed ceiling, assertions preserved. Runtime memory policy is ready for publication and deployment readback.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Delivered in5a8ffec125424713ff561dde6080ccfc2ec267b8, CI38406976676 green. Default15m monotonic memory retention with existing capacity bounds and stricter positive attempt cap; eight-minute simulated outage recovery, partial ack/deadline, counted expiry/overflow and real HTTP shutdown/drain tested red->green. Local alert contract passed; no restart durability or exactly-once transport promise. Security review and CodeRabbit findings resolved; final gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
