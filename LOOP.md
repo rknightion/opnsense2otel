@@ -32,8 +32,9 @@ Public repository: no account identifier, token, IP literal or personal data in 
 - Never reintroduce a live API fetch on the `/metrics` request path, and `internal/webui` must never
   call `Gather()` on the live registry.
 - Live-box canary and live delivery proof are dispatch-only against a lab testbed that is off by
-  default. The main session raises it, dispatches, then takes it down; do not re-enable its timers.
-  Reports carry key paths and type names only, never payload values.
+  default. The live-canary workflow owns lab raise, hold release and shutdown. Live delivery proof
+  needs the main session to raise the lab before dispatch and lower it afterwards. Do not re-enable
+  automatic startup or canary timers. Reports carry key paths and type names only, never payload values.
 - Issue numbers below 656 are retired GitHub issues, not tasks.
 
 ## Mutexes

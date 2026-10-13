@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@loop10'
 created_date: '2026-09-15 13:00'
-updated_date: '2026-10-12 19:44'
+updated_date: '2026-10-13 08:37'
 labels:
   - observability
   - cardinality
@@ -68,4 +68,6 @@ AC2: the split is endpoint x opnsense_instance. endpoint is the client's registe
 Contract test internal/server/native_histogram_test.go goes through the real Prometheus bridge (seen failing as metricdata.Histogram without the options). Health dashboard p95/heatmap panels query classic-or-native (heatmap uses or on(instance,label) so a datasource holding both forms is not double-drawn); promqlcheck validates them. AC1/AC4 need a deployed build and a query against the m7kni stack, so the task stays In Progress until then.
 
 loop10: read-only close-out, 0 implementation attempts. At 2026-10-12T19:43Z on deployed build 218129e (Go 1.27.2), OTLP job opnsense2otel has 204 API-duration and 3 server-duration native histogram series (histogram_count and direct histogram JSON verified). Instrumented duration bucket count is 0, but all-job bucket families still include 84 flow-source-delta-ratio and 41 unbound-recursion series. Goal requires parking if any bucket families remain. AC1/AC4 remain unchecked; resume when owner re-grades const-histogram scope or authorizes its conversion. Evidence is local to the loop report.
+
+2026-10-13 owner decision during loop11 preparation: retain all-job zero-bucket criteria and Parked status. OPN-0129 (design native histogram conversion for pre-bucketed flow and Unbound data) will produce a separately reviewed conversion packet before any implementation or closeout. No attempt reset or scope narrowing.
 <!-- SECTION:NOTES:END -->
