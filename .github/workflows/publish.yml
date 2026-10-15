@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
-          just-version: '1.58.0'
+          just-version: '1.59.0'
       - name: Resolve pinned go-licenses version + module
         id: pin
         run: |
@@ -77,7 +77,7 @@ jobs:
           cache: false
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
-          just-version: '1.58.0'
+          just-version: '1.59.0'
       # Only go-licenses notices here; the shared reusable already generates +
       # attaches the image SPDX+CycloneDX SBOMs (same filenames — don't double-upload).
       - name: Generate + attach third-party notices
