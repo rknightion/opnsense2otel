@@ -337,3 +337,4 @@ print-go-licenses-module:
 [group('check')]
 textfile-test:
     python3 deploy/textfile/test_nic_textfile.py
+    python3 deploy/textfile/test_zenarmor_textfile.py

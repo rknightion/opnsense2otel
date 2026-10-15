@@ -103,7 +103,9 @@ already expose the same value through input queue drops. The optional node_expor
 companion supplies driver and queue telemetry without adding SSH to the exporter.
 Zenarmor health crash/stall figures are daily retained-log counts, not lifetime counters; its
 health API invokes check-and-send, and its shell health check can stop services. Never poll either
-as a read-only metric source.
+as a read-only metric source. The opt-in `deploy/textfile/zenarmor-textfile.py` reads local logs
+and emits daily gauges through node_exporter; it is independent of the flow receiver and NIC
+script. Failed or bounded-out scans omit counts and publish collection health, never zero events.
 
 ## Deeper references
 

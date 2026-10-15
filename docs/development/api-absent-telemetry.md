@@ -198,23 +198,145 @@ is sufficient for these local commands.
 Fixture verification: `just textfile-test` runs the shipped command with
 mocked FreeBSD subprocesses and verifies successful publication and preservation on read failure.
 
-## Zenarmor engine health source
+## Optional Zenarmor daily engine health
 
-Read-only inspection of the installed plugin on 2026-10-15 found two implementations:
-`check_health.sh` counts `heartbeat for` and `terminated with signal` in the current day's
-active `main_*` engine logs. The current PHP `SystemUtils::getEngineCrashStallCount()` scans
-both active and archive `main_*` files and filters matching lines by the local `Y-m-d` date.
-`HealthUtils` includes those values as engine `crash_count` and `stall_count`.
+This is an **optional on-firewall textfile collector**, separate from both opnsense2otel and
+its Zenarmor flow receiver. It is not enabled by upgrading the exporter, enabling flow shipping,
+or installing the NIC script. Install and schedule it only if you want engine crash/stall counts.
+It uses no API keys, SSH credentials or network calls. The exporter itself still never uses SSH.
 
-These values are **calendar-day counts over retained logs**, not lifetime counters. Rotation,
-retention and midnight affect them. The health logger writes local files; this inspection did
-not establish a supported syslog event stream for these counts. The Health API is loopback-only
-and invokes `check()->send()`, so it is not a read-only polling surface. Do not invoke the shell
-health check as a collector: it contains service-stop and disable actions.
+The [zenarmor-textfile.py](../../deploy/textfile/zenarmor-textfile.py) command reads plain
+`main_*` logs under `/usr/local/zenarmor/log/active` and `/usr/local/zenarmor/log/archive`.
+It follows the installed plugin's `SystemUtils::getEngineCrashStallCount()` convention: count
+lines containing the firewall's local `YYYY-MM-DD` date and `terminated with signal` (crashes)
+or `heartbeat for` (stalls). A line containing both phrases contributes once to each gauge.
+These are observed log counts, not a diagnosis that the engine is currently unhealthy.
 
-The follow-up is bounded, read-only log scanning in the textfile companion, exposed as daily
-gauges with freshness and unavailable-source handling. No engine health metric is emitted by
-the NIC script yet.
+Do not invoke `check_health.sh` or the Health API to collect these values. The script can stop
+and disable services, and the loopback-only API invokes `check()->send()`. This companion only
+reads files and writes its own textfile output.
+
+### Install and schedule
+
+1. Install and enable **os-node_exporter** on the firewall. Verify its textfile collector reads
+   `/var/tmp/node_exporter`. Restrict access to the node_exporter listener to your monitoring
+   system; do not expose it to the Internet.
+2. From a checked-out release of this repository, copy `deploy/textfile/zenarmor-textfile.py`
+   to `/conf/opnsense2otel/zenarmor-textfile.py` on the firewall. Create the directory if needed;
+   it and the script must be root-owned and not writable by other users. Python 3 at
+   `/usr/local/bin/python3` is required; no additional Python packages are needed.
+3. As root, run:
+
+   ```sh
+   /usr/local/bin/python3 /conf/opnsense2otel/zenarmor-textfile.py
+   cat /var/tmp/node_exporter/zenarmor.prom
+   ```
+
+   Expect `opnsense_textfile_zenarmor_collection_success 1` and both daily gauges. Zero counts
+   are valid only after a successful scan of available logs. A failed scan exits nonzero and
+   publishes collection health without count gauges; diagnose it before scheduling.
+4. Add the following section to
+   `/usr/local/opnsense/service/conf/actions.d/actions_opn2otel.conf`. Preserve an existing
+   `[nic]` section if you installed NIC telemetry; the two actions are independent.
+
+   ```ini
+   [zenarmor]
+   command:/usr/local/bin/python3 /conf/opnsense2otel/zenarmor-textfile.py
+   parameters:
+   type:script
+   message:Collect Zenarmor daily engine health
+   description:Collect Zenarmor daily engine health
+   ```
+
+5. Run `service configd restart`, then `configctl opn2otel zenarmor` to verify the registered
+   action. In **System → Settings → Cron**, select **Collect Zenarmor daily engine health**
+   and schedule it every minute. Configd executes the action as root; do not edit the generated
+   crontab. Ensure there is only one scheduled instance of this action.
+
+Keep off-box copies of the script and configd action. A `config.xml` backup includes the GUI
+schedule but does not include these custom files. After a firmware or Zenarmor upgrade, verify
+that the action remains installed, the log format still matches, and collection health is fresh.
+Reinstall custom files if needed. This is not a packaged OPNsense plugin with automatic upgrades.
+
+### Scrape and query
+
+Scrape **node_exporter**, not opnsense2otel's `/metrics`, to receive these metrics. Use your
+existing Prometheus-compatible scraper and send the samples to the same metrics backend if you
+want to correlate them with exporter data. For example, replace these placeholders with your
+node_exporter address and the exact `opnsense_instance` value on the exporter's existing series:
+
+```yaml
+scrape_configs:
+  - job_name: opnsense-node
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['FIREWALL_NODE_EXPORTER_HOST:9100']
+        labels:
+          opnsense_instance: 'MATCH_EXISTING_EXPORTER_INSTANCE'
+```
+
+Use the listener port configured on your firewall. Add this target to an existing job if it is
+already scraped; do not duplicate it. No new opnsense2otel flags or OTLP credentials are required.
+Verify these samples at node_exporter's endpoint and then in your backend:
+
+| Metric | Meaning |
+| --- | --- |
+| `opnsense_textfile_zenarmor_crashes_today` | Matching crash lines for the current local day. |
+| `opnsense_textfile_zenarmor_stalls_today` | Matching stall lines for the current local day. |
+| `opnsense_textfile_zenarmor_collection_success` | 1 for a complete scan; 0 for unavailable, changing or over-limit inputs. |
+| `opnsense_textfile_zenarmor_collection_timestamp_seconds` | Time of the published collection attempt, including failures. |
+| `opnsense_textfile_zenarmor_day_start_timestamp_seconds` | Local midnight for a successful scan's calendar day. |
+
+All five metrics are gauges with no source-derived labels. The scrape job adds instance labels.
+Query the daily counts directly, for example:
+
+```promql
+opnsense_textfile_zenarmor_crashes_today{opnsense_instance="MATCH_EXISTING_EXPORTER_INSTANCE"}
+opnsense_textfile_zenarmor_stalls_today{opnsense_instance="MATCH_EXISTING_EXPORTER_INSTANCE"}
+```
+
+**Do not use `rate()` or `increase()` on these daily gauges.** Counts reset at local midnight,
+can decrease if logs are removed, and are not lifetime event totals. Polling near midnight can
+miss the previous day's final events. Rotation normally preserves counts while files remain in
+active/archive; hard links to the same file are counted once, but copied log contents can be counted twice, as in the plugin's grep-based
+implementation. A selected compressed log makes the scan unavailable; compressed logs are not silently omitted. These metrics are not a durable event history.
+No Zenarmor-health dashboard panel or alert is automatically installed by this optional script;
+use these queries in your own panels.
+
+Monitor collection separately from counts. For a one-minute schedule, inspect:
+
+```promql
+opnsense_textfile_zenarmor_collection_success == 0
+time() - opnsense_textfile_zenarmor_collection_timestamp_seconds > 180
+absent(opnsense_textfile_zenarmor_collection_success{opnsense_instance="MATCH_EXISTING_EXPORTER_INSTANCE"})
+```
+
+Also monitor node_exporter target `up` and `node_textfile_scrape_error`. A publication failure
+leaves the previous file intact, so freshness catches failures that cannot publish success=0.
+An exporter restart alone does not refresh this file. Check the day-start gauge around midnight
+if a stale previous-day count could be mistaken for today's value.
+
+### Limits, failures and disabling
+
+The scan is bounded by file count, total bytes, directory entries, line length and elapsed time.
+Defaults are 128 matching files, 64 MiB total input, 4096 directory entries across both
+directories, 1 MiB per line and 10 seconds elapsed. `--max-files` and `--max-bytes` accept
+explicit positive limits; the other caps are fixed. Run `/usr/local/bin/python3 /conf/opnsense2otel/zenarmor-textfile.py --help` for usage.
+Both active and archive directories must be readable and at least one matching log must exist. Missing logs,
+unreadable files, detected rotation during a scan and exceeded limits are unavailable data,
+not zero events. Retry on the next schedule; do not silently truncate the scan to force success.
+Only plain regular files are accepted; selected symlinks and special files are rejected.
+
+Publication uses private staging under `/var/tmp` and an atomic replacement anchored to an
+opened output-directory descriptor. The output directory must share a filesystem with
+`/var/tmp`; cross-filesystem publication fails safely. An output-directory symlink is rejected.
+The default output is `/var/tmp/node_exporter/zenarmor.prom`. `--log-root` and `--output-dir`
+allow explicit alternative locations; they do not grant extra permissions.
+
+To disable this functionality, disable its GUI Cron entry first. Move `zenarmor.prom` to a
+backup location outside the textfile directory so node_exporter stops serving stale samples.
+The NIC companion and normal exporter collection continue independently. Keep or archive the
+script and configd action for future re-enablement.
 
 ## Deliberately out of scope
 

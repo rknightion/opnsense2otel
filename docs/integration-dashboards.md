@@ -399,5 +399,5 @@ groups:
 
 opnsense2otel focuses on OPNsense-specific metrics. For complete visibility, consider running these alongside it:
 
-- **[node_exporter](https://github.com/prometheus/node_exporter)** -- Install on the OPNsense firewall itself for OS-level metrics (CPU, memory, disk I/O, network). opnsense2otel provides OPNsense-specific views of some of these, but node_exporter offers deeper system-level detail.
+- **[node_exporter](https://github.com/prometheus/node_exporter)** -- Install on the OPNsense firewall itself for OS-level metrics (CPU, memory, disk I/O, network). opnsense2otel provides OPNsense-specific views of some of these, but node_exporter offers deeper system-level detail. Optional [on-firewall textfile companions](development/api-absent-telemetry.md) add physical NIC driver counters and Zenarmor daily engine crash/stall gauges. They require separate installation, cron scheduling and scraping; neither is enabled by the exporter or Zenarmor flow receiver.
 - **[blackbox_exporter](https://github.com/prometheus/blackbox_exporter)** -- Probe endpoints through the firewall to verify connectivity and measure latency from the network edge.
