@@ -32,6 +32,10 @@ package logship
 // result means the observation was not accepted; callers that sample raw records
 // must retain that record rather than treating its total as safely captured.
 type MetricSink interface {
+	// ObservePPPLink counts the single bundle IFACE edge, timestamped by the source log.
+	ObservePPPLink(iface, event string, timestamp float64) bool
+	// ObserveGatewayStatesKilled counts only explicit routing state-flush events.
+	ObserveGatewayStatesKilled(gateway string) bool
 	// ObserveFirewall counts one filterlog line. ruleID is the OPNsense rule id
 	// (rid) or the rulenr ref; ruleName is the rule's description text used as its
 	// human name (1:1 with ruleID, so it does not multiply cardinality).
@@ -349,3 +353,6 @@ func (NopMetricSink) ClearDHCP6CAddress(_ string) bool                    { retu
 func (NopMetricSink) ObserveUPnP(_, _, _ string) bool            { return true }
 func (NopMetricSink) ObserveZenarmor(_ ZenarmorObservation) bool { return true }
 func (NopMetricSink) ObserveZenarmorDevice(_, _, _ string) bool  { return true }
+
+func (NopMetricSink) ObservePPPLink(_, _ string, _ float64) bool { return true }
+func (NopMetricSink) ObserveGatewayStatesKilled(_ string) bool   { return true }

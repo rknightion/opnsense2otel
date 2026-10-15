@@ -26,17 +26,19 @@ func (s *captureSink) ObserveZenarmor(o logship.ZenarmorObservation) bool {
 	return !s.reject
 }
 
-func (s *captureSink) ObserveFirewall(_, _, _, _, _ string) bool { return true }
-func (s *captureSink) ObserveHAProxy(_, _, _, _, _ string) bool  { return true }
-func (s *captureSink) ObserveSSHD(_, _, _ string) bool           { return true }
-func (s *captureSink) ObserveDHCP(_, _, _ string) bool           { return true }
-func (s *captureSink) ObserveAudit(_, _ string) bool             { return true }
-func (s *captureSink) ObserveIDS(_, _, _, _ string) bool         { return true }
-func (s *captureSink) ObserveGateway(_, _ string) bool           { return true }
-func (s *captureSink) ObserveRADIUS(_, _, _ string) bool         { return true }
-func (s *captureSink) ObserveVPN(_, _, _, _ string) bool         { return true }
-func (s *captureSink) ObserveCARP(_, _, _, _, _ string) bool     { return true }
-func (s *captureSink) ObserveUPnP(_, _, _ string) bool           { return true }
+func (s *captureSink) ObserveFirewall(_, _, _, _, _ string) bool  { return true }
+func (s *captureSink) ObserveHAProxy(_, _, _, _, _ string) bool   { return true }
+func (s *captureSink) ObserveSSHD(_, _, _ string) bool            { return true }
+func (s *captureSink) ObserveDHCP(_, _, _ string) bool            { return true }
+func (s *captureSink) ObserveAudit(_, _ string) bool              { return true }
+func (s *captureSink) ObserveIDS(_, _, _, _ string) bool          { return true }
+func (s *captureSink) ObserveGatewayStatesKilled(_ string) bool   { return true }
+func (s *captureSink) ObservePPPLink(_, _ string, _ float64) bool { return true }
+func (s *captureSink) ObserveGateway(_, _ string) bool            { return true }
+func (s *captureSink) ObserveRADIUS(_, _, _ string) bool          { return true }
+func (s *captureSink) ObserveVPN(_, _, _, _ string) bool          { return true }
+func (s *captureSink) ObserveCARP(_, _, _, _, _ string) bool      { return true }
+func (s *captureSink) ObserveUPnP(_, _, _ string) bool            { return true }
 
 // The syslog-only families (#536 netmap/ARP, #541 dhclient, #546 dhcp6c and the
 // kea-dhcp6 allocation failures). Zenarmor never emits them; these exist so this

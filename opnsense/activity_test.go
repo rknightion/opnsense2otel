@@ -534,3 +534,89 @@ func parseActivityDetailsJSON(t *testing.T, raw string) ProcessAggregate {
 	}
 	return parseActivityDetails(rows)
 }
+
+// Exercise the API decode path with thread shapes from FreeBSD top, including the
+// argument-bearing Eastpect command observed on the live activity backend.
+func TestFetchActivity_AllowlistedThreads(t *testing.T) {
+	server, client := newTestClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"details":[
+		{"PID":"0","USERNAME":"root","RES":"8M","WCPU":"1%","COMMAND":"[kernel{if_io_tqg_0}]"},
+		{"PID":"0","USERNAME":"root","RES":"8M","WCPU":"2%","COMMAND":"[kernel{if_io_tqg_1}]"},
+		{"PID":"0","USERNAME":"root","RES":"8M","WCPU":"3%","COMMAND":"[kernel{clock}]"},
+		{"PID":"12","USERNAME":"root","RES":"4M","WCPU":"4%","COMMAND":"[intr{irq264: igc0:rxq0}]"},
+		{"PID":"12","USERNAME":"root","RES":"4M","WCPU":"5%","COMMAND":"[intr{irq900: igc0:rxq0}]"},
+		{"PID":"12","USERNAME":"root","RES":"4M","WCPU":"6%","COMMAND":"[intr{irq157: ahci0}]"},
+		{"PID":"100","USERNAME":"root","RES":"64M","WCPU":"7%","COMMAND":"eastpect: Eastpect Instance 0 (eastpect){Eastpect Main Event}"},
+		{"PID":"100","USERNAME":"root","RES":"64M","WCPU":"8%","COMMAND":"eastpect: Eastpect Instance 0 (eastpect){eastpect}"}
+		]}`)
+	})
+	defer server.Close()
+	data, err := client.FetchActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := data.Processes
+	wantCPU := map[string]float64{"kernel{if_io_tqg_0}": 1, "kernel{if_io_tqg_1}": 2,
+		"kernel": 3, "intr{igc0:rxq0}": 9, "intr": 6,
+		"eastpect{Eastpect Main Event}": 7, "eastpect{eastpect}": 8}
+	if len(p.CPUPercentByCommand) != len(wantCPU) {
+		t.Errorf("CPU commands = %v, want %v", p.CPUPercentByCommand, wantCPU)
+	}
+	for command, want := range wantCPU {
+		if got := p.CPUPercentByCommand[command]; got != want {
+			t.Errorf("CPU[%q] = %v, want %v", command, got, want)
+		}
+	}
+	if got := p.ThreadsByCommand["intr{igc0:rxq0}"]; got != 2 {
+		t.Errorf("NIC queue threads = %v, want 2", got)
+	}
+	wantMemory := map[string]float64{"kernel": 8 * mib, "intr": 4 * mib,
+		"eastpect: Eastpect Instance 0 (eastpect)": 64 * mib}
+	if len(p.MemoryBytesByCommand) != len(wantMemory) {
+		t.Errorf("memory commands = %v, want %v", p.MemoryBytesByCommand, wantMemory)
+	}
+	for command, want := range wantMemory {
+		if got := p.MemoryBytesByCommand[command]; got != want {
+			t.Errorf("memory[%q] = %v, want %v", command, got, want)
+		}
+	}
+	if got := p.MemoryBytesByUser["root"]; got != 76*mib {
+		t.Errorf("resident total = %v, want %v", got, float64(76*mib))
+	}
+}
+
+func TestParseActivityDetails_AllowlistedThreadCap(t *testing.T) {
+	var rows []string
+	for i := 0; i < activityCommandCap+10; i++ {
+		rows = append(rows, fmt.Sprintf(
+			`{"PID":"0","USERNAME":"root","RES":"8M","WCPU":"1%%","COMMAND":"[kernel{if_io_tqg_%d}]"}`, i))
+	}
+	p := parseActivityDetailsJSON(t, "["+strings.Join(rows, ",")+"]")
+	if got := p.Stats().Commands; got != activityCommandCap+1 {
+		t.Errorf("distinct labels = %d, want cap plus overflow (%d)", got, activityCommandCap+1)
+	}
+	if got := p.Stats().Capped; got != 11 {
+		t.Errorf("capped rows = %d, want 11 (process memory reserves one label)", got)
+	}
+	if got := p.CPUPercentByCommand[activityOtherCommand]; got != 11 {
+		t.Errorf("overflow CPU = %v, want 11", got)
+	}
+	var resident float64
+	for _, value := range p.MemoryBytesByCommand {
+		resident += value
+	}
+	if resident != 8*mib {
+		t.Errorf("resident total across capped thread commands = %v, want %v", resident, float64(8*mib))
+	}
+}
+
+func TestNormalizeActivityThread_FallsBackOutsideAllowlist(t *testing.T) {
+	for _, raw := range []string{"[intr{irq264: virtio_pci2}]", "[intr{swi1: netisr 7}]",
+		"[kernel{if_io_tqg_bad}]", "[kernel{if_io_tqg_3}suffix]", "python3{if_io_tqg_3}",
+		"eastpect{arbitrary-job-123}", "eastpect-other{Eastpect Main Event}"} {
+		base := normalizeCommand(raw)
+		if got := normalizeActivityThread(raw, base); got != base {
+			t.Errorf("unallowlisted %q = %q, want process %q", raw, got, base)
+		}
+	}
+}

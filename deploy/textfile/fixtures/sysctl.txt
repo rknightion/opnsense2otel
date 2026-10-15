@@ -1,0 +1,12 @@
+dev.ixl.2.pf.rx_discards: 101777
+dev.ixl.2.pf.rxq00.packets: 727875102
+dev.ixl.2.pf.rxq00.irqs: 402177179
+dev.ixl.2.pf.rxq01.packets: 0
+dev.ixl.2.pf.rxq999.packets: 123
+dev.ixl.2.pf.rxq00.unknown: 888
+dev.ixl.3.pf.rx_discards: 0
+dev.netmap.admode: 0
+dev.netmap.buf_num: 163840
+dev.netmap.unknown: 999999999999
+dev.netmap.iflib_rx_miss: 121
+dev.netmap.iflib_rx_miss_bufs: 45

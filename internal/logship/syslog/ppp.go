@@ -3,6 +3,7 @@ package syslog
 import (
 	"net/netip"
 	"regexp"
+	"strconv"
 
 	"github.com/rknightion/opnsense2otel/v5/internal/logship"
 	"github.com/rknightion/opnsense2otel/v5/internal/logship/enrich"
@@ -145,6 +146,9 @@ func parsePPP(env Envelope, _ *enrich.Snapshot, _ func(table string)) (logship.R
 		rec, set := newRecord(env)
 		set("ppp.event", event)
 		set("ppp.bundle", bracket)
+		if !env.Timestamp.IsZero() {
+			set("ppp.edge_timestamp", strconv.FormatInt(env.Timestamp.Unix(), 10))
+		}
 		return rec, true
 	}
 

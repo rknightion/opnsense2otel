@@ -99,9 +99,8 @@ func (c *activityCollector) Register(namespace, instanceLabel string, log *slog.
 	)
 
 	// Process-table aggregates (#552), free from the payload this collector already
-	// fetches. Aggregated only — never one series per PID or per thread, because those
-	// identifiers churn on a timescale of minutes and abandoned series make rate()
-	// meaningless.
+	// fetches. Never per PID or numeric thread ID: those identifiers churn. Stable
+	// packet-processing thread names are retained for CPU and thread counts.
 	const idleNote = "The kernel idle threads are EXCLUDED from every process aggregate: on a healthy box " +
 		"they are the top rows at ~98% CPU, one per core, and would dominate every panel. Their absence " +
 		"is deliberate, not a gap."
@@ -121,24 +120,26 @@ func (c *activityCollector) Register(namespace, instanceLabel string, log *slog.
 	)
 	c.commandCPU = buildPrometheusDesc(c.subsystem, "command_cpu_percent",
 		"Weighted CPU percentage summed across every thread of this command, from top's WCPU column. "+
-			"The command name is normalised: the {thread-name} suffix and [] kernel brackets are "+
-			"stripped. "+idleNote+" "+cappedNote,
+			"Kernel brackets and thread suffixes are stripped except allowlisted NIC RX queues, "+
+			"iflib queues and Eastpect workers. IRQ numbers are omitted. "+idleNote+" "+cappedNote,
 		[]string{"command"},
 	)
 	c.commandMemory = buildPrometheusDesc(c.subsystem, "command_memory_bytes",
 		"Resident memory summed across the processes running this command, from top's RES column. "+
 			"Counted once per PROCESS, deduplicated by PID — every thread row repeats its process's "+
 			"RES, so summing the rows would multiply a process's memory by its thread count. "+
+			"Memory retains process command labels even when CPU and thread counts split by worker. "+
 			idleNote+" "+cappedNote,
 		[]string{"command"},
 	)
 	c.commandThreads = buildPrometheusDesc(c.subsystem, "command_threads",
 		"Number of threads running this command. The one signal here that no other exported metric "+
-			"carries: a process leaking threads is invisible everywhere else. "+idleNote+" "+cappedNote,
+			"carries: a process leaking threads is invisible everywhere else. Uses the same allowlisted "+
+			"packet-processing thread names as command_cpu_percent. "+idleNote+" "+cappedNote,
 		[]string{"command"},
 	)
 	c.commandsTracked = buildPrometheusDesc(c.subsystem, "commands_tracked",
-		"Number of distinct command labels in the process aggregates this poll, against a cap of "+
+		"Number of distinct command labels across CPU, thread and memory aggregates this poll, against a cap of "+
 			"128. At the cap the label set has saturated and new commands are invisible except "+
 			"through the __other__ bucket.",
 		nil,

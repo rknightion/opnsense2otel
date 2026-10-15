@@ -493,10 +493,24 @@ def build(b: Builder):
         ),
     )
 
+    b.sentinel("has_nic_textfile", metric="opnsense_textfile_nic_receive_discards_total")
+    nic_discards = b.ts(
+        "Physical NIC Receive Discards",
+        [(f'rate({sel("opnsense_textfile_nic_receive_discards_total")}[{RATE}])', "{{device}}")],
+        unit="pps", w=12, h=8,
+        desc="Driver receive discard bursts, including unassigned PPPoE/VLAN parents. Requires the node_exporter textfile companion in the same datasource with an opnsense_instance scrape label matching this firewall.",
+    )
+    nic_queues = b.ts(
+        "Physical NIC RX Queue Packets",
+        [(f'rate({sel("opnsense_textfile_nic_rx_queue_packets_total")}[{RATE}])', "{{device}} {{queue}}")],
+        unit="pps", w=12, h=8,
+        desc="Hardware receive queue distribution from the textfile companion. PPPoE may concentrate traffic on a single queue. Unsupported queues are absent.",
+    )
     b.tab("Interfaces", [
         b.row("Throughput", [rx_bps, tx_bps]),
         b.row("Packets & Errors", [rx_pkts, tx_pkts, multicasts, errors, collisions]),
         b.row("Queues", [queue_len, queue_drops]),
+        b.row("Physical NIC Driver Telemetry", [nic_discards, nic_queues], present="has_nic_textfile"),
         b.row("Link State & Rates", [link_state, iface_info]),
         b.row("Admin State & Identity", [admin_state, admin_enabled_state, iface_identity]),
         b.row("LAGG (Link Aggregation)",

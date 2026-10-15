@@ -74,7 +74,10 @@ COVERAGE_EXEMPT = {
 # is querying something no build of this exporter can emit. If you are about to add
 # one, first check it is not simply a typo — that is what item 1 of #591 turned out
 # to be, and it survived from the first dashboard commit.
-PANEL_METRIC_EXEMPT: dict[str, str] = {}
+PANEL_METRIC_EXEMPT: dict[str, str] = {
+    "opnsense_textfile_nic_receive_discards_total": "Shipped deploy/textfile/nic-textfile.awk; scraped from the optional node_exporter companion.",
+    "opnsense_textfile_nic_rx_queue_packets_total": "Shipped deploy/textfile/nic-textfile.awk; scraped from the optional node_exporter companion.",
+}
 
 # ---- the runtime-metric ledger (#591 item 4) ----------------------------
 # `coverage()` cannot see any of these. `load_catalogue()`'s row regex admits only

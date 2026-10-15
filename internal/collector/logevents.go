@@ -56,6 +56,7 @@ type (
 	// and the configured dpinger monitor name. Address, alarm state, RTT, loss and
 	// message text remain structured log fields, never labels.
 	gatewayKey struct{ event, gateway string }
+	pppKey     struct{ iface, event string }
 	radiusKey  struct{ event, result, clientScope string }
 	// vpnKey is the frozen #406 tuple. backend, event and result are closed
 	// code-defined vocabularies; connection is the API-RESOLVED configured tunnel or
@@ -170,18 +171,21 @@ type (
 // value must never be a wire value, least of all on the metric whose job is to say
 // that wire values are being refused.
 const (
-	logFamilyFirewall = "firewall"
-	logFamilyHAProxy  = "haproxy"
-	logFamilySSHD     = "sshd"
-	logFamilyDHCP     = "dhcp"
-	logFamilyAudit    = "audit"
-	logFamilyIDS      = "ids"
-	logFamilyGateway  = "gateway"
-	logFamilyRADIUS   = "radius"
-	logFamilyVPN      = "vpn"
-	logFamilyCARP     = "carp"
-	logFamilyUPnP     = "upnp"
-	logFamilyZenarmor = "zenarmor"
+	logFamilyFirewall            = "firewall"
+	logFamilyHAProxy             = "haproxy"
+	logFamilySSHD                = "sshd"
+	logFamilyDHCP                = "dhcp"
+	logFamilyAudit               = "audit"
+	logFamilyIDS                 = "ids"
+	logFamilyGateway             = "gateway"
+	logFamilyGatewayStatesKilled = "gateway_states_killed"
+	logFamilyPPP                 = "ppp"
+	logFamilyPPPLastUp           = "ppp_last_link_up"
+	logFamilyRADIUS              = "radius"
+	logFamilyVPN                 = "vpn"
+	logFamilyCARP                = "carp"
+	logFamilyUPnP                = "upnp"
+	logFamilyZenarmor            = "zenarmor"
 
 	logFamilyNetmap           = "netmap"
 	logFamilyARP              = "arp"
@@ -349,6 +353,8 @@ const (
 	logEventObserveAudit
 	logEventObserveIDS
 	logEventObserveGateway
+	logEventObserveGatewayStatesKilled
+	logEventObservePPP
 	logEventObserveRADIUS
 	logEventObserveVPN
 	logEventObserveCARP
@@ -388,21 +394,24 @@ type logEventCommand struct {
 }
 
 type logEventSnapshot struct {
-	fw      []keyed[fwKey]
-	ha      []keyed[haKey]
-	ssh     []keyed[sshKey]
-	dhcp    []keyed[dhcpKey]
-	audit   []keyed[auditKey]
-	ids     []keyed[idsKey]
-	gateway []keyed[gatewayKey]
-	radius  []keyed[radiusKey]
-	vpn     []keyed[vpnKey]
-	carp    []keyed[carpKey]
-	upnp    []keyed[upnpKey]
-	netmap  []keyed[netmapKey]
-	arp     []keyed[arpKey]
-	dhcpCli []keyed[dhcpClientKey]
-	dhcpScr []keyed[dhcpClientScriptKey]
+	fw           []keyed[fwKey]
+	ha           []keyed[haKey]
+	ssh          []keyed[sshKey]
+	dhcp         []keyed[dhcpKey]
+	audit        []keyed[auditKey]
+	ids          []keyed[idsKey]
+	gateway      []keyed[gatewayKey]
+	gatewayKills []keyed[string]
+	ppp          []keyed[pppKey]
+	pppLastUp    []keyedValue[string, float64]
+	radius       []keyed[radiusKey]
+	vpn          []keyed[vpnKey]
+	carp         []keyed[carpKey]
+	upnp         []keyed[upnpKey]
+	netmap       []keyed[netmapKey]
+	arp          []keyed[arpKey]
+	dhcpCli      []keyed[dhcpClientKey]
+	dhcpScr      []keyed[dhcpClientScriptKey]
 	// dhcpLease is the one GAUGE family: current state, so it is not drained.
 	dhcpLease []keyedValue[dhcpClientLeaseKey, dhcpClientLeaseValue]
 	dhcp6cMsg []keyed[dhcp6cMessageKey]
@@ -455,6 +464,9 @@ type LogEventStore struct {
 	audit            *cappedCounter[auditKey]
 	ids              *cappedCounter[idsKey]
 	gateway          *cappedCounter[gatewayKey]
+	gatewayKills     *cappedCounter[string]
+	ppp              *cappedCounter[pppKey]
+	pppLastUp        *cappedGauge[string, float64]
 	radius           *cappedCounter[radiusKey]
 	vpn              *cappedCounter[vpnKey]
 	carp             *cappedCounter[carpKey]
@@ -498,6 +510,9 @@ func newLogEventStoreWithCapacity(capacity int, beforeSnapshot func()) *LogEvent
 		audit:            newCappedCounter[auditKey](defaultMaxLogEventKeys),
 		ids:              newCappedCounter[idsKey](defaultMaxLogEventKeys),
 		gateway:          newCappedCounter[gatewayKey](defaultMaxLogEventKeys),
+		gatewayKills:     newCappedCounter[string](defaultMaxLogEventKeys),
+		ppp:              newCappedCounter[pppKey](defaultMaxLogEventKeys),
+		pppLastUp:        newCappedGauge[string, float64](defaultMaxLogEventKeys),
 		radius:           newCappedCounter[radiusKey](defaultMaxLogEventKeys),
 		vpn:              newCappedCounter[vpnKey](defaultMaxLogEventKeys),
 		carp:             newCappedCounter[carpKey](defaultMaxLogEventKeys),
@@ -773,6 +788,13 @@ func (s *LogEventStore) apply(cmd logEventCommand) {
 		s.audit.inc(auditKey{v[0], v[1]})
 	case logEventObserveIDS:
 		s.ids.inc(idsKey{v[0], v[1], v[2], v[3]})
+	case logEventObserveGatewayStatesKilled:
+		s.gatewayKills.inc(v[0])
+	case logEventObservePPP:
+		s.ppp.inc(pppKey{v[0], v[1]})
+		if v[1] == "link_up" && cmd.nums[0] > 0 {
+			s.pppLastUp.set(v[0], cmd.nums[0])
+		}
 	case logEventObserveGateway:
 		s.gateway.inc(gatewayKey{v[0], v[1]})
 	case logEventObserveRADIUS:
@@ -827,6 +849,9 @@ func (s *LogEventStore) apply(cmd logEventCommand) {
 		s.audit.setMax(cmd.maxKeys)
 		s.ids.setMax(cmd.maxKeys)
 		s.gateway.setMax(cmd.maxKeys)
+		s.gatewayKills.setMax(cmd.maxKeys)
+		s.ppp.setMax(cmd.maxKeys)
+		s.pppLastUp.setMax(cmd.maxKeys)
 		s.radius.setMax(cmd.maxKeys)
 		s.vpn.setMax(cmd.maxKeys)
 		s.carp.setMax(cmd.maxKeys)
@@ -870,6 +895,12 @@ func (s *LogEventStore) buildSnapshot() logEventSnapshot {
 	snap.audit, sat = drainFamily(logFamilyAudit, s.audit)
 	snap.sat = append(snap.sat, sat)
 	snap.ids, sat = drainFamily(logFamilyIDS, s.ids)
+	snap.sat = append(snap.sat, sat)
+	snap.gatewayKills, sat = drainFamily(logFamilyGatewayStatesKilled, s.gatewayKills)
+	snap.sat = append(snap.sat, sat)
+	snap.ppp, sat = drainFamily(logFamilyPPP, s.ppp)
+	snap.sat = append(snap.sat, sat)
+	snap.pppLastUp, sat = copyGaugeFamily(logFamilyPPPLastUp, s.pppLastUp)
 	snap.sat = append(snap.sat, sat)
 	snap.gateway, sat = drainFamily(logFamilyGateway, s.gateway)
 	snap.sat = append(snap.sat, sat)
@@ -989,6 +1020,9 @@ type logEventsCollector struct {
 	audit           *prometheus.Desc
 	ids             *prometheus.Desc
 	gateway         *prometheus.Desc
+	gatewayKills    *prometheus.Desc
+	ppp             *prometheus.Desc
+	pppLastUp       *prometheus.Desc
 	radius          *prometheus.Desc
 	vpn             *prometheus.Desc
 	carp            *prometheus.Desc
@@ -1042,6 +1076,9 @@ func (c *logEventsCollector) Register(namespace, instanceLabel string, log *slog
 		"Filterlog events with a resolved destination domain, by domain. The metric exposes the top 50 domains by observed volume and folds every other domain into domain=other; the domain is never a Loki stream label.",
 		[]string{"domain"},
 	)
+	c.gatewayKills = buildPrometheusDesc(c.subsystem, "gateway_states_killed_total", "Explicit routing state-kill events from received OPNsense syslog, by gateway. Counts flush events, not the number of states removed.", []string{"gateway"})
+	c.ppp = buildPrometheusDesc(c.subsystem, "ppp_link_total", "PPPoE WAN link edges from mpd5 bundle IFACE events, by logical WAN interface and event (link_up or link_down). Link, LCP, IPCP and rc-script reports are excluded to count each interface edge once.", []string{"interface", "event"})
+	c.pppLastUp = buildPrometheusDesc(c.subsystem, "ppp_last_link_up_timestamp_seconds", "Unix timestamp of the last received mpd5 bundle IFACE Up event, by logical WAN interface. Persists between scrapes and across down events; absent until a timestamped up event is received.", []string{"interface"})
 	c.haproxy = buildPrometheusDesc(c.subsystem, "haproxy_total",
 		"HAProxy events derived from received syslog, by event, backend, server, state and HTTP status class.",
 		[]string{"event", "backend", "server", "state", "status_class"},
@@ -1399,6 +1436,9 @@ func (c *logEventsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.audit
 	ch <- c.ids
 	ch <- c.gateway
+	ch <- c.gatewayKills
+	ch <- c.ppp
+	ch <- c.pppLastUp
 	ch <- c.radius
 	ch <- c.vpn
 	ch <- c.carp
@@ -1561,6 +1601,15 @@ func (c *logEventsCollector) Update(_ context.Context, _ *opnsense.Client, ch ch
 		ch <- prometheus.MustNewConstMetric(c.ids, prometheus.CounterValue, p.v,
 			p.k.eventType, p.k.action, p.k.category, p.k.severity, c.instance)
 	}
+	for _, p := range snap.gatewayKills {
+		ch <- prometheus.MustNewConstMetric(c.gatewayKills, prometheus.CounterValue, p.v, p.k, c.instance)
+	}
+	for _, p := range snap.ppp {
+		ch <- prometheus.MustNewConstMetric(c.ppp, prometheus.CounterValue, p.v, p.k.iface, p.k.event, c.instance)
+	}
+	for _, p := range snap.pppLastUp {
+		ch <- prometheus.MustNewConstMetric(c.pppLastUp, prometheus.GaugeValue, p.v, p.k, c.instance)
+	}
 	for _, p := range snap.gateway {
 		ch <- prometheus.MustNewConstMetric(c.gateway, prometheus.CounterValue, p.v,
 			p.k.event, p.k.gateway, c.instance)
@@ -1650,4 +1699,14 @@ func (c *logEventsCollector) Update(_ context.Context, _ *opnsense.Client, ch ch
 			d.key, d.val.category, d.val.iface, c.instance)
 	}
 	return nil
+}
+
+// ObservePPPLink implements logship.MetricSink; the receiver selects the unique bundle edge.
+func (s *LogEventStore) ObservePPPLink(iface, event string, timestamp float64) bool {
+	return s.observe(logEventCommand{kind: logEventObservePPP, values: [7]string{iface, event}, nums: [3]float64{timestamp}})
+}
+
+// ObserveGatewayStatesKilled implements logship.MetricSink.
+func (s *LogEventStore) ObserveGatewayStatesKilled(gateway string) bool {
+	return s.observe(logEventCommand{kind: logEventObserveGatewayStatesKilled, values: [7]string{gateway}})
 }

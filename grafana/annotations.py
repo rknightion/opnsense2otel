@@ -434,6 +434,10 @@ TAG_QUERIES = {
 # neither annotated nor listed here, so a new one is a decision rather than an
 # oversight.
 NOT_ANNOTATED: dict = {
+    "opnsense_log_events_ppp_last_link_up_timestamp_seconds":
+        "Read as time-since-link-up beside the PPPoE edge-rate panel. This latest-event "
+        "gauge retains only the most recently received up event; the pushed PPP logs "
+        "remain the event history. No additional annotation layer is introduced here.",
     "opnsense_haproxy_server_maintenance":
         "Per-server maintenance state is displayed as a state timeline; routine state samples are not timestamp-valued events.",
     "opnsense_captiveportal_voucher_group_next_expiry_timestamp_seconds":

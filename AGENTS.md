@@ -9,7 +9,8 @@ mental model.
 
 `just check` is the gate and must pass before you commit. `just ci` adds the deployment contracts,
 cross-compilation and the container image. Discover the rest with `just --list`; run `just` with
-stdin from `/dev/null`. GitHub API metadata validation and the full Docker/kind orchestration stay
+stdin from `/dev/null`. Stage regenerated Grafana artifacts before `just check`: its regeneration
+comparison checks the working tree against the index. GitHub API metadata validation and the full Docker/kind orchestration stay
 workflow-only and have no recipe.
 
 `just bump-module-major` is the one `[confirm]` recipe - stop and ask, never pass `--yes` or
@@ -76,6 +77,16 @@ Tracker traps:
 - Never hand-edit generated output: content between `<!-- docgen:begin/end -->` markers, the
   docgen-generated doc pages, `grafana/dashboard*.json`, or the alert manifests. Edit the builder and
   run the generator.
+
+## Physical NIC and engine-health sources
+
+The traffic REST endpoint enumerates configured interfaces: an unassigned PPPoE physical parent
+can be absent even though its driver discard counter is nonzero. Assigned physical NICs can
+already expose the same value through input queue drops. The optional node_exporter textfile
+companion supplies driver and queue telemetry without adding SSH to the exporter.
+Zenarmor health crash/stall figures are daily retained-log counts, not lifetime counters; its
+health API invokes check-and-send, and its shell health check can stop services. Never poll either
+as a read-only metric source.
 
 ## Deeper references
 

@@ -328,7 +328,7 @@ build if either drifts from the registry (`git diff --exit-code`), and
 `tests/test_sentinel_contract.py` catches the same drift without needing to run just.
 
 <!-- sentinelgen:begin -->
-### Prometheus sentinels — 118 total (collector 110 / self_labeled 6 / target_join 2 / global 0)
+### Prometheus sentinels — 119 total (collector 111 / self_labeled 6 / target_join 2 / global 0)
 
 | Sentinel | Scope | Presence test | Gates (tab/row) | Query |
 |---|---|---|---|---|
@@ -411,6 +411,7 @@ build if either drifts from the registry (`git diff --exit-code`), and
 | `has_network_diag` | `collector` | existence (series presence) | opnsense2otel > Network > Routing & Neighbors > NetISR (Network Interrupt Subsystem); opnsense2otel > Network > Routing & Neighbors > NetISR Per-CPU Distribution; opnsense2otel > Network > Routing & Neighbors > Routing Table Detail; opnsense2otel > Network > Routing & Neighbors > Sockets & Routes; opnsense2otel > Network > Routing & Neighbors > pfsync | `label_values(opnsense_network_diag_sockets_unix{opnsense_instance=~"$opnsense_instance"}, __name__)` |
 | `has_nginx` | `collector` | existence (series presence) | opnsense2otel > Services; opnsense2otel > Services > Nginx; opnsense2otel > Services > Nginx > Config Reload & Autoblock; opnsense2otel > Services > Nginx > Nginx Overview; opnsense2otel > Services > Nginx > Server Zone Cache Status & Latency; opnsense2otel > Services > Nginx > Server Zones; opnsense2otel > Services > Nginx > Shared Memory; opnsense2otel > Services > Nginx > Upstream Servers | `label_values(opnsense_nginx_connections_active{opnsense_instance=~"$opnsense_instance"}, __name__)` |
 | `has_nginx_cache` | `collector` | existence (series presence) | opnsense2otel > Services > Nginx > Cache Zones | `label_values(opnsense_nginx_cache_zone_max_bytes{opnsense_instance=~"$opnsense_instance"}, __name__)` |
+| `has_nic_textfile` | `collector` | existence (series presence) | opnsense2otel > Network > Interfaces > Physical NIC Driver Telemetry | `label_values(opnsense_textfile_nic_receive_discards_total{opnsense_instance=~"$opnsense_instance"}, __name__)` |
 | `has_ntp` | `collector` | existence (series presence) | opnsense2otel > Network > NTP | `label_values(opnsense_ntp_peer_info{opnsense_instance=~"$opnsense_instance"}, __name__)` |
 | `has_ntp_gps` | `collector` | existence (series presence) | opnsense2otel > Network > NTP > GPS (experimental) | `label_values(opnsense_ntp_gps_ok{opnsense_instance=~"$opnsense_instance"}, __name__)` |
 | `has_nut` | `collector` | existence (series presence) | opnsense2otel > System > UPS; opnsense2otel > System > UPS > NUT (Network UPS Tools) | `label_values(opnsense_nut_ups_info{opnsense_instance=~"$opnsense_instance"}, __name__)` |

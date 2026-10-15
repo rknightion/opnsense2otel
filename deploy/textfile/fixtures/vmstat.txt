@@ -1,0 +1,4 @@
+interrupt                          total       rate
+cpu0:timer                      20921094       1000
+irq262: ixl2:que 0              402177179       1777
+Total                          999999999       2777

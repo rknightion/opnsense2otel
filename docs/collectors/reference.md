@@ -47,7 +47,7 @@ This page provides a summary of all collectors in opnsense2otel.
 | Kernel Memory (UMA zones and malloc types) | kernel_memory | 12 | Enabled | --exporter.disable-kernel-memory | OPN2OTEL_DISABLE_KERNEL_MEMORY |
 | LLDP Neighbors | lldp | 2 | Enabled | --exporter.disable-lldpd | OPN2OTEL_DISABLE_LLDPD |
 | Local Auth | auth | 9 | Enabled | --exporter.disable-auth | OPN2OTEL_DISABLE_AUTH |
-| Log-derived Events | log_events | 32 | Enabled | --exporter.disable-log-events | OPN2OTEL_DISABLE_LOG_EVENTS |
+| Log-derived Events | log_events | 35 | Enabled | --exporter.disable-log-events | OPN2OTEL_DISABLE_LOG_EVENTS |
 | Mbuf | mbuf | 19 | Enabled | --exporter.disable-mbuf | OPN2OTEL_DISABLE_MBUF |
 | Monit | monit | 17 | Enabled | --exporter.disable-monit | OPN2OTEL_DISABLE_MONIT |
 | Munin Node | munin_node | 1 | Enabled | --exporter.disable-munin-node | OPN2OTEL_DISABLE_MUNIN_NODE |

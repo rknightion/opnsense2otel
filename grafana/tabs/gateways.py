@@ -33,6 +33,24 @@ def build(b: Builder):
         desc="Rate of dpinger gateway alarm transitions. alarm_started marks none -> down; alarm_cleared marks down -> none. "
              "This complements the current Gateway Status timeline; it is absent until syslog shipping sees a matching dpinger line.",
     )
+    ppp_edges = b.ts(
+        "PPPoE Link Edges",
+        [(f'rate({sel("opnsense_log_events_ppp_link_total")}[{RATE}])', "{{interface}} {{event}}")],
+        unit="ops", w=12, h=8,
+        desc="PPPoE WAN interface edges observed from mpd bundle IFACE Up/Down messages; Link, LCP, IPCP and rc-script copies are excluded. Absent until a matching pushed log arrives.",
+    )
+    ppp_age = b.ts(
+        "Time Since PPPoE Link Up",
+        [(f'time() - {sel("opnsense_log_events_ppp_last_link_up_timestamp_seconds")}', "{{interface}}")],
+        unit="s", w=12, h=8,
+        desc="Age of the latest observed mpd interface-up event. Resets with the exporter; absent until an up event is received.",
+    )
+    killed_states = b.ts(
+        "Gateway State-Kill Events",
+        [(f'rate({sel("opnsense_log_events_gateway_states_killed_total")}[{RATE}])', "{{gateway}}")],
+        unit="ops", w=12, h=8,
+        desc="Rate of explicit unreachable-gateway state flush events. Counts flush events, not the number of pf states removed.",
+    )
     rtt = b.ts(
         "Gateway RTT",
         [
@@ -234,6 +252,7 @@ def build(b: Builder):
 
     b.tab("Gateways & WAN", [
         b.row("Status & Alarm Events", [gw_status, gateway_alarms]),
+        b.row("WAN Reconnects & State Flushes", [ppp_edges, ppp_age, killed_states]),
         b.row("Latency", [rtt, rtt_thresholds, threshold_parse_errors]),
         b.row("Packet Loss", [loss, loss_thresholds]),
         b.row("Gateway Inventory", [gw_info, monitor_info, flags]),

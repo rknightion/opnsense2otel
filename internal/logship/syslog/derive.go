@@ -346,6 +346,8 @@ type family int
 
 const (
 	familyUnknown family = iota
+	familyPPP
+	familyOPNsense
 	familyFirewall
 	familyHAProxy
 	familySSHD
@@ -398,6 +400,8 @@ const (
 // metric forever (#396: dnsmasq-dhcp shipped as a DHCP parser alias with no
 // entry here for months before anyone noticed the counter never moved).
 var programFamily = map[string]family{
+	"ppp":       familyPPP,
+	"opnsense":  familyOPNsense,
 	"filterlog": familyFirewall,
 
 	"haproxy": familyHAProxy,
@@ -485,30 +489,9 @@ var nonDerivedPrograms = map[string]bool{
 	"radvd":          true,
 	"unbound":        true,
 
-	// The #631 wave. All four parse into structured attributes and derive no counter
-	// YET — the decision here is "not counted", not "never countable", and each is a
-	// deliberate deferral rather than an oversight:
-	//
-	//   ppp        — mpd5's PPPoE link state machine. A link-flap counter is the
-	//                obvious follow-up, but the useful metric is a TRANSITION rate and
-	//                the grammar has three separate layers (Link/LCP/IPCP) that each
-	//                report a state change for one physical event, so counting them
-	//                naively would triple every flap.
-	//   firewall   — alias resolution and URL fetch timing. What is worth having is a
-	//                DURATION and a SIZE, not a count of lines, and this sink deals
-	//                only in counters.
-	//   acme.sh    — the acme.sh client's own progress log. Certificate lifecycle is
-	//                already a first-class metric family fed by the ACME collector's
-	//                API data, which carries expiry dates a progress line cannot.
-	//   opnsense   — a CATCH-ALL program, like kernel above: every OPNsense PHP log
-	//                line lands on it, not just AcmeClient's. Safe only because the
-	//                parser returns ok=false for everything outside a captured
-	//                AcmeClient shape. If that is ever loosened, this entry becomes a
-	//                way to mis-bucket every PHP log line on the box.
-	"ppp":      true,
+	// Firewall timings and ACME progress remain log-only.
 	"firewall": true,
 	"acme.sh":  true,
-	"opnsense": true,
 
 	// The capture-triage wave (#664–#669). All parse into structured attributes and
 	// derive no counter, each for its own reason — again a decision, not an omission:
@@ -610,6 +593,25 @@ func observeDerived(sink logship.MetricSink, program string, attrs map[string]st
 	}
 
 	switch fam {
+	case familyPPP:
+		// Only the bundle IFACE event is one-per-WAN-edge. Link, LCP, IPCP
+		// and the inet/inet6 rc-script copies must never join this counter.
+		iface := attrs["ppp.bundle"]
+		event := attrs["ppp.event"]
+		if iface == "" || (event != "iface_up" && event != "iface_down") {
+			return false
+		}
+		ts, _ := strconv.ParseFloat(attrs["ppp.edge_timestamp"], 64)
+		if event == "iface_up" {
+			return sink.ObservePPPLink(iface, "link_up", ts)
+		}
+		return sink.ObservePPPLink(iface, "link_down", ts)
+	case familyOPNsense:
+		if attrs["syslog.event"] != "gateway_states_killed" || attrs["gateway.name"] == "" {
+			return false
+		}
+		return sink.ObserveGatewayStatesKilled(attrs["gateway.name"])
+
 	case familyFirewall:
 		// The GATE is the raw wire verb — its presence is what proves the line parsed
 		// structurally — but the LABEL is the normalised disposition filterlog.go already

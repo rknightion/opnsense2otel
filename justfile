@@ -135,7 +135,7 @@ vuln: _tool-govulncheck
 # stay in workflows; the heavy local counterparts are collected by `just ci`.
 # run the bare-toolchain pre-commit gate
 [group('check')]
-check: fmt-check lint test metric-lint fuzz-smoke check-public-ips testbed-test gitsync-test grafana-test gen-check vuln
+check: textfile-test fmt-check lint test metric-lint fuzz-smoke check-public-ips testbed-test gitsync-test grafana-test gen-check vuln
 
 # deployment-test needs a Docker daemon for the containerised systemd contracts.
 # snapshot needs cross-compilation for the release archive matrix.
@@ -332,3 +332,8 @@ print-go-licenses-version:
 [private]
 print-go-licenses-module:
     @echo {{ go_licenses_module }}
+
+# validate the shipped FreeBSD textfile companion with recorded command fixtures
+[group('check')]
+textfile-test:
+    python3 deploy/textfile/test_nic_textfile.py

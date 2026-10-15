@@ -435,9 +435,10 @@ def build(b: Builder):
         sort_by="CPU %",
         w=14,
         h=8,
-        desc="The 20 busiest commands. The command name is normalised — the {thread-name} suffix and "
-        "[] kernel brackets are stripped — so all threads of one binary land on one row. Commands "
-        "past the label cap appear as __other__.",
+        desc="The 20 busiest commands. CPU and thread counts retain allowlisted NIC RX queues, iflib "
+        "queues and Eastpect workers; other thread names aggregate by process. Memory remains "
+        "deduplicated by process, so a worker row has no separate memory value. Commands past "
+        "the shared label cap appear as __other__.",
     )
 
     proc_threads = b.ts(

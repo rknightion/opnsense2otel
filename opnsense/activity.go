@@ -38,8 +38,10 @@ var (
 
 	// The `{...}` thread-name suffix top -H appends to a COMMAND
 	// ("python3{python3}", "[idle{idle: cpu10}]"). Stripped before the name is used
-	// as a label, or every thread of a process would be its own label value.
+	// for process-memory labels. CPU/thread labels selectively retain stable names.
 	threadNameSuffixRegex = regexp.MustCompile(`\{[^}]*\}`)
+	iflibThreadRegex      = regexp.MustCompile(`^if_io_tqg_[0-9]+$`)
+	nicRXThreadRegex      = regexp.MustCompile(`^irq[0-9]+:\s*([a-z][a-z0-9_]*[0-9]+:rxq[0-9]+)$`)
 )
 
 // parseTopSize parses a size as top prints it ("483M", "11G", "512") into bytes.
@@ -153,6 +155,33 @@ func normalizeCommand(raw string) string {
 	return strings.TrimSpace(s)
 }
 
+// normalizeActivityThread preserves only stable packet-processing identities for
+// CPU and thread counts. IRQ numbers and Eastpect's process arguments are omitted;
+// all other thread names retain the existing process-level aggregation.
+func normalizeActivityThread(raw, command string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimPrefix(s, "[")
+	s = strings.TrimSuffix(s, "]")
+	start := strings.LastIndexByte(s, '{')
+	if start < 0 || !strings.HasSuffix(s, "}") {
+		return command
+	}
+	thread := s[start+1 : len(s)-1]
+	switch {
+	case command == "kernel" && iflibThreadRegex.MatchString(thread):
+		return "kernel{" + thread + "}"
+	case command == "intr":
+		if m := nicRXThreadRegex.FindStringSubmatch(thread); m != nil {
+			return "intr{" + m[1] + "}"
+		}
+	case command == "eastpect" || strings.HasPrefix(command, "eastpect:"):
+		if thread == "eastpect" || thread == "Eastpect Main Event" {
+			return "eastpect{" + thread + "}"
+		}
+	}
+	return command
+}
+
 // parseTopPercent parses a WCPU cell ("98.27%") into a percentage. Reports false for
 // anything unparseable so the caller skips the row rather than counting it as zero.
 func parseTopPercent(s string) (float64, bool) {
@@ -173,12 +202,14 @@ func parseTopPercent(s string) (float64, bool) {
 //
 // Never per-PID and never per-THR. Those churn on a timescale of minutes, and an
 // abandoned series makes rate() meaningless — so the only exported dimensions are
-// the owning username and the normalised command name.
+// the owning username and the normalised command name, with stable allowlisted
+// packet-processing thread names retained for CPU and thread counts.
 //
 // THE MEMORY TRAP. `top -aHSTn` prints one row per THREAD, and every thread of a
 // process reports that PROCESS's RES. Summing RES across rows therefore multiplies a
 // process's memory by its thread count. Memory is deduplicated by PID: each distinct
-// PID contributes its RES exactly once per bucket. WCPU is genuinely per-thread and
+// PID contributes its RES exactly once per bucket, under the process command
+// rather than a thread label. WCPU is genuinely per-thread and
 // is summed as-is.
 type ProcessAggregate struct {
 	CPUPercentByUser     map[string]float64
@@ -191,6 +222,9 @@ type ProcessAggregate struct {
 	// set was already at its ceiling. Without it a saturated set is invisible: the
 	// panels would simply stop gaining commands with nothing to say why.
 	capped uint64
+
+	// commands shares one budget across CPU/thread and process-memory labels.
+	commands map[string]struct{}
 }
 
 // ProcessAggregateStats is the aggregation's own health — how many command labels are
@@ -205,7 +239,7 @@ type ProcessAggregateStats struct {
 // Stats returns the aggregation's current health.
 func (p ProcessAggregate) Stats() ProcessAggregateStats {
 	return ProcessAggregateStats{
-		Commands:    len(p.CPUPercentByCommand),
+		Commands:    len(p.commands),
 		MaxCommands: activityCommandCap,
 		Capped:      p.capped,
 	}
@@ -218,21 +252,23 @@ func newProcessAggregate() ProcessAggregate {
 		CPUPercentByCommand:  map[string]float64{},
 		MemoryBytesByCommand: map[string]float64{},
 		ThreadsByCommand:     map[string]float64{},
+		commands:             map[string]struct{}{},
 	}
 }
 
 // commandKey returns the label value this command should be filed under, folding it
 // into the overflow bucket once the label set is at its ceiling. A command already in
-// the set always keeps its own key.
-func (p *ProcessAggregate) commandKey(command string) string {
-	if _, ok := p.CPUPercentByCommand[command]; ok {
-		return command
+// the set always keeps its own key. The bool reports a fold caused by the cap.
+func (p *ProcessAggregate) commandKey(command string) (string, bool) {
+	if _, ok := p.commands[command]; ok {
+		return command, false
 	}
-	if len(p.CPUPercentByCommand) >= activityCommandCap {
-		p.capped++
-		return activityOtherCommand
+	if len(p.commands) >= activityCommandCap {
+		p.commands[activityOtherCommand] = struct{}{}
+		return activityOtherCommand, true
 	}
-	return command
+	p.commands[command] = struct{}{}
+	return command, false
 }
 
 // activityRowString reads one cell from a details row. The endpoint sends every cell
@@ -263,7 +299,8 @@ func parseActivityDetails(rows []any) ProcessAggregate {
 			continue
 		}
 
-		command := normalizeCommand(activityRowString(row, "COMMAND"))
+		rawCommand := activityRowString(row, "COMMAND")
+		command := normalizeCommand(rawCommand)
 		if command == "" || command == activityIdleCommand {
 			continue
 		}
@@ -283,12 +320,16 @@ func parseActivityDetails(rows []any) ProcessAggregate {
 			continue
 		}
 
-		command = agg.commandKey(command)
+		threadCommand, threadCapped := agg.commandKey(normalizeActivityThread(rawCommand, command))
+		memoryCommand, memoryCapped := agg.commandKey(command)
+		if threadCapped || memoryCapped {
+			agg.capped++
+		}
 
 		// WCPU is per-thread and sums correctly across rows.
 		agg.CPUPercentByUser[user] += cpu
-		agg.CPUPercentByCommand[command] += cpu
-		agg.ThreadsByCommand[command]++
+		agg.CPUPercentByCommand[threadCommand] += cpu
+		agg.ThreadsByCommand[threadCommand]++
 
 		// RES is per-PROCESS, repeated on every one of its thread rows.
 		if _, dup := seenUserPID[user+"\x00"+pid]; !dup {
@@ -297,7 +338,7 @@ func parseActivityDetails(rows []any) ProcessAggregate {
 		}
 		if _, dup := seenCommandPID[command+"\x00"+pid]; !dup {
 			seenCommandPID[command+"\x00"+pid] = struct{}{}
-			agg.MemoryBytesByCommand[command] += res
+			agg.MemoryBytesByCommand[memoryCommand] += res
 		}
 	}
 

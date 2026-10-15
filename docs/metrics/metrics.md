@@ -7,9 +7,9 @@ The `opnsense_instance` label is applied to all metrics.
 
 ## Summary
 
-- **Total metrics:** 1048
-- **Gauges:** 695
-- **Counters:** 350
+- **Total metrics:** 1051
+- **Gauges:** 696
+- **Counters:** 352
 - **Histograms:** 3
 
 ## General
@@ -90,10 +90,10 @@ The `opnsense_instance` label is applied to all metrics.
 | opnsense_activity_arc_uncompressed_bytes | Gauge | --- | Logical size of ZFS ARC contents before compression. Absent when top reports no compression line. | --exporter.disable-activity |
 | opnsense_activity_user_cpu_percent | Gauge | user | Weighted CPU percentage summed across every thread owned by this username, from top's WCPU column. Sums per thread, so a busy multi-threaded process can exceed 100.  | --exporter.disable-activity |
 | opnsense_activity_user_memory_bytes | Gauge | user | Resident memory summed across the processes owned by this username, from top's RES column. Counted once per PROCESS: top prints one row per thread and every thread repeats its process's RES, so the rows are deduplicated by PID before summing.  | --exporter.disable-activity |
-| opnsense_activity_command_cpu_percent | Gauge | command | Weighted CPU percentage summed across every thread of this command, from top's WCPU column. The command name is normalised: the {thread-name} suffix and [] kernel brackets are stripped.   | --exporter.disable-activity |
-| opnsense_activity_command_memory_bytes | Gauge | command | Resident memory summed across the processes running this command, from top's RES column. Counted once per PROCESS, deduplicated by PID — every thread row repeats its process's RES, so summing the rows would multiply a process's memory by its thread count.   | --exporter.disable-activity |
-| opnsense_activity_command_threads | Gauge | command | Number of threads running this command. The one signal here that no other exported metric carries: a process leaking threads is invisible everywhere else.   | --exporter.disable-activity |
-| opnsense_activity_commands_tracked | Gauge | --- | Number of distinct command labels in the process aggregates this poll, against a cap of 128. At the cap the label set has saturated and new commands are invisible except through the __other__ bucket. | --exporter.disable-activity |
+| opnsense_activity_command_cpu_percent | Gauge | command | Weighted CPU percentage summed across every thread of this command, from top's WCPU column. Kernel brackets and thread suffixes are stripped except allowlisted NIC RX queues, iflib queues and Eastpect workers. IRQ numbers are omitted.   | --exporter.disable-activity |
+| opnsense_activity_command_memory_bytes | Gauge | command | Resident memory summed across the processes running this command, from top's RES column. Counted once per PROCESS, deduplicated by PID — every thread row repeats its process's RES, so summing the rows would multiply a process's memory by its thread count. Memory retains process command labels even when CPU and thread counts split by worker.   | --exporter.disable-activity |
+| opnsense_activity_command_threads | Gauge | command | Number of threads running this command. The one signal here that no other exported metric carries: a process leaking threads is invisible everywhere else. Uses the same allowlisted packet-processing thread names as command_cpu_percent.   | --exporter.disable-activity |
+| opnsense_activity_commands_tracked | Gauge | --- | Number of distinct command labels across CPU, thread and memory aggregates this poll, against a cap of 128. At the cap the label set has saturated and new commands are invisible except through the __other__ bucket. | --exporter.disable-activity |
 | opnsense_activity_commands_capped_total | Counter | --- | Cumulative count of process-table rows folded into command=\"__other__\" because the command label set was already at its cap. Zero on any normal firewall; a rising rate means the aggregates are no longer naming everything they measure. | --exporter.disable-activity |
 
 ## BPF Statistics
@@ -798,6 +798,9 @@ The `opnsense_instance` label is applied to all metrics.
 |-------------|------|--------|-------------|--------------|
 | opnsense_log_events_firewall_total | Counter | action, interface, rule_id, rule_name, scope | Firewall (filterlog) events derived from received syslog, by action, interface, rule and scope. Counts every line including passes; the raw pass lines may be sampled away (--logs.syslog.sample) while this counter still counts them. | --exporter.disable-log-events |
 | opnsense_log_events_filterlog_domain_total | Counter | domain | Filterlog events with a resolved destination domain, by domain. The metric exposes the top 50 domains by observed volume and folds every other domain into domain=other; the domain is never a Loki stream label. | --exporter.disable-log-events |
+| opnsense_log_events_gateway_states_killed_total | Counter | gateway | Explicit routing state-kill events from received OPNsense syslog, by gateway. Counts flush events, not the number of states removed. | --exporter.disable-log-events |
+| opnsense_log_events_ppp_link_total | Counter | interface, event | PPPoE WAN link edges from mpd5 bundle IFACE events, by logical WAN interface and event (link_up or link_down). Link, LCP, IPCP and rc-script reports are excluded to count each interface edge once. | --exporter.disable-log-events |
+| opnsense_log_events_ppp_last_link_up_timestamp_seconds | Gauge | interface | Unix timestamp of the last received mpd5 bundle IFACE Up event, by logical WAN interface. Persists between scrapes and across down events; absent until a timestamped up event is received. | --exporter.disable-log-events |
 | opnsense_log_events_haproxy_total | Counter | event, backend, server, state, status_class | HAProxy events derived from received syslog, by event, backend, server, state and HTTP status class. | --exporter.disable-log-events |
 | opnsense_log_events_sshd_total | Counter | result, method, scope | sshd authentication events derived from received syslog, by result, method and source scope. | --exporter.disable-log-events |
 | opnsense_log_events_dhcp_total | Counter | action, interface, server | DHCP lease events derived from received syslog, by action, interface and server. | --exporter.disable-log-events |
