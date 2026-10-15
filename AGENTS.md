@@ -20,9 +20,9 @@ Narrow the suite with the filter argument: `just test TestFetchGateways`.
 
 ## Tracker
 
-Tasks are `OPN-NNNN` in `backlog/`. Read `~/repos/agent-docs/sources/loop/planner.md` before
-designing a wave, and the **Wave operating model** doc for this project's own rules, exclusive
-resources and recurring defects.
+Tasks are `OPN-NNNN` in `backlog/`.
+
+Loops: the protocol lives in `~/repos/agent-docs/sources/loop/` (this board's "Loop protocol pointer" doc points there); this repository's loop facts are in `LOOP.md`.
 
 Any `#NNN` **below 656** in code comments, task text or docs is a retired GitHub issue, not a task:
 the 524 pre-migration issues were deleted, so `gh issue view <N>` 404s on those. Numbers at or above
@@ -64,6 +64,23 @@ Tracker traps:
   honours unprefixed (`docs/log-shipping.md`). The `*_FILE` secret vars also accept legacy unprefixed
   aliases (`OPS_API_KEY_FILE`, `OPS_API_SECRET_FILE`, `PYROSCOPE_AUTH_USER_FILE`,
   `PYROSCOPE_AUTH_PASSWORD_FILE`) for backwards compatibility, with the prefixed form winning.
+
+## Recurring defects
+
+What a review pass should look for:
+
+- **Modelling a payload shape upstream cannot produce.** Verify against the OPNsense controller or
+  script that builds the payload, and check whether the key is conditional, before writing the
+  struct. Run the canary triage verdicts before reaching for `drop` or `chase`.
+- **Flow correlation** (`internal/flow/`): orientation by arrival order, endpoints paired by
+  position, NAT'd conversations counted twice, a window partial compared with a whole connection.
+  Test-first regardless of change size.
+- **Alert rules that fire on one sample.** State the metric's floor and normal range, and give
+  every rule a sustain and hysteresis. A threshold below the floor can never mean anything.
+- **Decoded and dropped.** `just fieldaudit` (also a unit test) reports unmarshalled struct fields
+  never read; an exemption needs a written reason.
+- **Public metadata.** Golden schemas are structure-only. Redact credentials at the boundary, not
+  the sink.
 
 ## Conventions
 

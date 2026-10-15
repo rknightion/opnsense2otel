@@ -1,5 +1,5 @@
 # DISABLED ON oli, DELIBERATELY. The testbed is powered on demand by the main
-# session, not every morning; see the Wave operating model doc. Kept so the
+# session, not every morning; see LOOP.md. Kept so the
 # schedule can be restored with `systemctl enable --now`, not as a live unit.
 [Unit]
 Description=Start the OPNsense testbed ahead of the daily live canary
