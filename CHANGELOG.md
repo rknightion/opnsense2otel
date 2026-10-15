@@ -1,5 +1,31 @@
 # Changelog
 
+## [5.3.0](https://github.com/rknightion/opnsense2otel/compare/v5.2.0...v5.3.0) (2026-10-15)
+
+
+### Features
+
+* add optional Zenarmor daily health textfile metrics ([b483094](https://github.com/rknightion/opnsense2otel/commit/b48309473f5bb328e5d78ce2068f0fa5a2209ba6))
+* **wan:** expose physical NIC and reconnect diagnostics ([7c2d168](https://github.com/rknightion/opnsense2otel/commit/7c2d168c299d8d92ba1552534bf6d152ea0038b6))
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.249 ([#843](https://github.com/rknightion/opnsense2otel/issues/843)) ([707046d](https://github.com/rknightion/opnsense2otel/commit/707046dacc0ef2a308379aa6333d3cedc1f0a747))
+* **deps:** update anthropics/claude-code-action action to v1.0.250 ([#844](https://github.com/rknightion/opnsense2otel/issues/844)) ([f175b0d](https://github.com/rknightion/opnsense2otel/commit/f175b0de4af91198dc266b177a413ae59c0c1968))
+* **deps:** update dependency just to v1.59.0 ([#845](https://github.com/rknightion/opnsense2otel/issues/845)) ([0271728](https://github.com/rknightion/opnsense2otel/commit/0271728b4d9d3a7b68a634b0193c6f8e748e0d8d))
+* **deps:** update opnsense-docs digest to 89df35e ([#839](https://github.com/rknightion/opnsense2otel/issues/839)) ([7a0111f](https://github.com/rknightion/opnsense2otel/commit/7a0111f87624cf85134b7f4a7fd03ba4a86acfec))
+* **deps:** update opnsense-docs digest to ea0d9dd ([#841](https://github.com/rknightion/opnsense2otel/issues/841)) ([49a8c2f](https://github.com/rknightion/opnsense2otel/commit/49a8c2f23fbcc06c1e6a256719674d684fd64d25))
+* **deps:** update rknightion/.github action to v1.25.8 ([#842](https://github.com/rknightion/opnsense2otel/issues/842)) ([bdc7692](https://github.com/rknightion/opnsense2otel/commit/bdc769205e1e49d231ed251424b29e77019af16d))
+* remove the retired fan-out/wave loop protocol ([0146cf7](https://github.com/rknightion/opnsense2otel/commit/0146cf75f42367fd2a85d24091740b2cc68b0a68))
+
+
+### Documentation
+
+* close verified WAN retention and live API contracts ([99fdf54](https://github.com/rknightion/opnsense2otel/commit/99fdf5468f29f2cd590f1aa56818c63f9c500f2d))
+* publish canonical agent documents ([87437b2](https://github.com/rknightion/opnsense2otel/commit/87437b249f44c46e3282386d1cfbc3606e0f265c))
+* record verified 5.2.0 publication and deployment ([35f60fe](https://github.com/rknightion/opnsense2otel/commit/35f60febbeccef8c9cb11a3495382ae0ba0b1c53))
+
 ## [5.2.0](https://github.com/rknightion/opnsense2otel/compare/v5.1.0...v5.2.0) (2026-10-13)
 
 
