@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.3.1](https://github.com/rknightion/opnsense2otel/compare/v5.3.0...v5.3.1) (2026-10-17)
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.251 ([#846](https://github.com/rknightion/opnsense2otel/issues/846)) ([464ea1b](https://github.com/rknightion/opnsense2otel/commit/464ea1bc9c8d9e8001405e29ba77a0a5f9d2b381))
+* **deps:** update anthropics/claude-code-action action to v1.0.252 ([#849](https://github.com/rknightion/opnsense2otel/issues/849)) ([e194152](https://github.com/rknightion/opnsense2otel/commit/e194152ff8629bdd4a8e444e431e931a2efe9b9a))
+* **deps:** update dependency golangci/golangci-lint to v2.15.0 ([#848](https://github.com/rknightion/opnsense2otel/issues/848)) ([bcc1ae4](https://github.com/rknightion/opnsense2otel/commit/bcc1ae40090affbf3fb08aba2cc9a49acc5c4d9b))
+
 ## [5.3.0](https://github.com/rknightion/opnsense2otel/compare/v5.2.0...v5.3.0) (2026-10-15)
 
 
