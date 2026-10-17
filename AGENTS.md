@@ -18,6 +18,10 @@ workflow-only and have no recipe.
 
 Narrow the suite with the filter argument: `just test TestFetchGateways`.
 
+Off the Mac, when the remote gate runner is installed (`which gaterun`): `gaterun -- just ci` (or
+`just check`), paced across lanes with `gaterun-slot <lane> -- gaterun -- just ci`; `.gaterunner.yaml`
+is its contract. Run one test or package locally.
+
 ## Tracker
 
 Tasks are `OPN-NNNN` in `backlog/`.
