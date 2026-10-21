@@ -1,5 +1,35 @@
 # Changelog
 
+## [5.3.1](https://github.com/rknightion/opnsense2otel/compare/v5.3.0...v5.3.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update Go 1.27.3 and repair certificate trust ([6f8af7f](https://github.com/rknightion/opnsense2otel/commit/6f8af7f0809beda126fdc1586c1c7d8e958a4b02))
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.251 ([#846](https://github.com/rknightion/opnsense2otel/issues/846)) ([464ea1b](https://github.com/rknightion/opnsense2otel/commit/464ea1bc9c8d9e8001405e29ba77a0a5f9d2b381))
+* **deps:** update anthropics/claude-code-action action to v1.0.252 ([#849](https://github.com/rknightion/opnsense2otel/issues/849)) ([e194152](https://github.com/rknightion/opnsense2otel/commit/e194152ff8629bdd4a8e444e431e931a2efe9b9a))
+* **deps:** update anthropics/claude-code-action action to v1.0.253 ([#850](https://github.com/rknightion/opnsense2otel/issues/850)) ([34bac98](https://github.com/rknightion/opnsense2otel/commit/34bac9853cdadd18d532cc50ae93b2c2ccbb352e))
+* **deps:** update anthropics/claude-code-action action to v1.0.254 ([#854](https://github.com/rknightion/opnsense2otel/issues/854)) ([9e59350](https://github.com/rknightion/opnsense2otel/commit/9e59350e80121e05ec6ebf028201a8c3c253a7e1))
+* **deps:** update anthropics/claude-code-action action to v1.0.255 ([#857](https://github.com/rknightion/opnsense2otel/issues/857)) ([32f2761](https://github.com/rknightion/opnsense2otel/commit/32f2761b810912a5fbaf037e7244141973d588aa))
+* **deps:** update anthropics/claude-code-action action to v1.0.256 ([#858](https://github.com/rknightion/opnsense2otel/issues/858)) ([dbcea49](https://github.com/rknightion/opnsense2otel/commit/dbcea492d0320405490dd9490fd39462ae44bc12))
+* **deps:** update dependency go to v1.27.3 ([#856](https://github.com/rknightion/opnsense2otel/issues/856)) ([eb06133](https://github.com/rknightion/opnsense2otel/commit/eb06133a6a50781089349642bae6e54c48e1cb5a))
+* **deps:** update dependency golangci/golangci-lint to v2.15.0 ([#848](https://github.com/rknightion/opnsense2otel/issues/848)) ([bcc1ae4](https://github.com/rknightion/opnsense2otel/commit/bcc1ae40090affbf3fb08aba2cc9a49acc5c4d9b))
+* **deps:** update gcr.io/distroless/static-debian13:nonroot docker digest to 5167571 ([#855](https://github.com/rknightion/opnsense2otel/issues/855)) ([50927b7](https://github.com/rknightion/opnsense2otel/commit/50927b7475bb082fade463511b8d008c13e37396))
+* **deps:** update module github.com/anchore/syft to v1.55.0 ([#853](https://github.com/rknightion/opnsense2otel/issues/853)) ([f7a32cc](https://github.com/rknightion/opnsense2otel/commit/f7a32ccd4b3db0037392447675911de23d6e4fdd))
+* **deps:** update module github.com/anchore/syft/cmd/syft to v1.55.0 ([#852](https://github.com/rknightion/opnsense2otel/issues/852)) ([b7612c4](https://github.com/rknightion/opnsense2otel/commit/b7612c44bafa461b6e5292c39f8894db94a403a6))
+* **deps:** update opnsense-docs digest to 3902180 ([#859](https://github.com/rknightion/opnsense2otel/issues/859)) ([2a2b257](https://github.com/rknightion/opnsense2otel/commit/2a2b257d4e60e65e79b63633847a767fffc7b3e8))
+* **deps:** update step-security/harden-runner action to v2.22.2 ([#851](https://github.com/rknightion/opnsense2otel/issues/851)) ([110f8aa](https://github.com/rknightion/opnsense2otel/commit/110f8aa52011cc7d809e6812fdc1b6baa45959cf))
+* run the heavy gates on the remote gate runner ([2bf3424](https://github.com/rknightion/opnsense2otel/commit/2bf34248a03ff1ae46946779ff1160eb68d6176e))
+
+
+### Documentation
+
+* publish canonical agent documents ([2a1e14c](https://github.com/rknightion/opnsense2otel/commit/2a1e14c4c26ed1ea9cd5d92b1a6f95cbd3d59b51))
+
 ## [5.3.0](https://github.com/rknightion/opnsense2otel/compare/v5.2.0...v5.3.0) (2026-10-15)
 
 
