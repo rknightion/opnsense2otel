@@ -1,7 +1,10 @@
 # Digest-pinned builder (matches the pinned distroless runtime below) so a mutable-tag
 # push can't slip an unreviewed builder image into a release build (#148). Digest is the
-# multi-arch index for golang:1.27.0-alpine; Renovate keeps it fresh (pinDigests, renovate.json).
-FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
+# multi-arch index for golang:1.27.3-alpine; Renovate keeps it fresh (pinDigests, renovate.json).
+FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
+
+# Refresh trust before any build-time network access; the pinned builder predates the CA fix.
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -64,7 +67,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # one and TestBundledPathsAreStable / TestGeoIPFlagDefaultsPointAtTheBundledDatabases
 # fail, which is the point: an image whose databases nothing opens looks exactly
 # like a firewall with nothing to report.
-FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS geoip
+FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS geoip
+
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 
 # Empty = "the current UTC year-month, falling back to the previous one". Set it
 # (e.g. --build-arg DBIP_MONTH=2026-07) to pin a reproducible build to a known file.
@@ -144,7 +149,7 @@ RUN set -eu; mkdir -p /geoip-licenses; { \
   echo "date is exported as opnsense_flow_geoip_database_build_timestamp_seconds."; \
   } > /geoip-licenses/GEOIP-DB-IP-ATTRIBUTION.txt
 
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:d62067879de890a1def9da0e7766b7d20810a5e5555cef8506b752437d7a3e88
 
 ARG VERSION
 
