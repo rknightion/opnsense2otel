@@ -154,9 +154,41 @@ jobs:
   # Edge build on every non-release push to main: publishes the :main multi-arch image
   # (replaces the removed docker-build-main job). release_created gates this vs the
   # release publish above, so the two never both run on one push.
-  edge:
+  # Production (Watchtower on camden) tracks :main, so every edge publish restarts the
+  # exporter and drops its in-flight log records. Skip it for commits that change no
+  # shipped input, using the same rule auto-rc.yml applies to release candidates.
+  edge-shipped-change:
     needs: release-please
     if: needs.release-please.outputs.release_created != 'true'
+    runs-on: ubuntu-26.04
+    outputs:
+      shipped: ${{ steps.paths.outputs.shipped }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+      - name: Checkout the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          # Full history, so the whole push range (before..sha) can be diffed.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed paths
+        id: paths
+        env:
+          HEAD_SHA: ${{ github.sha }}
+          # Every commit in the push counts: a Go change followed by a docs-only
+          # commit must still publish. All-zero (new branch) falls back to the parent.
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          shipped=$(scripts/shipped-change.sh "${HEAD_SHA}" "${BEFORE_SHA}")
+          echo "shipped=${shipped}" >> "${GITHUB_OUTPUT}"
+
+  edge:
+    needs: [release-please, edge-shipped-change]
+    if: needs.release-please.outputs.release_created != 'true' && needs.edge-shipped-change.outputs.shipped == 'true'
     permissions:
       contents: write
       packages: write

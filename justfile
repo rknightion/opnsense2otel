@@ -109,6 +109,13 @@ deployment-test: _tool-kubeconform
     {{ tools_dir }}/kubeconform -strict -summary deploy/k8s/deployment.yaml
     PATH="{{ tools_dir }}:$PATH" charts/opnsense2otel/tests/test-chart.sh
 
+# unit-test the rule deciding which commits cut an RC or publish the :main image
+[group('check')]
+[no-exit-message]
+release-gate-test:
+    bash -n scripts/shipped-change.sh scripts/test_shipped_change.sh
+    scripts/test_shipped_change.sh
+
 # unit-test the testbed tooling's host-independent seams (#504, #625)
 [group('check')]
 [no-exit-message]
@@ -135,7 +142,7 @@ vuln: _tool-govulncheck
 # stay in workflows; the heavy local counterparts are collected by `just ci`.
 # run the bare-toolchain pre-commit gate
 [group('check')]
-check: textfile-test fmt-check lint test metric-lint fuzz-smoke check-public-ips testbed-test gitsync-test grafana-test gen-check vuln
+check: textfile-test release-gate-test fmt-check lint test metric-lint fuzz-smoke check-public-ips testbed-test gitsync-test grafana-test gen-check vuln
 
 # deployment-test needs a Docker daemon for the containerised systemd contracts.
 # snapshot needs cross-compilation for the release archive matrix.
