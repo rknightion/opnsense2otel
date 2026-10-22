@@ -812,11 +812,13 @@ window remains pinned to 5s. Expiry drops only the unacknowledged remainder unde
 `reason="ship_failed_permanent"`; the existing counted-loss alert covers this reason.
 A positive `--logs.ship-max-attempts` additionally caps failed delivery attempts across
 the whole batch, never per chunk. Cleanly acknowledged chunks do not consume that
-attempt count, but still consume elapsed time. Shutdown cancels active exports and
-retry waits promptly. Newly drained records, including the final producer flush, get
-a delivery attempt bounded by the shutdown caller deadline and the batch elapsed
-limit. The pipeline does not retry a failed shutdown attempt; undelivered records are counted
-under `reason="ship_failed"`.
+attempt count, but still consume elapsed time. Shutdown does not cut off the batch
+in hand: an export already in flight runs on, and a retry backoff or rate-limit pace
+ends at once so its records get their attempt. Those records and everything drained
+afterwards, including the final producer flush, get one delivery attempt per chunk
+bounded by the shutdown caller deadline and the batch elapsed limit; that deadline
+also interrupts a stuck export. The pipeline does not retry a failed shutdown attempt;
+undelivered records are counted under `reason="ship_failed"`.
 
 There is no disk spool in this policy. A tmpfs spool would still use volatile memory;
 restart survival would require a separately designed persistent spool. Retries cannot

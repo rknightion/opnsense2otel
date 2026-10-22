@@ -633,3 +633,163 @@ func TestStop_DrainDoesNotRetryFailedAttempt(t *testing.T) {
 		}
 	})
 }
+
+// --- graceful-restart loss: in-flight and waiting batches at stop ---------
+//
+// A healthy destination must not lose the batch the emitter is holding when SIGTERM
+// arrives. Before the fix, stop's producer cancellation also cancelled that batch's
+// delivery context, so an export in progress, a retry backoff or a rate-limit pace
+// was cut off and the whole batch was counted ship_failed although the endpoint was
+// fine. The batch now gets its final attempt bounded by the stop caller's deadline.
+
+// ctxCheckingSink holds Emit until release is closed, then acknowledges unless the
+// delivery context was cancelled meanwhile, the way an HTTP export cancelled
+// mid-request fails.
+type ctxCheckingSink struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *ctxCheckingSink) Emit(ctx context.Context, batch []Entry) SinkResult {
+	select {
+	case s.started <- struct{}{}:
+	default:
+	}
+	<-s.release
+	if err := ctx.Err(); err != nil {
+		return retryResult(batch, err)
+	}
+	return ackedResult(batch)
+}
+func (s *ctxCheckingSink) Shutdown(context.Context) error { return nil }
+
+func TestStop_InFlightExportCompletesUnderShutdownDeadline(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	sink := &ctxCheckingSink{started: make(chan struct{}, 1), release: make(chan struct{})}
+	p, _ := newDeliveryPipeline(sink, reg)
+	p.emitterWG.Add(1)
+	go p.runEmitter()
+	p.queue.push(Entry{Source: "firewall", Record: Record{Body: "a"}})
+	p.queue.push(Entry{Source: "firewall", Record: Record{Body: "b"}})
+	<-sink.started // the emitter is inside Emit when shutdown begins
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- p.stop(ctx) }()
+	for p.ctx.Err() == nil { // producer cancellation has happened
+		time.Sleep(time.Millisecond)
+	}
+	close(sink.release) // the healthy endpoint answers after shutdown began
+
+	if err := <-stopped; err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	s := gatherSeries(t, reg)
+	if got := s[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="firewall"}`]; got != 0 {
+		t.Fatalf("ship_failed=%v, want 0 (a healthy in-flight export must finish within the stop deadline)", got)
+	}
+	if got := s[`opnsense_exporter_logs_shipped_total{source="firewall"}`]; got != 2 {
+		t.Fatalf("shipped=%v, want 2", got)
+	}
+}
+
+// The stop deadline still bounds an export that was already in flight: a stuck
+// endpoint cannot hold shutdown past it, and the abandoned batch is ship_failed.
+func TestStop_HTTPInFlightExportStopsAtCallerDeadline(t *testing.T) {
+	started := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	reg := prometheus.NewRegistry()
+	p, _ := newDeliveryPipeline(newSinkOverEndpoint(t, "http/protobuf", srv.URL), reg)
+	p.emitterWG.Add(1)
+	go p.runEmitter()
+	p.queue.push(Entry{Source: "firewall", Record: Record{Body: "stuck"}})
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_ = p.stop(ctx)
+	p.emitterWG.Wait()
+	if elapsed := time.Since(start); elapsed >= time.Second {
+		t.Fatalf("stop+drain elapsed=%v: the caller deadline did not bound the in-flight export", elapsed)
+	}
+	if got := gatherSeries(t, reg)[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="firewall"}`]; got != 1 {
+		t.Fatalf("ship_failed=%v, want 1", got)
+	}
+}
+
+// A batch waiting out a retry backoff when stop begins gets one final attempt
+// instead of being abandoned the moment producers are cancelled.
+func TestStop_BackoffWaitGetsFinalAttempt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sink := &flakySink{failN: 1}
+		reg := prometheus.NewRegistry()
+		p, _ := newDeliveryPipeline(sink, reg)
+		p.emitterWG.Add(1)
+		go p.runEmitter()
+		p.queue.push(Entry{Source: "firewall", Record: Record{Body: "a"}})
+		synctest.Wait() // first attempt failed; the emitter is parked in its backoff
+
+		if got := sink.callCount(); got != 1 {
+			t.Fatalf("attempts before stop=%d, want 1", got)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := p.stop(ctx); err != nil {
+			t.Fatal(err)
+		}
+		s := gatherSeries(t, reg)
+		if got := s[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="firewall"}`]; got != 0 {
+			t.Fatalf("ship_failed=%v, want 0 (the backoff must yield to a final attempt)", got)
+		}
+		if got := s[`opnsense_exporter_logs_shipped_total{source="firewall"}`]; got != 1 {
+			t.Fatalf("shipped=%v, want 1", got)
+		}
+		if got := sink.callCount(); got != 2 {
+			t.Fatalf("attempts=%d, want 2 (one before stop, one final)", got)
+		}
+	})
+}
+
+// The same for a rate-limit pace: the split chunks are attempted under the stop
+// deadline rather than abandoned mid-pause.
+func TestStop_PacingWaitGetsFinalAttempt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		sink := &rateLimitingSink{refuseAbove: 128}
+		p, _ := ratePipeline(t, reg, sink)
+		p.emitterWG.Add(1)
+		go p.runEmitter()
+		for _, e := range rateEntries(256) {
+			p.queue.push(e)
+		}
+		synctest.Wait() // 256 refused; the emitter is pacing before the first 128 chunk
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := p.stop(ctx); err != nil {
+			t.Fatal(err)
+		}
+		s := gatherSeries(t, reg)
+		if got := s[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="syslog"}`]; got != 0 {
+			t.Fatalf("ship_failed=%v, want 0 (the pace must yield to final attempts)", got)
+		}
+		if got := s[`opnsense_exporter_logs_shipped_total{source="syslog"}`]; got != 256 {
+			t.Fatalf("shipped=%v, want 256", got)
+		}
+	})
+}

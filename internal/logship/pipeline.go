@@ -71,9 +71,11 @@ type pipeline struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	// stopCtx is published before producer cancellation. Already-running batches
-	// retain p.ctx (so stuck exports are interrupted); subsequently drained batches
-	// get one delivery attempt per chunk bounded by the stop caller's context.
+	// stopCtx is published before producer cancellation. Producer cancellation does
+	// NOT cancel delivery: every batch, including the one in flight or waiting out a
+	// backoff or pace when stop begins, is bound to stopCtx from that point and gets
+	// one delivery attempt per chunk before the stop caller's deadline. That deadline
+	// is what interrupts a stuck export (see bindDeliveryToShutdown).
 	stopMu  sync.Mutex
 	stopCtx context.Context
 	// afterSourcesStopped bridges producers outside the source registry into the
@@ -447,10 +449,12 @@ func (p *pipeline) runEmitter() {
 // retryable remainder and unattempted tail can expire. Retry ambiguity at the wire
 // still means at-least-once delivery, not exactly-once.
 //
-// Shutdown cancels both an active export and its backoff. Expiry and attempt-cap
-// exhaustion use ship_failed_permanent; shutdown uses ship_failed. New batches
-// drained during stop get one attempt per chunk under its caller context. Queue overflow
-// continues to be counted separately and may occur before the elapsed limit.
+// Shutdown does not abandon the batch on its own. An export in flight when stop
+// begins runs on under the stop caller's deadline; a backoff or pace wait ends at
+// once and the pending records get their attempt. From then on every chunk gets one
+// attempt and any failure, or the stop deadline, abandons the remainder as
+// ship_failed. Expiry and attempt-cap exhaustion use ship_failed_permanent. Queue
+// overflow continues to be counted separately and may occur before the elapsed limit.
 func (p *pipeline) shipBatch(batch []Entry) {
 	maxAttempts := p.cfg.ShipMaxAttempts
 	maxElapsed := p.cfg.ShipMaxElapsed
@@ -458,14 +462,9 @@ func (p *pipeline) shipBatch(batch []Entry) {
 		maxElapsed = options.DefaultShipMaxElapsed
 	}
 	deadline := time.Now().Add(maxElapsed)
-	p.stopMu.Lock()
-	parent := p.ctx
-	if p.stopCtx != nil {
-		parent = p.stopCtx
-	}
-	p.stopMu.Unlock()
-	deliveryCtx, cancel := context.WithDeadline(parent, deadline)
+	deliveryCtx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
+	defer p.bindDeliveryToShutdown(cancel)()
 	pending := batch
 	// chunk starts at the learned cap, or at the whole batch when nothing has been
 	// learned — so absent any rate limit the behaviour is exactly the pre-#663 one, one
@@ -600,7 +599,46 @@ func (p *pipeline) relaxShipChunk() {
 	p.shipChunk = next
 }
 
-// waitOrAbandon includes pacing and backoff in the same delivery deadline.
+// bindDeliveryToShutdown ties one batch's delivery context to shutdown without
+// letting producer cancellation cut it off. While the pipeline runs, only the batch's
+// own elapsed deadline applies. Once stop cancels p.ctx, cancel fires when the stop
+// caller's context ends, so the in-flight export finishes against a healthy endpoint
+// and a stuck one is still interrupted at the shutdown deadline. With no stop context
+// published (p.ctx cancelled directly), cancel fires at once. The returned function
+// releases the registrations and must run when the batch is done.
+func (p *pipeline) bindDeliveryToShutdown(cancel context.CancelFunc) func() {
+	var mu sync.Mutex
+	var released bool
+	var unbindStop func() bool
+	unbindRun := context.AfterFunc(p.ctx, func() {
+		p.stopMu.Lock()
+		stopCtx := p.stopCtx
+		p.stopMu.Unlock()
+		if stopCtx == nil {
+			cancel()
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if !released {
+			unbindStop = context.AfterFunc(stopCtx, cancel)
+		}
+	})
+	return func() {
+		unbindRun()
+		mu.Lock()
+		defer mu.Unlock()
+		released = true
+		if unbindStop != nil {
+			unbindStop()
+		}
+	}
+}
+
+// waitOrAbandon includes pacing and backoff in the same delivery deadline. When
+// shutdown begins during the wait it returns at once so the pending records get
+// their final attempt under the stop deadline instead of being abandoned; a wait
+// that starts during shutdown is skipped for the same reason.
 func (p *pipeline) waitOrAbandon(ctx context.Context, d time.Duration, pending []Entry) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -608,6 +646,12 @@ func (p *pipeline) waitOrAbandon(ctx context.Context, d time.Duration, pending [
 	case <-ctx.Done():
 		p.abandonDelivery(pending)
 		return false
+	case <-p.ctx.Done():
+		if ctx.Err() != nil {
+			p.abandonDelivery(pending)
+			return false
+		}
+		return true
 	case <-timer.C:
 		if ctx.Err() != nil {
 			p.abandonDelivery(pending)
@@ -747,8 +791,8 @@ func (p *pipeline) runStateFlusher() {
 // shutdown does not finish in time, the queue and sink remain open because a live
 // producer still owns them; if the emitter drain does not finish in time, stop returns
 // an error rather than reporting a clean flush while cursors imply the buffered records
-// were delivered (#290). The emitter goroutine still exits shortly after, when its
-// in-flight export returns and it observes the cancelled context.
+// were delivered (#290). The emitter goroutine still exits shortly after: the batch it
+// holds is bound to ctx, so its in-flight export is cancelled at the same deadline.
 func (p *pipeline) stop(ctx context.Context) error {
 	p.stopMu.Lock()
 	p.stopCtx = ctx
