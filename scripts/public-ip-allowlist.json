@@ -448,10 +448,5 @@
     "file": "opnsense/unbound_dns_test.go",
     "value": "9.9.9.9",
     "justification": "Public DNS resolver (Quad9), the degraded upstream in the FetchUnboundInfra decode fixture (#581). Not the exporter's own infrastructure and not read at runtime."
-  },
-  {
-    "file": "todos.txt",
-    "value": "1.2.3.4",
-    "justification": "Generic placeholder address in illustrative sample API payloads (Tailscale/CrowdSec backlog notes); not tied to any real firewall."
   }
 ]

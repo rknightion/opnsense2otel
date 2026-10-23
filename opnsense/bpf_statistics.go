@@ -9,8 +9,8 @@ import (
 // bpfEntry mirrors one element of the api/diagnostics/interface/get_bpf_statistics
 // response. Values are JSON numbers.
 //
-// VERIFICATION: verified live against OPNsense 26.1 at 10.0.0.254 per todos.txt
-// TODO 23. The pid and the optional boolean fields (immediate, header-complete,
+// VERIFICATION: verified live against OPNsense 26.1 at 10.0.0.254 (planning
+// item 23). The pid and the optional boolean fields (immediate, header-complete,
 // locked) are intentionally not modeled — pid churns on process restart (D9),
 // and the booleans are not needed for the metrics. `direction` IS modelled as of
 // #544: it is a closed three-value vocabulary and summing it away hid that
