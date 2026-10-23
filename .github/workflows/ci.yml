@@ -464,7 +464,7 @@ jobs:
   helm-validate:
     permissions:
       contents: read
-    uses: rknightion/.github/.github/workflows/helm-validate.yml@223d9483075f648075df1a806c2ad4db42101a7f # v1.25.25
+    uses: rknightion/.github/.github/workflows/helm-validate.yml@42ebc6a7fa65c556994b27956dc176d245cceaba # v1.25.26
     with:
       chart-path: charts/opnsense2otel
       release-name: contract
