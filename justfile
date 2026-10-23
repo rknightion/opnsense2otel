@@ -19,7 +19,7 @@ kubeconform_version := "v0.8.0"
 # renovate: datasource=go depName=golang.org/x/vuln
 govulncheck_version := "v1.9.0"
 # renovate: datasource=go depName=github.com/goreleaser/goreleaser/v2
-goreleaser_version := "v2.18.3"
+goreleaser_version := "v2.19.0"
 
 # show the task surface
 default:
