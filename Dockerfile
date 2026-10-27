@@ -1,7 +1,7 @@
 # Digest-pinned builder (matches the pinned distroless runtime below) so a mutable-tag
 # push can't slip an unreviewed builder image into a release build (#148). Digest is the
 # multi-arch index for golang:1.27.3-alpine; Renovate keeps it fresh (pinDigests, renovate.json).
-FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
+FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
 
 # Refresh trust before any build-time network access; the pinned builder predates the CA fix.
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
@@ -67,7 +67,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # one and TestBundledPathsAreStable / TestGeoIPFlagDefaultsPointAtTheBundledDatabases
 # fail, which is the point: an image whose databases nothing opens looks exactly
 # like a firewall with nothing to report.
-FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS geoip
+FROM --platform=${BUILDPLATFORM:-linux/amd64} mirror.gcr.io/library/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS geoip
 
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 
