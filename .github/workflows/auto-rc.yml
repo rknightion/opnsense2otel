@@ -35,7 +35,14 @@ jobs:
     # tested before calling the fleet-wide release workflow. Keep this a
     # positive allowlist: new repository metadata stays release-neutral until
     # it is deliberately identified as an input to a shipped artifact.
-    if: github.event.workflow_run.conclusion == 'success'
+    # `branches: [main]` above matches the triggering run's head branch NAME,
+    # so a fork pull request from a branch called `main` also matches it, and
+    # CI runs on pull requests. Without the event and repository checks a green
+    # fork PR would reach the RC path with write access.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-26.04
     outputs:
       shipped: ${{ steps.paths.outputs.shipped }}
