@@ -106,6 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           mapfile -t actual < <(
             gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
@@ -137,7 +138,7 @@ jobs:
             opnsense2otel_Windows_x86_64.zip
             opnsense2otel_Windows_x86_64.zip.sbom.json
           )
-          required+=("opnsense2otel-${{ needs.release-please.outputs.version }}.tgz")
+          required+=("opnsense2otel-${RELEASE_VERSION}.tgz")
           missing=()
           for asset in "${required[@]}"; do
             if ! printf '%s\n' "${actual[@]}" | grep -Fqx "$asset"; then

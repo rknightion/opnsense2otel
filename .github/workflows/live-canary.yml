@@ -152,24 +152,28 @@ jobs:
               | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
+      # secrets[matrix.*] below exposes the whole secrets context to zizmor's
+      # eyes. Kept: this job is dispatch-only and main-only via the `tailnet`
+      # environment, and an `a && b || c` per-target selector would silently fall
+      # back to the other box's host when a secret is empty.
       - name: Live API contracts
         id: contract
         continue-on-error: true
         env:
           OPN2OTEL_LIVE_REQUIRED: 'true'
           OPN2OTEL_LIVE_RESULT: ${{ runner.temp }}/live-contract-result
-          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }}
-          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }}
-          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }}
+          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }} # zizmor: ignore[overprovisioned-secrets]
+          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }} # zizmor: ignore[overprovisioned-secrets]
+          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }} # zizmor: ignore[overprovisioned-secrets]
           CANARY_PROFILE: ${{ matrix.target }}
         run: just live-contract
 
       - name: Schema canary (apidrift)
         id: drift
         env:
-          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }}
-          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }}
-          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }}
+          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }} # zizmor: ignore[overprovisioned-secrets]
+          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }} # zizmor: ignore[overprovisioned-secrets]
+          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }} # zizmor: ignore[overprovisioned-secrets]
           CANARY_PROFILE: ${{ matrix.target }}
         run: |
           set -euo pipefail
@@ -192,9 +196,9 @@ jobs:
       - name: End-to-end exporter smoke
         id: smoke
         env:
-          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }}
-          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }}
-          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }}
+          DEVBOX_HOST: ${{ secrets[matrix.host_secret] }} # zizmor: ignore[overprovisioned-secrets]
+          OPN2OTEL_OPS_API_KEY: ${{ secrets[matrix.key_secret] }} # zizmor: ignore[overprovisioned-secrets]
+          OPN2OTEL_OPS_API_SECRET: ${{ secrets[matrix.secret_secret] }} # zizmor: ignore[overprovisioned-secrets]
           OPN2OTEL_OPS_PROTOCOL: https
           OPN2OTEL_OPS_INSECURE: 'true'
           OPN2OTEL_INSTANCE_LABEL: canary
