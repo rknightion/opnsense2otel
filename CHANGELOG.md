@@ -1,5 +1,35 @@
 # Changelog
 
+## [5.3.3](https://github.com/rknightion/opnsense2otel/compare/v5.3.2...v5.3.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/prometheus/common to v0.73.0 ([#903](https://github.com/rknightion/opnsense2otel/issues/903)) ([a0964f0](https://github.com/rknightion/opnsense2otel/commit/a0964f0ca660c2ad9a483c5a79eaf2344ecf782d))
+* **deps:** update module google.golang.org/grpc to v1.85.0 ([#896](https://github.com/rknightion/opnsense2otel/issues/896)) ([ec40dad](https://github.com/rknightion/opnsense2otel/commit/ec40dadfd467a4f884fe492ac7f929b089053bd8))
+
+
+### Miscellaneous
+
+* **deps:** update actions/setup-python action to v7.1.0 ([#904](https://github.com/rknightion/opnsense2otel/issues/904)) ([d82e540](https://github.com/rknightion/opnsense2otel/commit/d82e5407543f61576cf194065de0a212330d43c2))
+* **deps:** update anthropics/claude-code-action action to v1.0.263 ([#895](https://github.com/rknightion/opnsense2otel/issues/895)) ([55ec326](https://github.com/rknightion/opnsense2otel/commit/55ec326e89b12e489b61164c82fd4901d5ac4d2e))
+* **deps:** update anthropics/claude-code-action action to v1.0.264 ([#899](https://github.com/rknightion/opnsense2otel/issues/899)) ([80d598f](https://github.com/rknightion/opnsense2otel/commit/80d598f91e29a5f5cc7139c791e12591c986535a))
+* **deps:** update dependency pytest to v9.2.0 ([#900](https://github.com/rknightion/opnsense2otel/issues/900)) ([81e00e9](https://github.com/rknightion/opnsense2otel/commit/81e00e956363b657e4b13d7e9227803fc5ebe69e))
+* **deps:** update mirror.gcr.io/library/golang:1.27.3-alpine docker digest to d200d2d ([#894](https://github.com/rknightion/opnsense2otel/issues/894)) ([a5fc140](https://github.com/rknightion/opnsense2otel/commit/a5fc14049d32f7bd9e7099b99269fcb843b24f72))
+* **deps:** update opnsense-docs digest to 0e2ee2c ([#892](https://github.com/rknightion/opnsense2otel/issues/892)) ([39ade95](https://github.com/rknightion/opnsense2otel/commit/39ade9553fbead3e2c4ff29a3f1970f697ee5d89))
+* **deps:** update opnsense-docs digest to 1282927 ([#897](https://github.com/rknightion/opnsense2otel/issues/897)) ([e5d6d77](https://github.com/rknightion/opnsense2otel/commit/e5d6d77c65bbfc05342fbe517438e0eb08db598f))
+* **deps:** update opnsense-docs digest to e216f9d ([#902](https://github.com/rknightion/opnsense2otel/issues/902)) ([3a3716b](https://github.com/rknightion/opnsense2otel/commit/3a3716bb599980fea8534b4b4d610fa0c3ca9a0a))
+* **deps:** update rknightion/.github action to v1.25.28 ([#901](https://github.com/rknightion/opnsense2otel/issues/901)) ([208edf1](https://github.com/rknightion/opnsense2otel/commit/208edf1f1cdf2a74a149d3e075c26dc39e47e347))
+* **deps:** update rknightion/.github action to v1.25.29 ([#905](https://github.com/rknightion/opnsense2otel/issues/905)) ([720987f](https://github.com/rknightion/opnsense2otel/commit/720987f3e7baea73e62be587aacb6eb1e18ab901))
+* **deps:** update rknightion/.github action to v1.25.30 ([#906](https://github.com/rknightion/opnsense2otel/issues/906)) ([4892f83](https://github.com/rknightion/opnsense2otel/commit/4892f8388ee3bfb22c746c1ed986946f8cfeaaf8))
+* **deps:** update step-security/harden-runner action to v2.22.3 ([#898](https://github.com/rknightion/opnsense2otel/issues/898)) ([a3b13ff](https://github.com/rknightion/opnsense2otel/commit/a3b13ff805d63d8cd093207fcaf4f0b1680fbf8c))
+
+
+### CI/CD
+
+* **auto-rc:** only cut RCs for pushes from this repository ([8651a8c](https://github.com/rknightion/opnsense2otel/commit/8651a8c9c84fe3bab6e97888eb6e1e87c2d6c3d9))
+* clear the zizmor findings that fail fork pull requests ([e5b7153](https://github.com/rknightion/opnsense2otel/commit/e5b7153a8dbf94014f6197d66597252920d694df))
+
 ## [5.3.2](https://github.com/rknightion/opnsense2otel/compare/v5.3.1...v5.3.2) (2026-10-24)
 
 
