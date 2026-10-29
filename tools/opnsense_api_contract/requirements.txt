@@ -3,6 +3,6 @@
 # Renovate's pip_requirements manager bumps these automatically.
 phply==1.2.6
 jinja2==3.1.6
-pydantic==2.14.1
+pydantic==2.14.2
 # Test runner for extract_test.py, wired into the api-contract CI job (#136).
 pytest==9.2.0
