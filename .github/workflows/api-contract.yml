@@ -26,7 +26,7 @@ permissions:
 # custom manager below bumps it. The `--min` floor still catches parser breakage.
 env:
   # renovate: datasource=git-refs depName=opnsense-docs packageName=https://github.com/opnsense/docs currentValue=master
-  OPNSENSE_DOCS_REF: e216f9d4d4030f35d5242e42684d4bcb2061eb0f
+  OPNSENSE_DOCS_REF: 13e98ac872979b1a9f5cb4da2dc9d7a5364f7aea
 
 jobs:
   contract:
