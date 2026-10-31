@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.3.4](https://github.com/rknightion/opnsense2otel/compare/v5.3.3...v5.3.4) (2026-10-31)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/prometheus/common to v0.73.1 ([#913](https://github.com/rknightion/opnsense2otel/issues/913)) ([e8ac8e9](https://github.com/rknightion/opnsense2otel/commit/e8ac8e9bd101d561259141a8a10a4e48d952a5e3))
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.265 ([#911](https://github.com/rknightion/opnsense2otel/issues/911)) ([cba875e](https://github.com/rknightion/opnsense2otel/commit/cba875e78fcf8c7803611eac7863dc4b949a12c2))
+* **deps:** update anthropics/claude-code-action action to v1.0.266 ([#914](https://github.com/rknightion/opnsense2otel/issues/914)) ([673d3ce](https://github.com/rknightion/opnsense2otel/commit/673d3ce2ae30ed2e91a94121a28b6d3cd383b4a9))
+* **deps:** update dependency pydantic to v2.14.2 ([#907](https://github.com/rknightion/opnsense2otel/issues/907)) ([29fe5dd](https://github.com/rknightion/opnsense2otel/commit/29fe5dd7f135da33a04ca7bf07c41b6aae61efa2))
+* **deps:** update opnsense-docs digest to 13e98ac ([#912](https://github.com/rknightion/opnsense2otel/issues/912)) ([f222891](https://github.com/rknightion/opnsense2otel/commit/f222891b550262c86bff42c0d2b0b534ac8d723e))
+* **deps:** update rknightion/.github action to v1.25.31 ([#910](https://github.com/rknightion/opnsense2otel/issues/910)) ([e2e5e5e](https://github.com/rknightion/opnsense2otel/commit/e2e5e5e4971083ca5a69e17ee1d16b6b6d78fb8d))
+* **deps:** update tailscale/github-action action to v4.4.0 ([#908](https://github.com/rknightion/opnsense2otel/issues/908)) ([3f1008a](https://github.com/rknightion/opnsense2otel/commit/3f1008aefb8f7ada26a22499d57565e95c33db49))
+
 ## [5.3.3](https://github.com/rknightion/opnsense2otel/compare/v5.3.2...v5.3.3) (2026-10-28)
 
 
