@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	"github.com/rknightion/opnsense2otel/v5/internal/collector"
 	"github.com/rknightion/opnsense2otel/v5/internal/geoip"
 	"github.com/rknightion/opnsense2otel/v5/internal/options"
+	"github.com/rknightion/opnsense2otel/v5/internal/repotest"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
@@ -94,11 +94,10 @@ func TestRenderPage_Status(t *testing.T) {
 }
 
 func TestConsoleFamilyTokenBlockMatchesSpec(t *testing.T) {
-	_, sourceFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", ".."))
 	spec, err := os.ReadFile(filepath.Join(root, "design", "console-v2", "implementation-spec.md"))
 	if err != nil {
 		t.Fatalf("read family implementation spec: %v", err)

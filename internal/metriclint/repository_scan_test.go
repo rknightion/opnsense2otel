@@ -1,9 +1,9 @@
 package metriclint
 
 import (
-	"path/filepath"
-	"runtime"
 	"testing"
+
+	"github.com/rknightion/opnsense2otel/v5/internal/repotest"
 )
 
 // TestRepositoryMetricNames is intentionally a normal Go test rather than
@@ -11,22 +11,20 @@ import (
 // repository therefore must fail when a new production metric bypasses the
 // naming contract even if somebody forgets to run the dedicated recipe.
 func TestRepositoryMetricNames(t *testing.T) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed while locating repository root")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
 	if err := CheckRepository(root); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestRepositoryScanUsesSourceMetricTypes(t *testing.T) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed while locating repository root")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
 	metrics, err := ScanRepository(root)
 	if err != nil {
 		t.Fatal(err)

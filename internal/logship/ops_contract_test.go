@@ -7,11 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/rknightion/opnsense2otel/v5/internal/repotest"
 )
 
 // TestOperationsSurfaceContract is deliberately a source-level guard. The metrics
@@ -80,11 +81,11 @@ func TestOperationsSurfaceContract(t *testing.T) {
 
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("could not locate ops_contract_test.go")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	return root
 }
 
 func readContractFile(t *testing.T, path string) string {
