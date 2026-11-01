@@ -14,7 +14,7 @@
     "title": "OPNsenseLogShipCountedLoss",
     "noDataState": "Ok",
     "execErrState": "Error",
-    "for": "0s",
+    "for": "20m0s",
     "trigger": {
       "interval": "1m"
     },

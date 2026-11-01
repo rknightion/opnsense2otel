@@ -1438,7 +1438,7 @@ RULES = [
          selfhealth=True,
          A="sum by (opnsense_instance, source, reason) "
            "(increase(opnsense_exporter_logs_dropped_total[15m]))",
-         op="gt", params=[0, 0], for_min=0, severity="warning",
+         op="gt", params=[0, 0], for_min=20, severity="warning",
          summary="OPNsense log-shipping counted record loss ({{ $labels.reason }}) on "
                  "{{ $labels.source }} ({{ $labels.opnsense_instance }})",
          description="Log records were counted as lost in the last 15m, grouped by the exact source and "
@@ -1449,7 +1449,7 @@ RULES = [
                      "logs_ship_errors_total, not this alert.",
          runbook=dict(
              measures='Count of log records counted as lost in a rolling 15m window, grouped by the exact source and reason (overflow, record_too_large, rejected, ship_failed_permanent, ship_failed).',
-             threshold='gt 0 in 15m, for_min=0 - fires immediately, since any counted loss is worth knowing about.',
+             threshold='gt 0 in 15m, held 20m - only loss that keeps recurring past one window fires, so a network blip (switch firmware reboot) stays quiet. A one-off loss event does not alert.',
              absent='Default noDataState (Ok) - no loss events is the normal state.',
              checks=[
                 'Read the reason label first - it tells you which of five distinct failure modes occurred (queue-bound eviction, oversized record, destination refusal, retry exhaustion, or shutdown abandonment)',

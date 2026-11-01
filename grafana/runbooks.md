@@ -1363,7 +1363,7 @@ max by (opnsense_instance) (label_replace(avg_over_time(opnsense_exporter_logs_q
 ## OPNsenseLogShipCountedLoss
 
 **Severity:** warning  
-**Pending window:** 0s  
+**Pending window:** 20m0s  
 **Rule name:** `opnsense-logship-counted-loss`
 
 **Expression:**
@@ -1373,7 +1373,7 @@ sum by (opnsense_instance, source, reason) (increase(opnsense_exporter_logs_drop
 
 **What it measures:** Count of log records counted as lost in a rolling 15m window, grouped by the exact source and reason (overflow, record_too_large, rejected, ship_failed_permanent, ship_failed).
 
-**Threshold & window:** gt 0 in 15m, for_min=0 - fires immediately, since any counted loss is worth knowing about.
+**Threshold & window:** gt 0 in 15m, held 20m - only loss that keeps recurring past one window fires, so a network blip (switch firmware reboot) stays quiet. A one-off loss event does not alert.
 
 **Absent / no-data semantics:** Default noDataState (Ok) - no loss events is the normal state.
 
