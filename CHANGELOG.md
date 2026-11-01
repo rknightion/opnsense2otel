@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.3.5](https://github.com/rknightion/opnsense2otel/compare/v5.3.4...v5.3.5) (2026-11-01)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.9.0 ([#917](https://github.com/rknightion/opnsense2otel/issues/917)) ([d073200](https://github.com/rknightion/opnsense2otel/commit/d0732008f4d9cc9276a2ea7bf340e3a0334eac11))
+
+
+### Miscellaneous
+
+* **deps:** update gcr.io/distroless/static-debian13:nonroot docker digest to 25ac8f0 ([#915](https://github.com/rknightion/opnsense2otel/issues/915)) ([5f53c50](https://github.com/rknightion/opnsense2otel/commit/5f53c50481a8f6b50e1aaf5a2bd24ab2b1de5cef))
+
+
+### Tests
+
+* locate repo root without runtime.Caller so tests pass under -trimpath ([c6da5a4](https://github.com/rknightion/opnsense2otel/commit/c6da5a46ff63a139edce25d11cbfda7153f28be1))
+
 ## [5.3.4](https://github.com/rknightion/opnsense2otel/compare/v5.3.3...v5.3.4) (2026-10-31)
 
 
