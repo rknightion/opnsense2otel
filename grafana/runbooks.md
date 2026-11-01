@@ -1305,7 +1305,7 @@ sum by (opnsense_instance) (increase(opnsense_unbound_dns_answers_bogus_total[15
 ## OPNsenseLogShipSinkErrors
 
 **Severity:** warning  
-**Pending window:** 10m0s  
+**Pending window:** 15m0s  
 **Rule name:** `opnsense-logship-sink-errors`
 
 **Expression:**
@@ -1315,7 +1315,7 @@ sum by (opnsense_instance) (rate(opnsense_exporter_logs_ship_errors_total[5m]))
 
 **What it measures:** Rate of failed Emit attempts by the log-shipping sink (OTLP/Loki) over 5m, summed by opnsense_instance - retry/degradation activity, not proof that records were actually lost.
 
-**Threshold & window:** gt 0 sustained for 10m.
+**Threshold & window:** gt 0 sustained for 15m.
 
 **Absent / no-data semantics:** Default noDataState (Ok) - no errors means the sink is delivering cleanly.
 

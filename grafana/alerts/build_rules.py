@@ -1377,14 +1377,14 @@ RULES = [
     dict(name="opnsense-logship-sink-errors", title="OPNsenseLogShipSinkErrors",
          selfhealth=True,
          A="sum by (opnsense_instance) (rate(opnsense_exporter_logs_ship_errors_total[5m]))",
-         op="gt", params=[0, 0], for_min=10, severity="warning",
+         op="gt", params=[0, 0], for_min=15, severity="warning",
          summary="OPNsense log-shipping sink retrying ({{ $labels.opnsense_instance }})",
-         description="The log-shipping sink (OTLP/Loki) has had failed Emit attempts for 10m. The "
+         description="The log-shipping sink (OTLP/Loki) has had failed Emit attempts for 15m. The "
                      "unacknowledged remainder is in retry/degradation, not "
                      "proof of counted record loss. Check OPNsenseLogShipCountedLoss separately.",
          runbook=dict(
              measures='Rate of failed Emit attempts by the log-shipping sink (OTLP/Loki) over 5m, summed by opnsense_instance - retry/degradation activity, not proof that records were actually lost.',
-             threshold='gt 0 sustained for 10m.',
+             threshold='gt 0 sustained for 15m.',
              absent='Default noDataState (Ok) - no errors means the sink is delivering cleanly.',
              checks=[
                 "Check connectivity/auth to the configured OTLP or Loki destination from the exporter's network path",
