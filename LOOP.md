@@ -45,10 +45,10 @@ Public repository: no account identifier, token, IP literal or personal data in 
   last or on its own when a release candidate build is needed.
 - A major release needs the module path moved first: `just bump-module-major major=<N>`. It also
   rewrites `backlog/` notes quoting old import paths; restore those.
-- CodeRabbit past about 100 files fails with `WebSocket closed`: review the source slice in a
-  scratch worktree with generated paths (`grafana/dashboard*.json`, `grafana/alerts/grafana-managed/`,
-  `opnsense/testdata/schemas/`, `docs/`, `README.md`) restored to base. Every changed source file
-  must appear in a completed review; a finding on an excluded file is a false positive.
+- Code slices require the combined Kodus and independent local exact-candidate review in
+  the maintainer code-review contract. Preserve generated files in the candidate; unsupported
+  or oversized reviews are no verdict. Split into fully covered candidates instead of restoring
+  changed paths to base or treating missing coverage as clean.
 - Loki cannot show a record stamped older than 3h until its ingester chunk flushes, up to two
   hours: a proof asserting its own historical record within the run never passes. Report
   visibility-pending and read `logs_shipped_total`, `logs_dropped_total{reason}` and `partialSuccess`.
