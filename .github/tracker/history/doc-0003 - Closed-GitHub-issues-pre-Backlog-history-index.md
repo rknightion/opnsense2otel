@@ -33,7 +33,7 @@ worked.
 
 ## Why there was no bulk import as tasks
 
-524 issues were deleted, 506 of them Rob's own project tracking and 18 filed by CI. Importing them as
+524 issues were deleted, 506 of them the owner's own project tracking and 18 filed by CI. Importing them as
 `Done` tasks fails twice over: it creates a **second ID space over the same history** — backlog IDs
 follow creation order, so no `OPN-NNNN` could ever line up with the `#NNN` already cited in
 `AGENTS.md`, `CHANGELOG.md`, commit messages and code comments — and hundreds of `Done` rows would
