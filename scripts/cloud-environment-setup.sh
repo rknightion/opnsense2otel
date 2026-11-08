@@ -9,7 +9,6 @@ set -euo pipefail
 GO_VERSION="1.27.3"
 GOLANGCI_LINT_VERSION="2.13.1"
 HELM_VERSION="3.19.0"
-BACKLOG_VERSION="1.50.1"
 
 LOCAL_BIN="${HOME}/.local/bin"
 LOCAL_SHARE="${HOME}/.local/share"
@@ -145,23 +144,12 @@ install_python_tools() {
     -r tools/opnsense_api_contract/requirements.txt
 }
 
-install_backlog() {
-  local npm_prefix="${HOME}/.local"
-  if command -v backlog >/dev/null 2>&1 && \
-    [[ "$(backlog --version)" == "${BACKLOG_VERSION}" ]]; then
-    return
-  fi
-  npm install --global --prefix "${npm_prefix}" --no-audit --no-fund \
-    "backlog.md@${BACKLOG_VERSION}"
-}
-
 require_bootstrap_tools
 install_go
 export GOROOT="${GO_ROOT}"
 install_golangci_lint
 install_helm
 install_python_tools
-install_backlog
 
 # Prime the committed module graph while setup still has internet access. Project
 # builds normally use vendor/, but the Go tool can still need toolchain metadata.
@@ -172,4 +160,3 @@ go version
 golangci-lint version
 helm version --short
 "${PYTHON_VENV}/bin/python" --version
-backlog --version

@@ -5,11 +5,25 @@ ci-required: ci-success
 release-on-push: yes
 deploy-on-push: yes
 grafana-stack: robknight
+tracker: github
+landing: pr
 
 Public repository: no account identifier, token, IP literal or personal data in any tracked file,
-`backlog/` included. `just check-public-ips` catches IP literals against
-`scripts/public-ip-allowlist.json`; nothing catches the rest. Run `just` with stdin from `/dev/null`.
+`.github/tracker/history/` included, or in an issue, pull request or comment.
+`just check-public-ips` catches IP literals against `scripts/public-ip-allowlist.json`; the privacy
+sweep catches the rest on a pull request. Run `just` with stdin from `/dev/null`.
 `just ci` adds the deployment contracts, cross-compilation and the image build.
+
+The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (maintainers only).
+
+## Queue
+
+- The queue is `just tracker queue`: open issues at Project Status Ready on the rknightion Project.
+- A charter selects by labels (`type:*`, `priority:*`) and Project fields (Status, Priority, Effort,
+  Lane). Never queue a `needs-owner` or `needs-triage` issue.
+- Only the root writes issues and the Project, through `just tracker`; a lane returns the status and
+  AC ticks it wants.
+- A queue row names the issue as `#N`; a legacy id (`OPN-0001`) resolves with `just issue <ID>`.
 
 ## Credentials
 
@@ -38,13 +52,12 @@ Public repository: no account identifier, token, IP literal or personal data in 
   default. The live-canary workflow owns lab raise, hold release and shutdown. Live delivery proof
   needs the main session to raise the lab before dispatch and lower it afterwards. Do not re-enable
   automatic startup or canary timers. Reports carry key paths and type names only, never payload values.
-- Issue numbers below 656 are retired GitHub issues, not tasks.
+- Cite work as `#N`. A bare `#N` below 656 is a deleted pre-board issue (see `archive/`); 656 to 921
+  are pull requests and a few live issues; imported issues start at 922.
 - `just check` is the whole bare-toolchain gate. Every `make` target is gone: discover with
   `just --list`. Heavy CI-only legs are not a lane's job: say the change is untested against them.
-- auto-rc classifies only the head commit of a push (`HEAD^..HEAD`): push the shipped-code commit
-  last or on its own when a release candidate build is needed.
-- A major release needs the module path moved first: `just bump-module-major major=<N>`. It also
-  rewrites `backlog/` notes quoting old import paths; restore those.
+- auto-rc classifies only the head commit of a push; every merge to `main` is one squash commit.
+- A major release needs the module path moved first: `just bump-module-major major=<N>`.
 - Code slices require the combined Kodus and independent local exact-candidate review in
   the maintainer code-review contract. Preserve generated files in the candidate; unsupported
   or oversized reviews are no verdict. Split into fully covered candidates instead of restoring
@@ -55,8 +68,7 @@ Public repository: no account identifier, token, IP literal or personal data in 
 - Never call `qm` or `pct` on `oli`; drive power through `opnsense-testbed-power.sh` (allowlist
   102, 106, 105). A deny-path test uses a target that is harmless when it succeeds
   (`qm stop 999999`).
-- `check-public-ips` scans `backlog/`: a task about a leaked address gives `file:line` and the kind
-  of address, never the literal.
+- An issue about a leaked address gives `file:line` and the kind of address, never the literal.
 
 ## Mutexes
 
