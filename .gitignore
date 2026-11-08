@@ -73,8 +73,10 @@ docs/superpowers/
 # fixture (opnsense/testdata/health/...) to make it a permanent CI gate.
 /opnsense/testdata/captures/
 
-# Claude Code repo-local config. `settings.json` and `hooks/` ARE tracked — they
-.claude/
+# Claude Code repo-local config is untracked; `.claude/skills/` (the contributor kit's skill links) is the
+# one tracked part.
+.claude/*
+!.claude/skills/
 
 # Injected by the m7kni.io hub at build time — never commit these.
 # The hub copies its own SEO template, brand stylesheet and fonts into a clone
@@ -89,7 +91,7 @@ docs/assets/social-card.png
 docs/assets/social-card.svg
 docs/fonts/
 
-# Product-development candidate scratchpad: reviewed manually, promoted to backlog
+# Product-development candidate scratchpad: reviewed manually, promoted to an issue
 # tasks one by one; never committed.
 /candidates.md
 

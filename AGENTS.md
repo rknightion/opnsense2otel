@@ -22,31 +22,30 @@ Off the Mac, when the remote gate runner is installed (`which gaterun`): `gateru
 `just check`), paced across lanes with `gaterun-slot <lane> -- gaterun -- just ci`; `.gaterunner.yaml`
 is its contract. Run one test or package locally.
 
-## Tracker
+## Tracking work
 
-Tasks are `OPN-NNNN` in `backlog/`.
+Work is tracked in this repository's GitHub issues; they are the only queue. Do not add a checklist
+file such as `ROADMAP.md` beside them.
 
-Loops: the protocol lives in `~/repos/agent-docs/sources/loop/` (this board's "Loop protocol pointer" doc points there); this repository's loop facts are in `LOOP.md`.
-
-Any `#NNN` **below 656** in code comments, task text or docs is a retired GitHub issue, not a task:
-the 524 pre-migration issues were deleted, so `gh issue view <N>` 404s on those. Numbers at or above
-656 are live GitHub issues and resolve normally. Bodies and replies for the deleted set live in
-`archive/github-issues-2026-08-14.json` (redacted; `archive/README.md` has the placeholder mapping)
-and the **Pre-backlog issue numbers** doc explains the load-bearing ones. The two ID spaces do not
-overlap.
-
-**The GitHub issue tracker stays enabled deliberately** - external contributors file there and
-Renovate's dependency dashboard lives there. Anything arriving that way becomes an `OPN-NNNN` task;
-the board, not the issue, is where it is worked.
-
-Tracker traps:
-
-- **Do not build on `backlog decision` or the MCP server.** Decisions are half-built upstream (no
-  edit, no view, no supersede) and the MCP server costs 10-50k tokens of permanent context against
-  1-2k for the CLI. Durable reference goes in **docs**; tasks are the unit of work.
-- **`backlog/` is committed to a public repository.** No account identifiers, tokens, IP literals or
-  personal data in tasks or docs - write the shape, not the instance. `just check-public-ips` catches
-  IP literals against `scripts/public-ip-allowlist.json`; nothing catches the rest.
+- A pull request body says how it relates to an issue, on a line of its own: `Closes #N` with the
+  `Acceptance evidence` table from `.github/pull_request_template.md` (one row for each acceptance
+  criterion of that issue), `Refs #N` when it only relates to one, or `Task: none, <reason>`.
+- A pull request that changes `.github/workflows/` or `.github/actions/` carries no closing keyword:
+  write `Task: none, <reason>`, with `Refs #N` beside it if you like.
+- Contributors never need the project board or the tracker tooling; a maintainer handles both.
+- Issues and pull requests are public, so they carry no real identifiers: no email addresses,
+  handles, account ids, host or device names, addresses or coordinates. Write the shape, not the
+  instance.
+- Older commits, docs and tests cite legacy board ids such as `OPN-0001`. `just issue <ID>` prints
+  the issue each one became; `.github/tracker/id-map.json` is the map.
+- Any `#NNN` **below 656** in code comments, old docs or legacy task text is a retired GitHub issue,
+  not a task: those issues were deleted, so `gh issue view <N>` 404s. Bodies and replies for the
+  deleted set live in `archive/github-issues-2026-08-14.json` (redacted; `archive/README.md` has the
+  placeholder mapping). Numbers from 656 to 921 are pull requests and a few live issues; imported
+  issues start at 922.
+- **The GitHub issue tracker stays enabled deliberately**: outside contributors file issues there
+  and Renovate's dependency dashboard lives there. A maintainer triages an externally filed issue
+  before it enters the queue.
 
 ## Design invariants
 
@@ -124,30 +123,6 @@ script. Failed or bounded-out scans omit counts and publish collection health, n
   representation; covers source precision, censored tails, reset epochs and transport limitations.
 - `reference/live-api-contracts.md` - read before running the live contract suite; it shares the
   on-demand canary's lab lifecycle and keeps missing CI configuration from passing as a skip.
-
-<!-- BACKLOG.MD GUIDELINES START -->
-<!-- backlog.md-instructions-version: 1.50.1 -->
-<CRITICAL_INSTRUCTION>
-
-## Backlog.md Workflow
-
-This project uses Backlog.md for task and project management.
-
-**For every user request in this project, run `backlog instructions overview` before answering or taking action.**
-
-Use the overview to decide whether to search, read, create, or update Backlog tasks.
-
-Before task lifecycle actions, read the matching detailed guide:
-- `backlog instructions task-creation` before creating or splitting tasks
-- `backlog instructions task-execution` before planning, changing status or assignee, adding a plan or implementation notes, or implementing task work
-- `backlog instructions task-finalization` before checking acceptance criteria, writing final summaries, or moving tasks to terminal statuses
-
-Use `backlog <command> --help` before running unfamiliar commands. Help shows options, fields, and examples.
-
-Do not edit Backlog task, draft, document, decision, or milestone markdown files directly. Use the `backlog` CLI so metadata, relationships, and history stay consistent.
-
-</CRITICAL_INSTRUCTION>
-<!-- BACKLOG.MD GUIDELINES END -->
 
 ## Maintainer code review
 

@@ -495,6 +495,44 @@ jobs:
       contents: read
     uses: rknightion/.github/.github/workflows/privacy-sweep.yml@8f00b7fb896191e598f12ed565395697c539add1 # v1.26.9
 
+  # The Backlog.md board is retired: issues are the queue. A pull request may delete files under
+  # backlog/ or move them out, never add or change one there. Reads the file list from the API, so
+  # no pull request code is checked out.
+  backlog-freeze:
+    name: backlog/ is frozen
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Refuse additions and changes under backlog/
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ && "$CHANGED_FILES" =~ ^[0-9]+$ ]]; then
+            echo "::error title=backlog freeze::the pull request number or file count is malformed"
+            exit 1
+          fi
+          # The pull request files API lists at most 3000 files; refuse rather than check part of a change.
+          if (( CHANGED_FILES > 3000 )); then
+            echo "::error title=backlog freeze::${CHANGED_FILES} changed files is more than the API lists; split the pull request"
+            exit 1
+          fi
+          offending="$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
+            --jq '.[] | select(.status != "removed") | select(.filename | startswith("backlog/")) | "\(.status) \(.filename | @json)"')"
+          if [[ -n "$offending" ]]; then
+            echo "::error title=backlog freeze::this pull request adds or changes files under backlog/; the board is retired, so file the work as an issue"
+            printf '  %s\n' "$offending"
+            exit 1
+          fi
+          echo "No file under backlog/ is added or changed."
+
   # Single required status check. Branch protection on `main` requires ONLY this job, so the gate's
   # jobs can be renamed without re-touching protection. It fails if any required job failed or was
   # cancelled; the main-only publish jobs are not depended on here, so a PR still passes. Renovate's
@@ -503,7 +541,7 @@ jobs:
     name: ci-success
     runs-on: ubuntu-26.04
     if: always()
-    needs: [repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate, ac-evidence, privacy-sweep]
+    needs: [repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate, ac-evidence, privacy-sweep, backlog-freeze]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
@@ -519,9 +557,10 @@ jobs:
         env:
           AC_EVIDENCE: ${{ needs.ac-evidence.result }}
           PRIVACY_SWEEP: ${{ needs.privacy-sweep.result }}
+          BACKLOG_FREEZE: ${{ needs.backlog-freeze.result }}
         run: |
-          if [[ "$AC_EVIDENCE" != "success" || "$PRIVACY_SWEEP" != "success" ]]; then
-            echo "ac-evidence: ${AC_EVIDENCE}, privacy-sweep: ${PRIVACY_SWEEP}; both must pass on a pull request"
+          if [[ "$AC_EVIDENCE" != "success" || "$PRIVACY_SWEEP" != "success" || "$BACKLOG_FREEZE" != "success" ]]; then
+            echo "ac-evidence: ${AC_EVIDENCE}, privacy-sweep: ${PRIVACY_SWEEP}, backlog-freeze: ${BACKLOG_FREEZE}; all must pass on a pull request"
             exit 1
           fi
       - name: All required jobs passed
