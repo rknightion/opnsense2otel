@@ -1,6 +1,6 @@
 ---
 id: doc-0004
-title: Camden capture parser and pass-through review - OPN-0104
+title: the deployment host capture parser and pass-through review - OPN-0104
 type: other
 created_date: '2026-09-06 17:28'
 updated_date: '2026-09-06 18:25'
@@ -9,7 +9,7 @@ updated_date: '2026-09-06 18:25'
 
 OPN-0104 investigation, 2026-09-06. Downloaded the complete retained `/opt/opnsense2otel/capture` tree: 121 NDJSON files, 4,082 records, 36 programs, captured between 2026-08-04 08:46 UTC and 2026-09-06 15:37 UTC. These are retained, deduplicated debug examples, not a complete traffic recording or a frequency sample. The source remained live during the read; later arrivals are outside this snapshot.
 
-Private evidence is in `~/capture-reviews/opn-0104-20260906/`: original tar archives, extracted files, SHA-256 manifest, replay harness, replay-test.log and per-record replay.jsonl. None of the payloads belongs in this public repository. Capture contains identity and credential-bearing text; fixtures must substitute synthetic values before being committed or sent for external review.
+Private evidence is in `a private evidence directory`: original tar archives, extracted files, SHA-256 manifest, replay harness, replay-test.log and per-record replay.jsonl. None of the payloads belongs in this public repository. Capture contains identity and credential-bearing text; fixtures must substitute synthetic values before being committed or sent for external review.
 
 Replayed every debug record through ParseEnvelope and buildRecord at source SHA `6406f359195b2a1768933d682ba0d2269fdd4106`, using no live enrichment snapshot. All envelopes parsed. Current parsers recognise 1,077 records; 3,005 remain generic. The capture normaliser produces 922 distinct program/shape keys, but these are NOT 922 grammars: it retains domain names and paths and truncates at 120 runes. Full messages were retained for investigation. Replay checks parser recognition, not delivery, enrichment or derived-metric correctness.
 
