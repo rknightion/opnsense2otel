@@ -1,0 +1,582 @@
+{
+ "held": {},
+ "issues": {
+  "OPN-0001": {
+   "number": 926,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/926"
+  },
+  "OPN-0002": {
+   "number": 927,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/927"
+  },
+  "OPN-0003": {
+   "number": 928,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/928"
+  },
+  "OPN-0004": {
+   "number": 929,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/929"
+  },
+  "OPN-0005": {
+   "number": 930,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/930"
+  },
+  "OPN-0006": {
+   "number": 931,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/931"
+  },
+  "OPN-0007": {
+   "number": 932,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/932"
+  },
+  "OPN-0008": {
+   "number": 933,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/933"
+  },
+  "OPN-0009": {
+   "number": 934,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/934"
+  },
+  "OPN-0010": {
+   "number": 935,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/935"
+  },
+  "OPN-0011": {
+   "number": 936,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/936"
+  },
+  "OPN-0012": {
+   "number": 937,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/937"
+  },
+  "OPN-0013": {
+   "number": 938,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/938"
+  },
+  "OPN-0014": {
+   "number": 939,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/939"
+  },
+  "OPN-0015": {
+   "number": 940,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/940"
+  },
+  "OPN-0016": {
+   "number": 941,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/941"
+  },
+  "OPN-0017": {
+   "number": 942,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/942"
+  },
+  "OPN-0018": {
+   "number": 943,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/943"
+  },
+  "OPN-0019": {
+   "number": 944,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/944"
+  },
+  "OPN-0020": {
+   "number": 945,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/945"
+  },
+  "OPN-0021": {
+   "number": 946,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/946"
+  },
+  "OPN-0022": {
+   "number": 947,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/947"
+  },
+  "OPN-0023": {
+   "number": 948,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/948"
+  },
+  "OPN-0024": {
+   "number": 949,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/949"
+  },
+  "OPN-0025": {
+   "number": 950,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/950"
+  },
+  "OPN-0026": {
+   "number": 951,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/951"
+  },
+  "OPN-0027": {
+   "number": 952,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/952"
+  },
+  "OPN-0028": {
+   "number": 953,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/953"
+  },
+  "OPN-0029": {
+   "number": 954,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/954"
+  },
+  "OPN-0030": {
+   "number": 955,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/955"
+  },
+  "OPN-0031": {
+   "number": 956,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/956"
+  },
+  "OPN-0032": {
+   "number": 957,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/957"
+  },
+  "OPN-0033": {
+   "number": 958,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/958"
+  },
+  "OPN-0034": {
+   "number": 959,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/959"
+  },
+  "OPN-0035": {
+   "number": 960,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/960"
+  },
+  "OPN-0036": {
+   "number": 961,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/961"
+  },
+  "OPN-0037": {
+   "number": 962,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/962"
+  },
+  "OPN-0038": {
+   "number": 963,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/963"
+  },
+  "OPN-0039": {
+   "number": 964,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/964"
+  },
+  "OPN-0040": {
+   "number": 965,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/965"
+  },
+  "OPN-0041": {
+   "number": 966,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/966"
+  },
+  "OPN-0042": {
+   "number": 967,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/967"
+  },
+  "OPN-0043": {
+   "number": 968,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/968"
+  },
+  "OPN-0044": {
+   "number": 969,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/969"
+  },
+  "OPN-0045": {
+   "number": 970,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/970"
+  },
+  "OPN-0046": {
+   "number": 971,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/971"
+  },
+  "OPN-0047": {
+   "number": 972,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/972"
+  },
+  "OPN-0048": {
+   "number": 973,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/973"
+  },
+  "OPN-0049": {
+   "number": 974,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/974"
+  },
+  "OPN-0050": {
+   "number": 975,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/975"
+  },
+  "OPN-0051": {
+   "number": 976,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/976"
+  },
+  "OPN-0052": {
+   "number": 977,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/977"
+  },
+  "OPN-0053": {
+   "number": 978,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/978"
+  },
+  "OPN-0054": {
+   "number": 979,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/979"
+  },
+  "OPN-0055": {
+   "number": 980,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/980"
+  },
+  "OPN-0056": {
+   "number": 981,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/981"
+  },
+  "OPN-0057": {
+   "number": 982,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/982"
+  },
+  "OPN-0058": {
+   "number": 983,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/983"
+  },
+  "OPN-0059": {
+   "number": 984,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/984"
+  },
+  "OPN-0060": {
+   "number": 985,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/985"
+  },
+  "OPN-0061": {
+   "number": 986,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/986"
+  },
+  "OPN-0062": {
+   "number": 987,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/987"
+  },
+  "OPN-0063": {
+   "number": 988,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/988"
+  },
+  "OPN-0064": {
+   "number": 989,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/989"
+  },
+  "OPN-0065": {
+   "number": 990,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/990"
+  },
+  "OPN-0066": {
+   "number": 991,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/991"
+  },
+  "OPN-0067": {
+   "number": 992,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/992"
+  },
+  "OPN-0068": {
+   "number": 993,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/993"
+  },
+  "OPN-0069": {
+   "number": 994,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/994"
+  },
+  "OPN-0070": {
+   "number": 995,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/995"
+  },
+  "OPN-0071": {
+   "number": 996,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/996"
+  },
+  "OPN-0072": {
+   "number": 997,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/997"
+  },
+  "OPN-0073": {
+   "number": 998,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/998"
+  },
+  "OPN-0074": {
+   "number": 999,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/999"
+  },
+  "OPN-0075": {
+   "number": 1000,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1000"
+  },
+  "OPN-0076": {
+   "number": 1001,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1001"
+  },
+  "OPN-0077": {
+   "number": 1002,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1002"
+  },
+  "OPN-0078": {
+   "number": 1003,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1003"
+  },
+  "OPN-0079": {
+   "number": 1004,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1004"
+  },
+  "OPN-0080": {
+   "number": 1005,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1005"
+  },
+  "OPN-0081": {
+   "number": 1006,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1006"
+  },
+  "OPN-0082": {
+   "number": 1007,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1007"
+  },
+  "OPN-0083": {
+   "number": 1008,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1008"
+  },
+  "OPN-0084": {
+   "number": 1009,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1009"
+  },
+  "OPN-0085": {
+   "number": 1010,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1010"
+  },
+  "OPN-0086": {
+   "number": 1011,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1011"
+  },
+  "OPN-0087": {
+   "number": 1012,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1012"
+  },
+  "OPN-0088": {
+   "number": 1013,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1013"
+  },
+  "OPN-0089": {
+   "number": 1014,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1014"
+  },
+  "OPN-0090": {
+   "number": 1015,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1015"
+  },
+  "OPN-0091": {
+   "number": 1016,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1016"
+  },
+  "OPN-0092": {
+   "number": 1017,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1017"
+  },
+  "OPN-0093": {
+   "number": 1018,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1018"
+  },
+  "OPN-0094": {
+   "number": 1019,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1019"
+  },
+  "OPN-0095": {
+   "number": 1020,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1020"
+  },
+  "OPN-0096": {
+   "number": 1021,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1021"
+  },
+  "OPN-0097": {
+   "number": 1022,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1022"
+  },
+  "OPN-0098": {
+   "number": 1023,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1023"
+  },
+  "OPN-0099": {
+   "number": 1024,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1024"
+  },
+  "OPN-0100": {
+   "number": 1025,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1025"
+  },
+  "OPN-0101": {
+   "number": 1026,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1026"
+  },
+  "OPN-0102": {
+   "number": 1027,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1027"
+  },
+  "OPN-0103": {
+   "number": 1028,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1028"
+  },
+  "OPN-0104": {
+   "number": 922,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/922"
+  },
+  "OPN-0105": {
+   "number": 1029,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1029"
+  },
+  "OPN-0106": {
+   "number": 1030,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1030"
+  },
+  "OPN-0107": {
+   "number": 1031,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1031"
+  },
+  "OPN-0108": {
+   "number": 1032,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1032"
+  },
+  "OPN-0109": {
+   "number": 1033,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1033"
+  },
+  "OPN-0110": {
+   "number": 1034,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1034"
+  },
+  "OPN-0111": {
+   "number": 1035,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1035"
+  },
+  "OPN-0112": {
+   "number": 1036,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1036"
+  },
+  "OPN-0113": {
+   "number": 1037,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1037"
+  },
+  "OPN-0114": {
+   "number": 1038,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1038"
+  },
+  "OPN-0115": {
+   "number": 1039,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1039"
+  },
+  "OPN-0116": {
+   "number": 1040,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1040"
+  },
+  "OPN-0117": {
+   "number": 1041,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1041"
+  },
+  "OPN-0118": {
+   "number": 923,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/923"
+  },
+  "OPN-0119": {
+   "number": 1042,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1042"
+  },
+  "OPN-0120": {
+   "number": 1043,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1043"
+  },
+  "OPN-0121": {
+   "number": 1044,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1044"
+  },
+  "OPN-0122": {
+   "number": 1045,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1045"
+  },
+  "OPN-0123": {
+   "number": 1046,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1046"
+  },
+  "OPN-0124": {
+   "number": 1047,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1047"
+  },
+  "OPN-0125": {
+   "number": 1048,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1048"
+  },
+  "OPN-0126": {
+   "number": 1049,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1049"
+  },
+  "OPN-0127": {
+   "number": 1050,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1050"
+  },
+  "OPN-0128": {
+   "number": 1051,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1051"
+  },
+  "OPN-0129": {
+   "number": 1052,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1052"
+  },
+  "OPN-0130": {
+   "number": 1053,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1053"
+  },
+  "OPN-0131": {
+   "number": 1054,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1054"
+  },
+  "OPN-0132": {
+   "number": 1055,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1055"
+  },
+  "OPN-0133": {
+   "number": 1056,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1056"
+  },
+  "OPN-0134": {
+   "number": 1057,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1057"
+  },
+  "OPN-0135": {
+   "number": 1058,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1058"
+  },
+  "OPN-0136": {
+   "number": 1059,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1059"
+  },
+  "OPN-0137": {
+   "number": 1060,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1060"
+  },
+  "OPN-0138": {
+   "number": 1061,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1061"
+  },
+  "OPN-0139": {
+   "number": 1062,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1062"
+  },
+  "OPN-0140": {
+   "number": 1063,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1063"
+  },
+  "OPN-0141": {
+   "number": 1064,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/1064"
+  },
+  "OPN-0142": {
+   "number": 924,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/924"
+  },
+  "OPN-0143": {
+   "number": 925,
+   "url": "https://github.com/rknightion/opnsense2otel/issues/925"
+  }
+ },
+ "prefix": "OPN",
+ "repo": "rknightion/opnsense2otel",
+ "schema": 1,
+ "source_sha": "1f3337fb52a0bed7b3c4c15efe6f16d10bca7488",
+ "synthetic": []
+}
