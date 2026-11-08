@@ -104,3 +104,7 @@ codex/
 
 # loop-pi (pi-subagents writes .pi/subagents/)
 .pi/
+
+# Compiled helper binaries: build from source with `go run`, never commit them.
+/apidrift
+/tools/promqlcheck/promqlcheck
