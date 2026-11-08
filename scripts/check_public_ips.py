@@ -39,7 +39,8 @@ ALLOWLIST_PATH = REPO_ROOT / "scripts" / "public-ip-allowlist.json"
 # Never scanned: third-party code we don't author (vendor/), this script's own test
 # fixtures (which deliberately contain both good and bad literals to prove the
 # checker's behaviour, not to make a claim about real addresses), and the allowlist
-# itself.
+# itself, and the privacy sweep's own allow list (`.github/privacy/allow.txt`), which names
+# the fixture addresses already allowlisted below so the sweep does not report them.
 #
 # The allowlist exclusion is not cosmetic: the file's whole job is to name the
 # literals that are permitted, so scanning it means every entry reports itself as a
@@ -51,6 +52,7 @@ EXCLUDED_PREFIXES = ("vendor/",)
 EXCLUDED_FILES = {
     "scripts/check_public_ips_test.py",
     "scripts/public-ip-allowlist.json",
+    ".github/privacy/allow.txt",
 }
 
 # Documentation ranges (RFC 5737 / RFC 3849) are correct output for anonymised
