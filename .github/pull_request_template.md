@@ -19,12 +19,12 @@ Delete the options that don't apply.
 
 Delete if not relevant. Describe the tests you ran, and how to reproduce them.
 
-- [ ] `go test ./...`
+- [ ] `just test` (or `just test <filter>` for one test)
 - [ ] Manual verification against a live OPNsense box
 
 ## Checklist
 
-- [ ] If I added or changed a collector/metric, I ran `just docs` and committed the regenerated output. I did **not** hand-edit anything between `<!-- docgen:begin/end -->` markers — those are generated files (see `docs/metrics/metrics.md`, `docs/reference/collectors.md`, `docs/configuration.md`).
+- [ ] If I added or changed a collector/metric, I ran `just docs` and committed the regenerated output. I did **not** hand-edit anything between `<!-- docgen:begin/end -->` markers — those are generated files (see `docs/metrics/metrics.md`, `docs/collectors/reference.md`, `docs/configuration.md`).
 - [ ] If I added or changed a metric, I added the corresponding Grafana panel and ran `just dashboard` (see `grafana/README.md`).
 - [ ] If I changed `go.mod`, I ran `just sync-vendor` and committed the vendor diff.
 - [ ] I commented my code, particularly in hard-to-understand areas.
