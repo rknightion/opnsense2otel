@@ -188,7 +188,7 @@ changes(opnsense_carp_vip_status[5m]) > 0
 NTP peers with high offset (> 100ms):
 
 ```promql
-abs(opnsense_ntp_offset_milliseconds) > 100
+abs(opnsense_ntp_peer_offset_milliseconds) > 100
 ```
 
 ### Temperature monitoring

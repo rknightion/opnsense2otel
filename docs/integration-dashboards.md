@@ -253,13 +253,13 @@ opnsense_system_memory_used_bytes / opnsense_system_memory_total_bytes * 100
 **Load average trend (1-min):**
 
 ```promql
-opnsense_system_load_average_one_minute
+opnsense_system_load_average{interval="1"}
 ```
 
 **Disk usage by device:**
 
 ```promql
-opnsense_system_disk_used_ratio * 100
+opnsense_system_disk_usage_ratio * 100
 ```
 
 ### Certificate expiry alerting
@@ -292,7 +292,7 @@ rate(opnsense_unbound_dns_queries_total[5m])
 rate(opnsense_unbound_dns_cache_hits_total[5m])
 / (
   rate(opnsense_unbound_dns_cache_hits_total[5m])
-  + rate(opnsense_unbound_dns_cache_misses_total[5m])
+  + rate(opnsense_unbound_dns_cache_miss_total[5m])
 ) * 100
 ```
 
@@ -312,7 +312,7 @@ opnsense_ipsec_phase1_status
 
 ### High-availability
 
-**CARP VIP status (MASTER=1, BACKUP=2, INIT=0):**
+**CARP VIP status (1 = MASTER, 0 = BACKUP, 2 = INIT, 3 = DISABLED, -1 = unknown):**
 
 ```promql
 opnsense_carp_vip_status
@@ -321,7 +321,7 @@ opnsense_carp_vip_status
 **CARP demotion counter (non-zero indicates issues):**
 
 ```promql
-opnsense_carp_demotion_counter > 0
+opnsense_carp_demotion > 0
 ```
 
 ### NTP health
@@ -329,13 +329,13 @@ opnsense_carp_demotion_counter > 0
 **NTP offset across all peers:**
 
 ```promql
-opnsense_ntp_offset_milliseconds
+opnsense_ntp_peer_offset_milliseconds
 ```
 
 **NTP peers with poor reachability:**
 
 ```promql
-opnsense_ntp_reachability < 255
+opnsense_ntp_peer_reach < 255
 ```
 
 ### Temperature alerts
