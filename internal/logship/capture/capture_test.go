@@ -2,7 +2,9 @@ package capture
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -292,6 +294,52 @@ func TestRotation(t *testing.T) {
 	}
 	if got := len(readAll(t, dir, ReceiverSyslog)); got != 40 {
 		t.Fatalf("records after rotation = %d, want 40", got)
+	}
+}
+
+// TestRotationFailureDoesNotPanicOnNextWrite: a rotation that cannot open the next
+// file leaves the writer closed. The next entry small enough to fit the old file's
+// remaining budget skipped the rotation branch and wrote through that nil writer,
+// which took the whole exporter down from the capture goroutine.
+func TestRotationFailureDoesNotPanicOnNextWrite(t *testing.T) {
+	root := t.TempDir()
+	rf, err := newRotatingFile(root, ReceiverSyslog, 100, nil)
+	if err != nil {
+		t.Fatalf("newRotatingFile: %v", err)
+	}
+	defer rf.close()
+
+	if _, err := rf.write(bytes.Repeat([]byte("a"), 90)); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	// Occupy the next index so the rotation's exclusive create fails.
+	taken := filepath.Join(root, ReceiverSyslog, fmt.Sprintf("capture-%03d.ndjson", rf.idx+1))
+	if err := os.WriteFile(taken, nil, 0o600); err != nil {
+		t.Fatalf("occupy next index: %v", err)
+	}
+	if _, err := rf.write(bytes.Repeat([]byte("b"), 50)); err == nil {
+		t.Fatal("rotation onto an existing file must report an error")
+	}
+
+	// Short enough to fit the old file's budget, so the rotation branch is skipped.
+	short := []byte("short\n")
+	n, err := rf.write(short)
+	if err != nil {
+		t.Fatalf("write after a failed rotation: %v", err)
+	}
+	if n != len(short) {
+		t.Fatalf("wrote %d bytes, want %d", n, len(short))
+	}
+	rf.close()
+	got, err := os.ReadFile(filepath.Join(root, ReceiverSyslog, fmt.Sprintf("capture-%03d.ndjson", rf.idx)))
+	if err != nil {
+		t.Fatalf("read the recovered file: %v", err)
+	}
+	if string(got) != string(short) {
+		t.Fatalf("recovered file holds %q, want %q", got, short)
+	}
+	if untouched, _ := os.ReadFile(taken); len(untouched) != 0 {
+		t.Fatalf("the occupied file was written to: %q", untouched)
 	}
 }
 
