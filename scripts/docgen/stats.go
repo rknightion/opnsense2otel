@@ -120,7 +120,7 @@ func statRules(s docStats) []statRule {
 		{File: "docs/collectors/index.md", Pattern: subCollectors, Replace: subCollectorsRepl, MinHits: 1},
 		{File: "docs/architecture.md", Pattern: subCollectors, Replace: subCollectorsRepl, MinHits: 1},
 		// The agent instructions + these three docs pages sat outside the pin allowlist and drifted
-		// to a stale "30 collectors" while the real count grew to 47 (#117). Pin them so make
+		// to a stale "30 collectors" while the real count grew to 47 (#117). Pin them so just
 		// docs-check fails on future drift. The agent instructions moved CLAUDE.md -> AGENTS.md on
 		// 2026-08-14 (CLAUDE.md is now a one-line import), so the pin follows the content.
 		{File: "AGENTS.md", Pattern: subCollectors, Replace: subCollectorsRepl, MinHits: 1},

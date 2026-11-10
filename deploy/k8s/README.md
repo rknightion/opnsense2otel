@@ -2,8 +2,9 @@
 
 - `deployment.yaml`: sets up a bare-bones deployment for just the exporter and a service to expose it to the rest of the cluster.
 - `scrape.yaml`: a [`ScrapeConfig`](https://prometheus-operator.dev/docs/user-guides/scrapeconfig/) CRD which will configure Prometheus to scrape metrics from the exporter
+- `networkpolicy.yaml`: a `NetworkPolicy` restricting which peers may reach the exporter
 
-Both files are well commented and should be easy to modify to suit your needs.
+All three files are well commented and should be easy to modify to suit your needs.
 
 ## Pre-requisites
 
