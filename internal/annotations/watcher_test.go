@@ -774,6 +774,55 @@ func TestWatcherAddsConfiguredExtraTags(t *testing.T) {
 	}
 }
 
+// An operator extra tag is not part of an event's identity. With a key:value extra
+// tag (the flag help's own example) the key rebuilt from the written tags used to
+// carry the tag's value as a detail, never matched the detection key, and the same
+// event was posted again on every pass.
+func TestWatcherDoesNotRewriteTheSameEventWithExtraTags(t *testing.T) {
+	f := newFakeGrafana(t)
+	now := time.Now()
+	w := newTestWatcher(t, f, now, series{
+		name:   "opnsense_system_config_last_change_timestamp_seconds",
+		labels: map[string]string{instanceLabel: "fw-a"},
+		value:  float64(now.Add(-time.Hour).Unix()),
+	})
+	w.cfg.ExtraTags = []string{"env:prod", "site-a"}
+	w.reconcile(context.Background())
+
+	for range 4 {
+		w.tick(context.Background())
+	}
+
+	if got := len(f.writes()); got != 1 {
+		t.Fatalf("expected 1 annotation across 4 passes with extra tags, got %d", got)
+	}
+}
+
+// The startup read-back has the same job: an annotation this exporter wrote before
+// a restart comes back carrying the extra tags, in whatever order Grafana returns.
+func TestWatcherReconcilesAnnotationsCarryingExtraTags(t *testing.T) {
+	f := newFakeGrafana(t)
+	now := time.Now()
+	rebooted := now.Add(-30 * time.Minute).Truncate(time.Second)
+	f.existing = []existingAnnotation{{
+		Time: rebooted.UnixMilli(),
+		Tags: []string{"site-a", "env:prod", BaseTag, "reboot", "instance:fw-a"},
+	}}
+
+	w := newTestWatcher(t, f, now, series{
+		name:   BootMetric,
+		labels: map[string]string{instanceLabel: "fw-a"},
+		value:  float64(rebooted.Unix()),
+	})
+	w.cfg.ExtraTags = []string{"env:prod", "site-a"}
+	w.reconcile(context.Background())
+	w.tick(context.Background())
+
+	if got := len(f.writes()); got != 0 {
+		t.Fatalf("expected no annotation for an event Grafana already has, got %d", got)
+	}
+}
+
 // TestCatalogueTagsAreClosedVocabularies guards the privacy rule from the source
 // side: a label key added to the catalogue becomes an indexed, org-wide queryable
 // tag, so it must name a thing, never a person or an address.

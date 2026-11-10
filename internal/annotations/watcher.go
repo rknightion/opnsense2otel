@@ -139,7 +139,7 @@ func (w *Watcher) reconcile(ctx context.Context) {
 		return
 	}
 	for _, annotation := range found {
-		kind, instance, detail := decodeTags(annotation.Tags)
+		kind, instance, detail := decodeTags(w.eventTags(annotation.Tags))
 		if kind == "" {
 			continue
 		}
@@ -446,7 +446,7 @@ func coalescedText(watch Watch, count int) string {
 }
 
 func (w *Watcher) markSeen(event Event) {
-	kind, instance, detail := decodeTags(event.Tags)
+	kind, instance, detail := decodeTags(w.eventTags(event.Tags))
 	w.seen[dedupeKey(kind, instance, detail, event.At.UnixMilli())] = event.At.UnixMilli()
 }
 
@@ -474,6 +474,30 @@ func (w *Watcher) tags(watch Watch, instance string, detail []string) []string {
 		}
 	}
 	return append(tags, w.cfg.ExtraTags...)
+}
+
+// eventTags returns tags without the operator's configured extra tags, each removed
+// once. Extra tags ride on every annotation but are no part of an event's identity:
+// left in, a key:value one reads as a detail value and a bare one can read as the
+// kind, so the key rebuilt from a written or read-back annotation never matches the
+// one detect() computed from the metric, and the event is posted again every pass.
+func (w *Watcher) eventTags(tags []string) []string {
+	if len(w.cfg.ExtraTags) == 0 {
+		return tags
+	}
+	drop := make(map[string]int, len(w.cfg.ExtraTags))
+	for _, tag := range w.cfg.ExtraTags {
+		drop[tag]++
+	}
+	kept := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if drop[tag] > 0 {
+			drop[tag]--
+			continue
+		}
+		kept = append(kept, tag)
+	}
+	return kept
 }
 
 // ---- helpers -------------------------------------------------------------
