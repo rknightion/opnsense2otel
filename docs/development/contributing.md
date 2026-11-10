@@ -9,14 +9,15 @@ tags:
 
 This guide covers the development workflow, tooling, and conventions for contributing to opnsense2otel.
 
-This page is the canonical contribution guide. The repository root `CONTRIBUTING.md` is a short
-pointer to this page — edit only this file; do not duplicate content into the root file.
+This page is the full contribution guide. The repository root `CONTRIBUTING.md` is synced from the
+shared contributor kit; only its "This repository" section holds this repository's own facts, and it
+links here.
 
 ## Prerequisites
 
 - **Go** - Check `go.mod` for the required version (currently Go 1.27)
-- **just 1.58+** - For build automation
-- **golangci-lint** - Optional; runs in CI but can be used locally
+- **just 1.59+** - For build automation
+- **golangci-lint** - Required by `just check` (its `lint` leg); `just setup` does not install it
 - **Docker** - Optional; for container builds
 
 ## Getting started
@@ -45,7 +46,7 @@ just setup
 
 ### Building on macOS
 
-`just build` uses the same static-link flags as CI. If your local toolchain cannot support them, use this instead:
+`just build` links a static local test binary (`-tags osusergo,netgo`, `-extldflags "-static"`, version `local-test`). If your local toolchain cannot support static linking, use this instead:
 
 ```bash
 CGO_ENABLED=0 go build -o opnsense2otel .
@@ -54,9 +55,10 @@ CGO_ENABLED=0 go build -o opnsense2otel .
 ### Running a single test
 
 ```bash
-go test ./internal/collector/ -run TestCollector
-go test ./opnsense/ -run TestFetchGateways
+just test TestFetchGateways
 ```
+
+The filter is passed to `go test -run`, under the race detector, across every package.
 
 ## Project conventions
 
@@ -70,7 +72,7 @@ just sync-vendor
 
 ### Static binary
 
-The build produces a fully static binary with:
+The container image build (`Dockerfile`) produces a fully static binary with:
 
 - `CGO_ENABLED=0`
 - `-ldflags "-s -w"` for stripped, optimized output
