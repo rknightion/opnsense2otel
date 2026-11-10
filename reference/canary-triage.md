@@ -1,7 +1,7 @@
 # Triaging a schema-canary finding
 
-Every finding from the daily live-box canary (`cmd/apidrift`, `.github/workflows/live-canary.yml`)
-gets exactly one of five verdicts.
+Every finding from the dispatch-only live-box canary (`cmd/apidrift`,
+`.github/workflows/live-canary.yml`) gets exactly one of five verdicts.
 
 **Ask "did upstream actually change?" first.** Four of the five presuppose it did. **box-state** is
 the one that does not, and it is the most common answer in practice - reach for it before the others

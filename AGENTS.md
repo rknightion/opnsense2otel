@@ -126,10 +126,13 @@ file such as `ROADMAP.md` beside them.
 - **Sub-collectors register themselves from `init()`**, appending to the global `collectorInstances`
   slice. Adding one is a file plus its `init()`, not an edit to a central list.
 - **`internal/webui` must never call `Gather()` on the live registry.** The operator console renders
-  only from `internal/metricsnap`, `collector.StatusTracker` and the API-client cache view; gathering
-  there would trigger a firewall scrape from an unrelated page load.
-- **`internal/logship` and `internal/flow` are push-based.** OPNsense, Zenarmor and NetFlow send to
-  us; nothing there polls.
+  from `internal/metricsnap`, `collector.StatusTracker` and the API-client cache view; gathering
+  there would trigger a firewall scrape from an unrelated page load. The one deliberate live fetch
+  is the Devices tab, which reads ARP and DHCP leases when opened, cached and time-bounded.
+- **The syslog, Zenarmor and NetFlow receivers are push-based.** OPNsense, Zenarmor and NetFlow send
+  to us; the receivers never poll. `internal/logship` also runs opt-in polled sources (Unbound
+  per-query, CrowdSec, IDS, config change, routing change) on `--logs.poll-interval` with per-source
+  floors, off the `/metrics` path.
 - Every env var is prefixed `OPN2OTEL_`, except the standard OTel SDK pair
   `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, which the log shipper
   honours unprefixed (`docs/log-shipping.md`). The `*_FILE` secret vars also accept legacy unprefixed
@@ -181,7 +184,7 @@ script. Failed or bounded-out scans omit counts and publish collection health, n
 ## Deeper references
 
 - `reference/adding-a-collector.md` - read before adding a collector, a `Fetch*` method or a new
-  OPNsense endpoint. Holds the eight-file registration contract and the two 404 caching rules.
+  OPNsense endpoint. Holds the nine-step registration contract and the two 404 caching rules.
 - `reference/canary-triage.md` - read before acting on a `cmd/apidrift` finding or editing
   `opnsense/testdata/schemas/exemptions.json`.
 - `grafana/tabs/AUTHORING.md` and `grafana/README.md` - read before adding dashboard panels or
