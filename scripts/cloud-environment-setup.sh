@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-GO_VERSION="1.27.3"
+GO_VERSION="1.27.4"
 GOLANGCI_LINT_VERSION="2.13.1"
 HELM_VERSION="3.19.0"
 
