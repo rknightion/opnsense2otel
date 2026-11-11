@@ -1,7 +1,8 @@
 # Adding a collector
 
-The registration contract spans eight files. Most steps have a unit test that fails when skipped, so
-a partial job fails loudly rather than shipping a dead flag; the two that do not are marked.
+The registration contract is the nine steps below. Most steps have a unit test that fails when
+skipped, so a partial job fails loudly rather than shipping a dead flag; the two that do not are
+marked.
 
 ## Code
 
@@ -26,7 +27,7 @@ a partial job fails loudly rather than shipping a dead flag; the two that do not
    firewall as down, and a test enforces this.
 6. Add the response struct to `schemaRegistry` (`opnsense/schema_registry.go`) and run `just schemas`.
    POST endpoints also need their request body in `captureRequests`
-   (`opnsense/capture_requests.go`). These feed the daily live-box schema canary (`cmd/apidrift`,
+   (`opnsense/capture_requests.go`). These feed the on-demand live-box schema canary (`cmd/apidrift`,
    `.github/workflows/live-canary.yml`). Golden schemas are structure-only, key paths and JSON types:
    never commit response values.
 7. Add a `<Subsystem>Subsystem` const and a `Without<Subsystem>Collector()` option in

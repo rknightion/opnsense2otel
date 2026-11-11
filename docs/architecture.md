@@ -140,7 +140,7 @@ All environment variables use the `OPN2OTEL_` prefix, except for `OPS_API_KEY_FI
 
 ### `internal/logship/` - Log shipping
 
-Backs the README's syslog and Zenarmor receiver rows. Unlike the packages above, this one is **push-based**: OPNsense (and, separately, Zenarmor) send data to the exporter over the network; the exporter never polls for it. Its subpackages:
+Backs the README's syslog and Zenarmor receiver rows. Unlike the packages above, its receivers are **push-based**: OPNsense (and, separately, Zenarmor) send data to the exporter over the network, and the receivers never poll for it. The package also runs opt-in polled sources (Unbound per-query, CrowdSec, IDS, config change, routing change) on `--logs.poll-interval`, off the `/metrics` path. Its subpackages:
 
 - **`syslog/`** — a UDP/TLS syslog listener (`listener.go`, `framing.go`) plus a per-program parser registry (one file per program: `filterlog.go`, `dhcp.go`, `sshd.go`, `haproxy.go`, `suricata.go`, `audit.go`, and more), each turning a raw syslog line into a structured record.
 - **`zenarmor/`** — a dedicated HTTP receiver (`server.go`) for Zenarmor's own event stream, with its own parsing and derived metrics.

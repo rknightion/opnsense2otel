@@ -630,7 +630,16 @@ func (rf *rotatingFile) open() error {
 // write appends one line, rotating first if the current file is full. It returns
 // the bytes written so the caller can advance the global total.
 func (rf *rotatingFile) write(line []byte) (int, error) {
-	if rf.n > 0 && rf.n+int64(len(line)) > rf.perFile {
+	if rf.w == nil {
+		// An earlier rotation closed the old file and then could not open the next one
+		// (a name collision, a full or read-only mount). Open afresh rather than write
+		// through the nil writer, and re-derive the index from the directory so a
+		// colliding name is stepped over instead of retried forever.
+		rf.idx = nextIndex(rf.dir)
+		if err := rf.open(); err != nil {
+			return 0, err
+		}
+	} else if rf.n > 0 && rf.n+int64(len(line)) > rf.perFile {
 		rf.close()
 		rf.idx++
 		if err := rf.open(); err != nil {

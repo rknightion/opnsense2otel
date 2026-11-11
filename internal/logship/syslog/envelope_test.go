@@ -110,6 +110,35 @@ func TestParseEnvelopeRFC3164NewYearRollback(t *testing.T) {
 	}
 }
 
+// The mirror of the rollback: a sender whose clock is slightly ahead of ours sends
+// its first January line while we still read 31 December. Stamping it with our (old)
+// year would date it a year in the past.
+func TestParseEnvelopeRFC3164NewYearRollForward(t *testing.T) {
+	now := time.Date(2026, 12, 31, 23, 59, 58, 0, time.UTC)
+	env, err := ParseEnvelope([]byte(`<38>Jan  1 00:00:02 opnsense sshd: hi`), now)
+	if err != nil {
+		t.Fatalf("ParseEnvelope: %v", err)
+	}
+	want := time.Date(2027, 1, 1, 0, 0, 2, 0, time.UTC)
+	if !env.Timestamp.Equal(want) {
+		t.Fatalf("Timestamp = %s, want %s (must roll forward a year)", env.Timestamp, want)
+	}
+}
+
+// The roll forward is bounded by the same 24h tolerance as the rollback: a January
+// line seen in the middle of the year really is from this January.
+func TestParseEnvelopeRFC3164OldLineStaysInThisYear(t *testing.T) {
+	now := time.Date(2026, 7, 14, 20, 0, 0, 0, time.UTC)
+	env, err := ParseEnvelope([]byte(`<38>Jan  1 00:00:02 opnsense sshd: hi`), now)
+	if err != nil {
+		t.Fatalf("ParseEnvelope: %v", err)
+	}
+	want := time.Date(2026, 1, 1, 0, 0, 2, 0, time.UTC)
+	if !env.Timestamp.Equal(want) {
+		t.Fatalf("Timestamp = %s, want %s", env.Timestamp, want)
+	}
+}
+
 // A same-year line must keep the current year.
 func TestParseEnvelopeRFC3164SameYear(t *testing.T) {
 	now := time.Date(2026, 7, 14, 20, 0, 0, 0, time.UTC)

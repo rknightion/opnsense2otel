@@ -267,7 +267,9 @@ func splitTagPID(tag []byte) (prog, pid string) {
 
 // parseBSDTime resolves the year-less BSD stamp against now. A stamp that lands
 // more than 24h in the future belongs to the previous year — the New Year's Eve
-// case, where a 31 Dec line is parsed on 1 Jan.
+// case, where a 31 Dec line is parsed on 1 Jan. The mirror case is a sender whose
+// clock is ahead of ours: its 1 Jan line arrives while we still read 31 Dec, and
+// belongs to the next year whenever that puts it within the same 24h of now.
 func parseBSDTime(b []byte, now time.Time) (time.Time, error) {
 	if len(b) < 15 {
 		return time.Time{}, errBadTime
@@ -300,6 +302,8 @@ func parseBSDTime(b []byte, now time.Time) (time.Time, error) {
 	t := time.Date(now.Year(), mon, day, hh, mm, ss, 0, loc)
 	if t.Sub(now) > 24*time.Hour {
 		t = t.AddDate(-1, 0, 0)
+	} else if next := t.AddDate(1, 0, 0); next.Sub(now) <= 24*time.Hour {
+		t = next
 	}
 	return t, nil
 }

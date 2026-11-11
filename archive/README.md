@@ -2,8 +2,9 @@
 
 `github-issues-2026-08-14.json` is the complete contents of this repository's GitHub Issues tracker
 as of **2026-08-14**, captured immediately before most of those issues were deleted. The project
-moved to Backlog.md on that date; see the *Pre-backlog issue numbers* doc (`backlog doc list --plain`)
-for what the frequently-cited numbers mean, and this file for the bodies and replies behind them.
+moved to Backlog.md on that date and has since moved to GitHub issues; see the *Closed GitHub issues
+(pre-Backlog history index)* document under `.github/tracker/history/` for what the frequently-cited
+numbers mean, and this file for the bodies and replies behind them.
 
 **This is the record, not a convenience copy.** For every issue we filed, `gh issue view <N>` now
 404s. Anything in the repository that cites `#NNN` — `AGENTS.md`, `CHANGELOG.md`, commit messages,
