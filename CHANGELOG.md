@@ -1,5 +1,44 @@
 # Changelog
 
+## [5.3.5](https://github.com/rknightion/opnsense2otel/compare/v5.3.4...v5.3.5) (2026-11-13)
+
+
+### Bug Fixes
+
+* audit quick fixes for capture rotation, syslog dating and dedupe ([#1073](https://github.com/rknightion/opnsense2otel/issues/1073)) ([f52502c](https://github.com/rknightion/opnsense2otel/commit/f52502cf136bcb3860bdbde1fe8f7b6e6946894b))
+* **deps:** build with Go 1.27.4 ([#1131](https://github.com/rknightion/opnsense2otel/issues/1131)) ([3ac110d](https://github.com/rknightion/opnsense2otel/commit/3ac110dc60ba98b43945319354a7063fb300b355))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.9.0 ([#917](https://github.com/rknightion/opnsense2otel/issues/917)) ([d073200](https://github.com/rknightion/opnsense2otel/commit/d0732008f4d9cc9276a2ea7bf340e3a0334eac11))
+* **deps:** update module go.yaml.in/yaml/v2 to v2.4.5 ([#921](https://github.com/rknightion/opnsense2otel/issues/921)) ([76e42df](https://github.com/rknightion/opnsense2otel/commit/76e42df59b03fbef939c8fd090e4e107ceee2f44))
+* redial silent api connections and make alerts reboot tolerant ([#1132](https://github.com/rknightion/opnsense2otel/issues/1132)) ([1f8f10d](https://github.com/rknightion/opnsense2otel/commit/1f8f10db0c5eb94a40adbce97bef7990938969e8))
+
+
+### Miscellaneous
+
+* **deps:** update gcr.io/distroless/static-debian13:nonroot docker digest to 25ac8f0 ([#915](https://github.com/rknightion/opnsense2otel/issues/915)) ([5f53c50](https://github.com/rknightion/opnsense2otel/commit/5f53c50481a8f6b50e1aaf5a2bd24ab2b1de5cef))
+* **deps:** update opnsense-docs digest to 2669c19 ([#918](https://github.com/rknightion/opnsense2otel/issues/918)) ([0d2c97e](https://github.com/rknightion/opnsense2otel/commit/0d2c97e484de6311190f3ea1af4cf7d975fc392c))
+* **deps:** update opnsense-docs digest to 2c8a110 ([#920](https://github.com/rknightion/opnsense2otel/issues/920)) ([1cb1869](https://github.com/rknightion/opnsense2otel/commit/1cb186950fc5efb8d90fd5c54f7f4206303c1b03))
+* **deps:** update opnsense-docs digest to b199cde ([#919](https://github.com/rknightion/opnsense2otel/issues/919)) ([d3931f7](https://github.com/rknightion/opnsense2otel/commit/d3931f7fbb367757fae66f6544afa6680a150f81))
+* migrate maintainer review to Kodus ([ee0d582](https://github.com/rknightion/opnsense2otel/commit/ee0d582a981ddf75a38a6e78c5b5a7360969df5d))
+* **privacy:** allow existing fixture addresses and emails in the sweep ([e6a7f1c](https://github.com/rknightion/opnsense2otel/commit/e6a7f1c208b4515a98ef28cdc10b7bef7ec6d258))
+* **tracker:** add the legacy id map ([#1065](https://github.com/rknightion/opnsense2otel/issues/1065)) ([e5628d4](https://github.com/rknightion/opnsense2otel/commit/e5628d4cba7120344635321c395647d7f9ad03ac))
+* **tracker:** cut over to GitHub issues ([#1066](https://github.com/rknightion/opnsense2otel/issues/1066)) ([c6abc04](https://github.com/rknightion/opnsense2otel/commit/c6abc04660f3022ac7cf4bae99d1b0d47eb61d6f))
+* **tracker:** move the board documents and remove the frozen board ([#1071](https://github.com/rknightion/opnsense2otel/issues/1071)) ([3615085](https://github.com/rknightion/opnsense2otel/commit/361508587fed85981766804d6f7dd8a42c9a0f60))
+* **tracker:** wire tracker recipes, evidence and privacy checks ([1f3337f](https://github.com/rknightion/opnsense2otel/commit/1f3337fb52a0bed7b3c4c15efe6f16d10bca7488))
+* untrack the committed apidrift and promqlcheck binaries ([#1067](https://github.com/rknightion/opnsense2otel/issues/1067)) ([878d656](https://github.com/rknightion/opnsense2otel/commit/878d656cf96694bff30a9043a5b164f5e1ad2438))
+* **vended:** sync from rknightion/.github main ([#1069](https://github.com/rknightion/opnsense2otel/issues/1069)) ([a1b5ed3](https://github.com/rknightion/opnsense2otel/commit/a1b5ed39f02329edbfda333896550ff1a6747fce))
+* **vended:** sync from rknightion/.github main ([#1070](https://github.com/rknightion/opnsense2otel/issues/1070)) ([dac7145](https://github.com/rknightion/opnsense2otel/commit/dac7145acdecbb18f20b9dfacee1d11a85893875))
+* **vended:** sync from rknightion/.github main ([#1130](https://github.com/rknightion/opnsense2otel/issues/1130)) ([4be5422](https://github.com/rknightion/opnsense2otel/commit/4be542295a6839a5e7e91d62a4af10c98e84eee6))
+
+
+### Tests
+
+* locate repo root without runtime.Caller so tests pass under -trimpath ([c6da5a4](https://github.com/rknightion/opnsense2otel/commit/c6da5a46ff63a139edce25d11cbfda7153f28be1))
+
+
+### CI/CD
+
+* fail pull requests on zizmor findings through ci-success ([#1072](https://github.com/rknightion/opnsense2otel/issues/1072)) ([ab1dc2c](https://github.com/rknightion/opnsense2otel/commit/ab1dc2cc7cd18467ace721dfc1eb2e5249f698cf))
+
 ## [5.3.4](https://github.com/rknightion/opnsense2otel/compare/v5.3.3...v5.3.4) (2026-10-31)
 
 
