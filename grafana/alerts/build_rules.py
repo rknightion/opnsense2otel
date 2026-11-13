@@ -67,6 +67,40 @@ _panel_index_cache = None
 # cannot carry the label needs somewhere to say so with a reason.
 SUMMARY_INSTANCE_EXEMPT: dict = {}
 
+# ---- reboot tolerance ------------------------------------------------------
+# A firewall reboot used to page once per stopped service, per down gateway and per
+# stale collector: the exporter retains last-good data (#336 D8), so zeros captured
+# while the box was booting kept replaying after the poll stopped refreshing them.
+# The rules below that see a reboot first gate on three conditions:
+#
+#   * the box is reachable. While opnsense_up is 0, OPNsenseExporterDown is the
+#     one alert for the outage, and everything else is retained data.
+#   * the box booted more than REBOOT_GRACE_S ago. Services and gateways are still
+#     converging inside that window. When the boot timestamp is absent the gate is
+#     open, so a missing metric never silences an alert.
+#   * for per-collector rules, that collector's snapshot is fresh: replaced within
+#     FRESH_MAX_MISSED of its own poll intervals, using the same missed-interval
+#     arithmetic and 120s scrape-lag allowance as OPNsenseCollectorDataStale.
+REBOOT_GRACE_S = 600
+FRESH_MAX_MISSED = 2
+API_DOWN = "(opnsense_up < 1)"
+RECENT_BOOT = f"(time() - opnsense_system_boot_timestamp_seconds < {REBOOT_GRACE_S})"
+
+
+def fresh_collector(collector: str) -> str:
+    sel = f'{{collector="{collector}"}}'
+    return (f"((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{sel} - 120) "
+            f"/ opnsense_exporter_collector_poll_interval_seconds{sel}) <= {FRESH_MAX_MISSED}")
+
+
+def reboot_tolerant(expr: str, collector: "str | None" = None) -> str:
+    out = f"({expr})"
+    if collector:
+        out += f" and on(opnsense_instance) ({fresh_collector(collector)})"
+    return (f"{out} unless on(opnsense_instance) {API_DOWN} "
+            f"unless on(opnsense_instance) {RECENT_BOOT}")
+
+
 # Each alert: name(slug), title, A (value query), cond (op, params), for_min, severity,
 # summary, description. op in {gt, lt, within_range, outside_range}.
 RULES = [
@@ -330,8 +364,8 @@ RULES = [
     # persists, so the pending clock never resets between two once-per-tier attempts.
     dict(name="opnsense-collector-data-stale", title="OPNsenseCollectorDataStale",
          selfhealth=True,
-         A="(time() - opnsense_exporter_collector_snapshot_timestamp_seconds - 120) "
-           "/ opnsense_exporter_collector_poll_interval_seconds",
+         A=reboot_tolerant("(time() - opnsense_exporter_collector_snapshot_timestamp_seconds - 120) "
+                           "/ opnsense_exporter_collector_poll_interval_seconds"),
          op="gt", params=[3, 0], for_min=5, severity="warning",
          summary="OPNsense collector {{ $labels.collector }} is serving stale data ({{ $labels.opnsense_instance }})",
          description="Collector {{ $labels.collector }} has not replaced its stored metric buffer for more "
@@ -346,12 +380,14 @@ RULES = [
                      "dashboard still shows values; they are just old. Check "
                      "opnsense_exporter_scrape_collector_success and the endpoint-error panels for the "
                      "cause. NOTE the last-poll clock is useless here: it advances on every failed attempt "
-                     "too (#382).",
+                     "too (#382). Silent while opnsense_up is 0 (OPNsenseExporterDown covers that outage) "
+                     "and for 10m after the firewall boots.",
          runbook=dict(
              measures="How many of a collector's own poll intervals have elapsed since its stored metric buffer was last replaced (time() minus the snapshot timestamp, minus a 120s scrape-lag allowance, divided by the collector's own poll interval) - staleness expressed in MISSED INTERVALS so one rule covers every tier.",
-             threshold='gt 3 missed intervals for 5m, which works out to roughly 8m on the fast (15s) tier and 52m on the cold (15m) tier; one failed poll followed by recovery peaks at ~2 missed intervals on any tier and cannot fire.',
+             threshold='gt 3 missed intervals for 5m, which works out to roughly 8m on the fast (15s) tier and 52m on the cold (15m) tier; one failed poll followed by recovery peaks at ~2 missed intervals on any tier and cannot fire. Suppressed while opnsense_up is 0, so an unreachable box pages once through OPNsenseExporterDown instead of once per collector, and for 10m after opnsense_system_boot_timestamp_seconds moves.',
              absent='Both feeding gauges are absent until first successfully stored, so a collector that has NEVER stored data produces no series here and cannot alert on staleness - that gap is what OPNsenseCollectorNeverStoredData exists to close.',
              checks=[
+                'If every collector is stale at once after a firewall reboot while opnsense_up is 1, check the exporter log for repeated request timeouts: the exporter should drop a silent connection and redial on its own',
                 'Read the collector label and check opnsense_exporter_scrape_collector_success and the endpoint-error panels for that same collector',
                 "Note the last-poll-timestamp panel is USELESS here - it advances on every failed attempt too, so don't use it to judge freshness",
                 "Confirm the dashboard's stale value is old but not blanked - retained last-good data is deliberate (#336 D8), so a flat panel does not mean the outage just started",
@@ -461,12 +497,13 @@ RULES = [
     # (DHCP + dpinger convergence) after a reboot, so it gets for=15m + warning (no page) to avoid
     # false pages during reboots. Requires the default_gateway label (opnsense2otel >=0.x).
     dict(name="opnsense-gateway-down", title="OPNsenseGatewayDown",
-         A='opnsense_gateways_status{default_gateway="true"}', op="lt", params=[1, 0], for_min=5, severity="critical",
+         A=reboot_tolerant('opnsense_gateways_status{default_gateway="true"}', "gateways"),
+         op="lt", params=[1, 0], for_min=5, severity="critical",
          summary="OPNsense PRIMARY gateway {{ $labels.name }} is offline ({{ $labels.opnsense_instance }})",
          description="Primary WAN gateway {{ $labels.name }} ({{ $labels.address }}) offline (status 0) for 5m.",
          runbook=dict(
              measures='opnsense_gateways_status{default_gateway="true"}: the API-reported up/down state of the box\'s PRIMARY WAN gateway.',
-             threshold='lt 1 (down) for 5m - tight, because the primary WAN typically reconverges in under a minute after a reboot.',
+             threshold='lt 1 (down) for 5m - tight, because the primary WAN typically reconverges in under a minute after a reboot. Only counted while the gateways collector is fresh (snapshot replaced within 2 poll intervals), opnsense_up is 1 and the box booted more than 10m ago, so a reboot or retained data cannot page.',
              absent='Default noDataState (Ok) - a totally-absent series means the exporter itself is down (OPNsenseExporterDown already pages for that); it does not fire for gateways with OPNsense-side monitoring disabled, which legitimately have no status series.',
              checks=[
                 'Read the name/address labels to identify the specific gateway',
@@ -484,13 +521,14 @@ RULES = [
             ],
          )),
     dict(name="opnsense-gw-down-failover", title="OPNsenseGatewayDownFailover",
-         A='opnsense_gateways_status{default_gateway="false"}', op="lt", params=[1, 0], for_min=15, severity="warning",
+         A=reboot_tolerant('opnsense_gateways_status{default_gateway="false"}', "gateways"),
+         op="lt", params=[1, 0], for_min=15, severity="warning",
          summary="OPNsense FAILOVER gateway {{ $labels.name }} is offline ({{ $labels.opnsense_instance }})",
          description="Failover/secondary WAN gateway {{ $labels.name }} ({{ $labels.address }}) offline (status 0) for 15m. "
                      "Lower urgency — primary WAN unaffected. The 15m window tolerates a router reboot / slow secondary-WAN re-establish.",
          runbook=dict(
              measures='opnsense_gateways_status{default_gateway="false"}: the same up/down state, for a failover/secondary WAN gateway rather than the primary.',
-             threshold="lt 1 (down) for 15m - looser than the primary's 5m, because a secondary WAN can legitimately take ~7-10m to re-establish (DHCP + dpinger convergence) after a reboot.",
+             threshold="lt 1 (down) for 15m - looser than the primary's 5m, because a secondary WAN can legitimately take ~7-10m to re-establish (DHCP + dpinger convergence) after a reboot. Same gates as OPNsenseGatewayDown: fresh gateways collector, opnsense_up 1, booted more than 10m ago.",
              absent='Default noDataState (Ok), same reasoning as OPNsenseGatewayDown: absence is the gateway lacking OPNsense-side monitoring, not a fault.',
              checks=[
                 'Read the name/address labels to identify the specific secondary gateway',
@@ -1301,16 +1339,21 @@ RULES = [
     # Exclude on-demand services that are expected to be stopped (e.g. iperf, which only runs during
     # an explicit performance test). Add other expected-down service names to the exclusion as needed.
     dict(name="opnsense-service-down", title="OPNsenseServiceDown",
-         A='opnsense_services_status{name!="iperf"}', op="lt", params=[1, 0], for_min=10, severity="warning",
+         A=reboot_tolerant('opnsense_services_status{name!="iperf"}', "services"),
+         op="lt", params=[1, 0], for_min=10, severity="warning",
          summary="OPNsense service {{ $labels.name }} stopped ({{ $labels.opnsense_instance }})",
          description="Service {{ $labels.name }} ({{ $labels.description }}) has been stopped for 10m. "
-                     "On-demand services (e.g. iperf) are excluded. One alert per service.",
+                     "On-demand services (e.g. iperf) are excluded. One alert per service. Only fresh "
+                     "data counts: the services snapshot must have been replaced within 2 poll intervals, "
+                     "opnsense_up must be 1 and the firewall must have booted more than 10m ago, so "
+                     "a reboot or retained boot-time zeros do not page.",
          runbook=dict(
              measures='opnsense_services_status: whether a monitored OPNsense service is running (excludes on-demand services such as iperf, which are expected to be stopped between test runs).',
-             threshold='lt 1 (stopped) sustained for 10m. One alert instance per service.',
-             absent="Default noDataState (Ok) - absence means that service is no longer configured/tracked, not that it's running.",
+             threshold='lt 1 (stopped) sustained for 10m. One alert instance per service. A service only counts while the services collector is fresh (snapshot replaced within 2 of its poll intervals plus the 120s scrape-lag allowance), opnsense_up is 1 and the box booted more than 10m ago.',
+             absent="Default noDataState (Ok) - absence means that service is no longer configured/tracked, not that it's running. The freshness, reachability and boot gates also remove the series, which resolves the alert: a stale or unreachable box is reported by OPNsenseCollectorDataStale or OPNsenseExporterDown instead.",
              checks=[
                 'Read the name/description labels to identify the exact service',
+                'If several services fired together just after a reboot, compare opnsense_system_boot_timestamp_seconds with the alert start before chasing each one',
                 "Check the OPNsense UI's Services page for the actual stop reason/crash log",
                 'Try restarting it from the UI and watch whether it stays up or crash-loops',
             ],
