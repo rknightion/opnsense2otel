@@ -198,16 +198,17 @@ sum by (opnsense_instance, endpoint) (increase(opnsense_exporter_endpoint_errors
 
 **Expression:**
 ```promql
-(time() - opnsense_exporter_collector_snapshot_timestamp_seconds - 120) / opnsense_exporter_collector_poll_interval_seconds
+((time() - opnsense_exporter_collector_snapshot_timestamp_seconds - 120) / opnsense_exporter_collector_poll_interval_seconds) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** How many of a collector's own poll intervals have elapsed since its stored metric buffer was last replaced (time() minus the snapshot timestamp, minus a 120s scrape-lag allowance, divided by the collector's own poll interval) - staleness expressed in MISSED INTERVALS so one rule covers every tier.
 
-**Threshold & window:** gt 3 missed intervals for 5m, which works out to roughly 8m on the fast (15s) tier and 52m on the cold (15m) tier; one failed poll followed by recovery peaks at ~2 missed intervals on any tier and cannot fire.
+**Threshold & window:** gt 3 missed intervals for 5m, which works out to roughly 8m on the fast (15s) tier and 52m on the cold (15m) tier; one failed poll followed by recovery peaks at ~2 missed intervals on any tier and cannot fire. Suppressed while opnsense_up is 0, so an unreachable box pages once through OPNsenseExporterDown instead of once per collector, and for 10m after opnsense_system_boot_timestamp_seconds moves.
 
 **Absent / no-data semantics:** Both feeding gauges are absent until first successfully stored, so a collector that has NEVER stored data produces no series here and cannot alert on staleness - that gap is what OPNsenseCollectorNeverStoredData exists to close.
 
 **First checks:**
+- If every collector is stale at once after a firewall reboot while opnsense_up is 1, check the exporter log for repeated request timeouts: the exporter should drop a silent connection and redial on its own
 - Read the collector label and check opnsense_exporter_scrape_collector_success and the endpoint-error panels for that same collector
 - Note the last-poll-timestamp panel is USELESS here - it advances on every failed attempt too, so don't use it to judge freshness
 - Confirm the dashboard's stale value is old but not blanked - retained last-good data is deliberate (#336 D8), so a flat panel does not mean the outage just started
@@ -290,12 +291,12 @@ opnsense_exporter_collector_last_poll_timestamp_seconds unless on(opnsense_insta
 
 **Expression:**
 ```promql
-opnsense_gateways_status{default_gateway="true"}
+(opnsense_gateways_status{default_gateway="true"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="gateways"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="gateways"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** opnsense_gateways_status{default_gateway="true"}: the API-reported up/down state of the box's PRIMARY WAN gateway.
 
-**Threshold & window:** lt 1 (down) for 5m - tight, because the primary WAN typically reconverges in under a minute after a reboot.
+**Threshold & window:** lt 1 (down) for 5m - tight, because the primary WAN typically reconverges in under a minute after a reboot. Only counted while the gateways collector is fresh (snapshot replaced within 2 poll intervals), opnsense_up is 1 and the box booted more than 10m ago, so a reboot or retained data cannot page.
 
 **Absent / no-data semantics:** Default noDataState (Ok) - a totally-absent series means the exporter itself is down (OPNsenseExporterDown already pages for that); it does not fire for gateways with OPNsense-side monitoring disabled, which legitimately have no status series.
 
@@ -321,12 +322,12 @@ opnsense_gateways_status{default_gateway="true"}
 
 **Expression:**
 ```promql
-opnsense_gateways_status{default_gateway="false"}
+(opnsense_gateways_status{default_gateway="false"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="gateways"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="gateways"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** opnsense_gateways_status{default_gateway="false"}: the same up/down state, for a failover/secondary WAN gateway rather than the primary.
 
-**Threshold & window:** lt 1 (down) for 15m - looser than the primary's 5m, because a secondary WAN can legitimately take ~7-10m to re-establish (DHCP + dpinger convergence) after a reboot.
+**Threshold & window:** lt 1 (down) for 15m - looser than the primary's 5m, because a secondary WAN can legitimately take ~7-10m to re-establish (DHCP + dpinger convergence) after a reboot. Same gates as OPNsenseGatewayDown: fresh gateways collector, opnsense_up 1, booted more than 10m ago.
 
 **Absent / no-data semantics:** Default noDataState (Ok), same reasoning as OPNsenseGatewayDown: absence is the gateway lacking OPNsense-side monitoring, not a fault.
 
@@ -1221,17 +1222,18 @@ opnsense_firmware_update_check_success
 
 **Expression:**
 ```promql
-opnsense_services_status{name!="iperf"}
+(opnsense_services_status{name!="iperf"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="services"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="services"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** opnsense_services_status: whether a monitored OPNsense service is running (excludes on-demand services such as iperf, which are expected to be stopped between test runs).
 
-**Threshold & window:** lt 1 (stopped) sustained for 10m. One alert instance per service.
+**Threshold & window:** lt 1 (stopped) sustained for 10m. One alert instance per service. A service only counts while the services collector is fresh (snapshot replaced within 2 of its poll intervals plus the 120s scrape-lag allowance), opnsense_up is 1 and the box booted more than 10m ago. Freshness and opnsense_up are read from the same exporter (job, instance) that reported the service, so with several exporters on one firewall each is judged by its own health.
 
-**Absent / no-data semantics:** Default noDataState (Ok) - absence means that service is no longer configured/tracked, not that it's running.
+**Absent / no-data semantics:** Default noDataState (Ok) - absence means that service is no longer configured/tracked, not that it's running. The freshness, reachability and boot gates also remove the series, which resolves the alert: a stale or unreachable box is reported by OPNsenseCollectorDataStale or OPNsenseExporterDown instead.
 
 **First checks:**
 - Read the name/description labels to identify the exact service
+- If several services fired together just after a reboot, compare opnsense_system_boot_timestamp_seconds with the alert start before chasing each one
 - Check the OPNsense UI's Services page for the actual stop reason/crash log
 - Try restarting it from the UI and watch whether it stays up or crash-loops
 

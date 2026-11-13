@@ -23,7 +23,7 @@
     },
     "annotations": {
       "summary": "OPNsense service {{ $labels.name }} stopped ({{ $labels.opnsense_instance }})",
-      "description": "Service {{ $labels.name }} ({{ $labels.description }}) has been stopped for 10m. On-demand services (e.g. iperf) are excluded. One alert per service.",
+      "description": "Service {{ $labels.name }} ({{ $labels.description }}) has been stopped for 10m. On-demand services (e.g. iperf) are excluded. One alert per service. Only fresh data counts: the services snapshot must have been replaced within 2 poll intervals, opnsense_up must be 1 and the firewall must have booted more than 10m ago, so a reboot or retained boot-time zeros do not page.",
       "runbook_url": "https://github.com/rknightion/opnsense2otel/blob/main/grafana/runbooks.md#opnsenseservicedown",
       "__dashboardUid__": "opnsense-exporter",
       "__panelId__": "514"
@@ -41,7 +41,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "opnsense_services_status{name!=\"iperf\"}",
+          "expr": "(opnsense_services_status{name!=\"iperf\"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector=\"services\"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector=\"services\"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)",
           "instant": true,
           "range": false,
           "intervalMs": 60000,

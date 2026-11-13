@@ -514,6 +514,15 @@ func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Lo
 				ExpectContinueTimeout: 1 * time.Second,
 				ForceAttemptHTTP2:     true,
 				MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
+				// A rebooted firewall silently drops packets on connections it no
+				// longer knows, so a pooled HTTP/2 connection never errors on its own
+				// and keeps absorbing requests until each times out. Pinging a
+				// connection that has gone quiet closes it within the request
+				// timeout, so the next attempt dials a fresh one.
+				HTTP2: &http.HTTP2Config{
+					SendPingTimeout: timeout / 3,
+					PingTimeout:     timeout / 3,
+				},
 			},
 		},
 	}
