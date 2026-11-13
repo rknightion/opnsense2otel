@@ -198,7 +198,7 @@ sum by (opnsense_instance, endpoint) (increase(opnsense_exporter_endpoint_errors
 
 **Expression:**
 ```promql
-((time() - opnsense_exporter_collector_snapshot_timestamp_seconds - 120) / opnsense_exporter_collector_poll_interval_seconds) unless on(opnsense_instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
+((time() - opnsense_exporter_collector_snapshot_timestamp_seconds - 120) / opnsense_exporter_collector_poll_interval_seconds) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** How many of a collector's own poll intervals have elapsed since its stored metric buffer was last replaced (time() minus the snapshot timestamp, minus a 120s scrape-lag allowance, divided by the collector's own poll interval) - staleness expressed in MISSED INTERVALS so one rule covers every tier.
@@ -291,7 +291,7 @@ opnsense_exporter_collector_last_poll_timestamp_seconds unless on(opnsense_insta
 
 **Expression:**
 ```promql
-(opnsense_gateways_status{default_gateway="true"}) and on(opnsense_instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="gateways"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="gateways"}) <= 2) unless on(opnsense_instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
+(opnsense_gateways_status{default_gateway="true"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="gateways"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="gateways"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** opnsense_gateways_status{default_gateway="true"}: the API-reported up/down state of the box's PRIMARY WAN gateway.
@@ -322,7 +322,7 @@ opnsense_exporter_collector_last_poll_timestamp_seconds unless on(opnsense_insta
 
 **Expression:**
 ```promql
-(opnsense_gateways_status{default_gateway="false"}) and on(opnsense_instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="gateways"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="gateways"}) <= 2) unless on(opnsense_instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
+(opnsense_gateways_status{default_gateway="false"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="gateways"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="gateways"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** opnsense_gateways_status{default_gateway="false"}: the same up/down state, for a failover/secondary WAN gateway rather than the primary.
@@ -1222,12 +1222,12 @@ opnsense_firmware_update_check_success
 
 **Expression:**
 ```promql
-(opnsense_services_status{name!="iperf"}) and on(opnsense_instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="services"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="services"}) <= 2) unless on(opnsense_instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
+(opnsense_services_status{name!="iperf"}) and on(opnsense_instance, job, instance) (((time() - opnsense_exporter_collector_snapshot_timestamp_seconds{collector="services"} - 120) / opnsense_exporter_collector_poll_interval_seconds{collector="services"}) <= 2) unless on(opnsense_instance, job, instance) (opnsense_up < 1) unless on(opnsense_instance) (time() - opnsense_system_boot_timestamp_seconds < 600)
 ```
 
 **What it measures:** opnsense_services_status: whether a monitored OPNsense service is running (excludes on-demand services such as iperf, which are expected to be stopped between test runs).
 
-**Threshold & window:** lt 1 (stopped) sustained for 10m. One alert instance per service. A service only counts while the services collector is fresh (snapshot replaced within 2 of its poll intervals plus the 120s scrape-lag allowance), opnsense_up is 1 and the box booted more than 10m ago.
+**Threshold & window:** lt 1 (stopped) sustained for 10m. One alert instance per service. A service only counts while the services collector is fresh (snapshot replaced within 2 of its poll intervals plus the 120s scrape-lag allowance), opnsense_up is 1 and the box booted more than 10m ago. Freshness and opnsense_up are read from the same exporter (job, instance) that reported the service, so with several exporters on one firewall each is judged by its own health.
 
 **Absent / no-data semantics:** Default noDataState (Ok) - absence means that service is no longer configured/tracked, not that it's running. The freshness, reachability and boot gates also remove the series, which resolves the alert: a stale or unreachable box is reported by OPNsenseCollectorDataStale or OPNsenseExporterDown instead.
 

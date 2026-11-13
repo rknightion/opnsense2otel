@@ -81,7 +81,14 @@ SUMMARY_INSTANCE_EXEMPT: dict = {}
 #   * for per-collector rules, that collector's snapshot is fresh: replaced within
 #     FRESH_MAX_MISSED of its own poll intervals, using the same missed-interval
 #     arithmetic and 120s scrape-lag allowance as OPNsenseCollectorDataStale.
+#
+# The reachability and freshness gates match on the scrape identity (job, instance)
+# as well as opnsense_instance, so with several exporters on one firewall each series
+# is gated by its own exporter's health, never another's. The boot gate matches on
+# opnsense_instance alone: a boot is a fact about the firewall, so any exporter that
+# has seen it suppresses the window for all of them.
 REBOOT_GRACE_S = 600
+GATE_ON = "on(opnsense_instance, job, instance)"
 FRESH_MAX_MISSED = 2
 API_DOWN = "(opnsense_up < 1)"
 RECENT_BOOT = f"(time() - opnsense_system_boot_timestamp_seconds < {REBOOT_GRACE_S})"
@@ -96,8 +103,8 @@ def fresh_collector(collector: str) -> str:
 def reboot_tolerant(expr: str, collector: "str | None" = None) -> str:
     out = f"({expr})"
     if collector:
-        out += f" and on(opnsense_instance) ({fresh_collector(collector)})"
-    return (f"{out} unless on(opnsense_instance) {API_DOWN} "
+        out += f" and {GATE_ON} ({fresh_collector(collector)})"
+    return (f"{out} unless {GATE_ON} {API_DOWN} "
             f"unless on(opnsense_instance) {RECENT_BOOT}")
 
 
@@ -1349,7 +1356,7 @@ RULES = [
                      "a reboot or retained boot-time zeros do not page.",
          runbook=dict(
              measures='opnsense_services_status: whether a monitored OPNsense service is running (excludes on-demand services such as iperf, which are expected to be stopped between test runs).',
-             threshold='lt 1 (stopped) sustained for 10m. One alert instance per service. A service only counts while the services collector is fresh (snapshot replaced within 2 of its poll intervals plus the 120s scrape-lag allowance), opnsense_up is 1 and the box booted more than 10m ago.',
+             threshold='lt 1 (stopped) sustained for 10m. One alert instance per service. A service only counts while the services collector is fresh (snapshot replaced within 2 of its poll intervals plus the 120s scrape-lag allowance), opnsense_up is 1 and the box booted more than 10m ago. Freshness and opnsense_up are read from the same exporter (job, instance) that reported the service, so with several exporters on one firewall each is judged by its own health.',
              absent="Default noDataState (Ok) - absence means that service is no longer configured/tracked, not that it's running. The freshness, reachability and boot gates also remove the series, which resolves the alert: a stale or unreachable box is reported by OPNsenseCollectorDataStale or OPNsenseExporterDown instead.",
              checks=[
                 'Read the name/description labels to identify the exact service',
