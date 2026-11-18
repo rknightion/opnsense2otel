@@ -217,3 +217,16 @@ local component, required tests, deployment authority or human approvals.
 Public contributors need no private maintainer configuration or paid review account; normal
 contribution and hosted-check requirements still apply. Never submit backup repositories,
 credentials, private fixtures or customer identifiers to an external reviewer.
+
+## Cursor Cloud specific instructions
+
+Cursor installs the source-check tools into `.tools` and compiles the vendored exporter and the
+separate PromQL checker during the environment build. No service is needed to work on the source.
+
+- Fast check `just fmt-check metric-lint </dev/null`.
+- Full gate `PATH="$PWD/.tools:$PATH" just check </dev/null`. The vulnerability scan needs the
+  public Go vulnerability database.
+
+`just ci` adds Docker, deployment contracts and the release build matrix. Hosted GitHub and kind
+checks run in CI. Live contract, canary and delivery checks require the maintainer-operated
+OPNsense lab and its credentials.
