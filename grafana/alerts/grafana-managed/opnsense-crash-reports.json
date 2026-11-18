@@ -23,7 +23,7 @@
     },
     "annotations": {
       "summary": "OPNsense crash reports present ({{ $labels.opnsense_instance }})",
-      "description": "opnsense_crash_reporter_status is 0 \u2014 one or more crash reports are present.",
+      "description": "OPNsense reports one or more unreviewed crash records (opnsense_crash_reporter_status is 0).",
       "runbook_url": "https://github.com/rknightion/opnsense2otel/blob/main/grafana/runbooks.md#opnsensecrashreports",
       "__dashboardUid__": "opnsense-exporter",
       "__panelId__": "3"

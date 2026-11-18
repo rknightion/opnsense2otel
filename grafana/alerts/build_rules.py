@@ -242,7 +242,7 @@ RULES = [
     dict(name="opnsense-crash-reports", title="OPNsenseCrashReports",
          A="opnsense_crash_reporter_status", op="lt", params=[1, 0], for_min=5, severity="warning",
          summary="OPNsense crash reports present ({{ $labels.opnsense_instance }})",
-         description="opnsense_crash_reporter_status is 0 — one or more crash reports are present.",
+         description="OPNsense reports one or more unreviewed crash records (opnsense_crash_reporter_status is 0).",
          runbook=dict(
              measures="opnsense_crash_reporter_status: whether OPNsense's own crash-report collector has one or more unreviewed crash reports on disk.",
              threshold='lt 1 (0 = reports present) sustained for 5m.',
