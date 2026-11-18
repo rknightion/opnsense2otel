@@ -310,6 +310,7 @@ class ModelSelfCheckTest(unittest.TestCase):
         self.assertEqual(ruleeval.parse_duration("0s"), 0)
         self.assertEqual(ruleeval.parse_duration("15m"), 900)
         self.assertEqual(ruleeval.parse_duration("1h30m"), 5400)
+        self.assertEqual(ruleeval.parse_duration("1h2m3s"), 3723)
 
 
 def _breaching_value(rule):
