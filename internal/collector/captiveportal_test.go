@@ -1,10 +1,16 @@
 package collector
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/promslog"
 )
@@ -246,6 +252,150 @@ func TestCaptivePortalCollector_Update_FeatureAbsent(t *testing.T) {
 	metrics := collectMetrics(t, c, client)
 	if len(metrics) != 0 {
 		t.Errorf("expected 0 metrics when feature absent, got %d", len(metrics))
+	}
+}
+
+func TestCaptivePortalVouchersMemoised(t *testing.T) {
+	var clock atomic.Int64
+	clock.Store(time.Unix(1700000000, 0).UnixNano())
+	var slowFetch atomic.Bool
+	mux := captivePortalCollectorMux(t)
+	var failProviders bool
+	mux.HandleFunc("/api/captiveportal/voucher/list_providers", func(w http.ResponseWriter, _ *http.Request) {
+		if failProviders {
+			http.Error(w, "unavailable", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprint(w, `["TestVoucherServer"]`)
+	})
+	mux.HandleFunc("/api/captiveportal/voucher/list_voucher_groups/TestVoucherServer", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `["one","two","three"]`) })
+	mux.HandleFunc("/api/captiveportal/voucher/list_vouchers/TestVoucherServer/", func(w http.ResponseWriter, _ *http.Request) {
+		if slowFetch.CompareAndSwap(true, false) {
+			clock.Add(int64(2 * time.Minute))
+		}
+		fmt.Fprint(w, `[{"state":"unused","expirytime":1700000000}]`)
+	})
+	var mu sync.Mutex
+	counts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		counts[r.URL.Path]++
+		mu.Unlock()
+		mux.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	client := newCollectorTestClient(t, server)
+	c := &captivePortalCollector{subsystem: CaptivePortalSubsystem, now: func() time.Time { return time.Unix(0, clock.Load()) }}
+	c.Register(namespace, "test", promslog.NewNopLogger())
+	voucherMetrics := func() map[string]float64 {
+		result := map[string]float64{}
+		for _, m := range collectMetrics(t, c, client.WithContext(context.Background())) {
+			if strings.Contains(m.Desc().String(), "captiveportal_voucher") {
+				result[fmt.Sprint(m.Desc(), getMetricLabels(m))] = getMetricValue(m)
+			}
+		}
+		return result
+	}
+	first := voucherMetrics()
+	clock.Add(int64(time.Minute))
+	second := voucherMetrics()
+	if len(first) != 12 || !reflect.DeepEqual(first, second) {
+		t.Errorf("voucher metrics differ or missing: first=%v second=%v", first, second)
+	}
+	check := func(path string, want int) {
+		t.Helper()
+		mu.Lock()
+		got := counts[path]
+		mu.Unlock()
+		if got != want {
+			t.Errorf("%s requests = %d, want %d", path, got, want)
+		}
+	}
+	groups := "/api/captiveportal/voucher/list_voucher_groups/TestVoucherServer"
+	check(groups, 1)
+	for _, group := range []string{"one", "two", "three"} {
+		check("/api/captiveportal/voucher/list_vouchers/TestVoucherServer/"+group, 1)
+	}
+	clock.Add(int64(4 * time.Minute))
+	voucherMetrics()
+	check(groups, 2)
+	for _, group := range []string{"one", "two", "three"} {
+		check("/api/captiveportal/voucher/list_vouchers/TestVoucherServer/"+group, 2)
+	}
+	check("/api/captiveportal/session/zones", 3)
+	check("/api/captiveportal/session/search", 3)
+
+	// A different client must never receive the first client's cached inventory.
+	otherMux := captivePortalCollectorMux(t)
+	otherMux.HandleFunc("/api/captiveportal/voucher/list_providers", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `[]`) })
+	otherServer := httptest.NewServer(otherMux)
+	defer otherServer.Close()
+	other := newCollectorTestClient(t, otherServer)
+	for _, m := range collectMetrics(t, c, other.WithContext(context.Background())) {
+		if strings.Contains(m.Desc().String(), "captiveportal_voucher") {
+			t.Error("voucher inventory leaked across clients")
+		}
+	}
+
+	// An expired fetch error emits no stale inventory and retries on the next poll.
+	clock.Add(int64(5 * time.Minute))
+	failProviders = true
+	if got := voucherMetrics(); len(got) != 0 {
+		t.Errorf("stale voucher metrics after error: %v", got)
+	}
+	failProviders = false
+	if got := voucherMetrics(); !reflect.DeepEqual(got, first) {
+		t.Errorf("retry did not restore voucher metrics: %v", got)
+	}
+	check(groups, 3)
+
+	// The TTL starts when the fetch begins, not after slow upstream requests finish.
+	clock.Add(int64(5 * time.Minute))
+	slowFetch.Store(true)
+	voucherMetrics()
+	check(groups, 4)
+	clock.Add(int64(3 * time.Minute))
+	voucherMetrics()
+	check(groups, 5)
+	check("/api/captiveportal/session/zones", 7)
+	check("/api/captiveportal/session/search", 7)
+}
+
+func TestCaptivePortalVouchersUpdateCadence(t *testing.T) {
+	var clock atomic.Int64
+	clock.Store(time.Unix(1700000000, 0).UnixNano())
+	var zones, sessions, groups, vouchers atomic.Int64
+	mux := captivePortalCollectorMux(t)
+	captivePortalVoucherMux(t, mux, `["TestVoucherServer"]`, `["TestGroup1"]`, `[{"state":"unused","expirytime":1700000000}]`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/captiveportal/session/zones":
+			if zones.Add(1) == 1 {
+				clock.Add(int64(30 * time.Second))
+			}
+		case "/api/captiveportal/session/search":
+			sessions.Add(1)
+		case "/api/captiveportal/voucher/list_voucher_groups/TestVoucherServer":
+			groups.Add(1)
+		case "/api/captiveportal/voucher/list_vouchers/TestVoucherServer/TestGroup1":
+			vouchers.Add(1)
+		}
+		mux.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	client := newCollectorTestClient(t, server)
+	c := &captivePortalCollector{subsystem: CaptivePortalSubsystem, now: func() time.Time { return time.Unix(0, clock.Load()) }}
+	c.Register(namespace, "test", promslog.NewNopLogger())
+	collectMetrics(t, c, client.WithContext(context.Background()))
+	// The first session call consumed 30 seconds, so this starts exactly five
+	// minutes after the first Update despite the faster second session call.
+	clock.Add(int64(4*time.Minute + 30*time.Second))
+	collectMetrics(t, c, client.WithContext(context.Background()))
+	if groups.Load() != 2 || vouchers.Load() != 2 {
+		t.Errorf("voucher requests at five-minute Update cadence: groups=%d vouchers=%d, want 2 each", groups.Load(), vouchers.Load())
+	}
+	if zones.Load() != 2 || sessions.Load() != 2 {
+		t.Errorf("session requests: zones=%d search=%d, want 2 each", zones.Load(), sessions.Load())
 	}
 }
 
