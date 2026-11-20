@@ -308,6 +308,11 @@ type FlowConfig struct {
 	DNSCacheSize        int
 }
 
+// CorrelationActive reports whether correlation can produce NetFlow records.
+func (c FlowConfig) CorrelationActive() bool {
+	return c.Correlate && c.NetflowEnabled
+}
+
 // Flow returns the resolved flow configuration, validated.
 func Flow() (FlowConfig, error) {
 	peers, err := parseAllowedPeers(*flowNetflowPeers)
