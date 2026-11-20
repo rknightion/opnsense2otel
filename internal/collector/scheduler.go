@@ -25,6 +25,9 @@ const maxPollConcurrency = 8
 // slot is enough to admit a fast poll while retaining the existing total cap.
 const reservedFastPollConcurrency = 1
 
+// apiFreeCollector is implemented by collectors whose Update makes no OPNsense API call.
+type apiFreeCollector interface{ PollsWithoutAPI() bool }
+
 // pollReservation is the general-poll half of a two-level admission control:
 // pollSem remains the process-wide total cap, while general holds back one of its
 // slots for a fast-tier poll. It is kept outside Collector because the scheduler's
@@ -258,12 +261,14 @@ func (c *Collector) runHealthPoller(ctx context.Context, interval time.Duration)
 }
 
 // pollCollector runs one poll of coll under the concurrency cap, unless the last
-// health poll found the box unreachable — in which case it skips (retaining the
+// health poll found the box unreachable and coll needs the API — in which case it skips (retaining the
 // last-good snapshot) rather than adding to a burst of doomed dials (#127). Each
 // poll is bounded by pollTimeout so a wedged endpoint frees its concurrency slot
 // instead of holding it open indefinitely.
 func (c *Collector) pollCollector(ctx context.Context, coll CollectorInstance) {
-	if c.unreachable.Load() {
+	free, ok := coll.(apiFreeCollector)
+	pollsWithoutAPI := ok && free.PollsWithoutAPI()
+	if !pollsWithoutAPI && c.unreachable.Load() {
 		return
 	}
 	release, ok := c.acquirePollSlot(ctx, coll)
@@ -284,7 +289,7 @@ func (c *Collector) pollCollector(ctx context.Context, coll CollectorInstance) {
 	// context. A tiny race remains between this check and the request itself;
 	// closing it entirely would need a client-level circuit breaker, which is not
 	// warranted for the failure mode being fixed here.
-	if c.unreachable.Load() {
+	if !pollsWithoutAPI && c.unreachable.Load() {
 		return
 	}
 

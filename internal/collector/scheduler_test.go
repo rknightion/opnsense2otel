@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/rknightion/opnsense2otel/v5/internal/cpustream"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
@@ -23,6 +24,10 @@ type intervalFake struct {
 }
 
 func (f *intervalFake) PollInterval() time.Duration { return f.d }
+
+type apiFreeFake struct{ fakeCollectorInstance }
+
+func (*apiFreeFake) PollsWithoutAPI() bool { return true }
 
 // wedgedSchedulerCollector signals once it has entered Update, then holds its
 // poll slot until the test cancels its context. It models a slow/cold endpoint
@@ -112,6 +117,50 @@ func TestPollCollectorSkipsWhenUnreachable(t *testing.T) {
 	if fake.callCount() != 0 {
 		t.Errorf("poll must skip Update while the box is unreachable, got %d calls", fake.callCount())
 	}
+}
+
+func TestPollCollectorRunsAPIFreeCollectorWhenUnreachable(t *testing.T) {
+	t.Run("fake", func(t *testing.T) {
+		fake := &apiFreeFake{fakeCollectorInstance{name: "fake"}}
+		c := newScrapeTestCollector(t, newCollectorTestClient(t, healthOKServer(t)), fake)
+		c.pollSem = make(chan struct{}, 1)
+		c.unreachable.Store(true)
+		c.pollCollector(context.Background(), fake)
+		if got := fake.callCount(); got != 1 {
+			t.Errorf("Update calls = %d, want 1", got)
+		}
+	})
+	t.Run("cpu", func(t *testing.T) {
+		prev := CPUStream.src.Load()
+		t.Cleanup(func() { CPUStream.src.Store(prev) })
+		snap := freshSnapshot()
+		CPUStream.Configure(func() cpustream.Snapshot { return snap })
+		cpu := &cpuCollector{subsystem: CPUSubsystem}
+		c := newScrapeTestCollector(t, newCollectorTestClient(t, healthOKServer(t)), cpu)
+		cpu.Register(namespace, "test", c.log)
+		c.pollSem = make(chan struct{}, 1)
+		c.pollCollector(context.Background(), cpu)
+		snap.Fresh = false
+		snap.LastFrameAge = 5 * time.Minute
+		c.unreachable.Store(true)
+		c.pollCollector(context.Background(), cpu)
+		found := false
+		for _, m := range c.store.entry(cpu.Name()).metrics {
+			desc := m.Desc().String()
+			if strings.Contains(desc, `fqName: "opnsense_cpu_seconds_total"`) {
+				t.Error("stale CPU counters must be withdrawn")
+			}
+			if strings.Contains(desc, `fqName: "opnsense_cpu_stream_counters_published"`) {
+				found = true
+				if got := getMetricValue(m); got != 0 {
+					t.Errorf("stream_counters_published = %v, want 0", got)
+				}
+			}
+		}
+		if !found {
+			t.Error("missing stream_counters_published")
+		}
+	})
 }
 
 // TestFastPollKeepsReservedCapacityFromWedgedGeneralPolls pins OPN-0032. Slow

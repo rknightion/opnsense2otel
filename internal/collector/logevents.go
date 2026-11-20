@@ -1061,6 +1061,8 @@ func init() {
 
 func (c *logEventsCollector) Name() string { return c.subsystem }
 
+func (*logEventsCollector) PollsWithoutAPI() bool { return true }
+
 func (c *logEventsCollector) Register(namespace, instanceLabel string, log *slog.Logger) {
 	c.log = log
 	c.instance = instanceLabel

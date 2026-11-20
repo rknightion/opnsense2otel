@@ -42,9 +42,8 @@ func (h *cpuStreamHolder) snapshot() cpustream.Snapshot {
 // cpu_usage SSE stream, plus the stream's own health.
 //
 // It makes NO API call of its own. Update simply copies the accumulator's current
-// values into the snapshot the serving path replays, so the poll scheduler and the
-// serving path need no special case: this fills a snapshot entry from a stream
-// instead of from a poll. Its poll interval therefore costs the firewall nothing and
+// values into the snapshot the serving path replays, filling a snapshot entry from
+// a stream instead of an API poll. Its poll interval therefore costs the firewall nothing and
 // only controls how often the counter is re-read, which a cumulative counter is
 // indifferent to.
 type cpuCollector struct {
@@ -66,6 +65,8 @@ func init() {
 }
 
 func (c *cpuCollector) Name() string { return c.subsystem }
+
+func (*cpuCollector) PollsWithoutAPI() bool { return true }
 
 func (c *cpuCollector) Register(namespace, instanceLabel string, log *slog.Logger) {
 	c.log = log
