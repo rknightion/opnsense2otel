@@ -250,7 +250,7 @@ func (c *systemCollector) Update(ctx context.Context, client *opnsense.Client, c
 		)
 	}
 
-	if data.Info != nil {
+	if data.Info != nil && data.InfoAvailable && data.CPUAvailable {
 		ch <- prometheus.MustNewConstMetric(
 			c.systemInfo,
 			prometheus.GaugeValue,

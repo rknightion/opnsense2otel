@@ -171,6 +171,11 @@ type SystemResources struct {
 	Disks  []SystemDisk
 	Swaps  []SystemSwap
 	Info   *SystemInfo
+
+	// InfoAvailable and CPUAvailable report successful label-source fetches,
+	// independently of whether those responses contain empty fields.
+	InfoAvailable bool
+	CPUAvailable  bool
 }
 
 // parseHumanBytes parses strings like "876G", "17M", "512K" to bytes.
@@ -514,6 +519,7 @@ func (c *Client) fetchSystemInfo(data *SystemResources) *APICallError {
 		data.Info = &SystemInfo{}
 	}
 
+	data.InfoAvailable = true
 	data.Info.Hostname = resp.Name
 
 	if len(resp.Versions) > 0 {
@@ -572,6 +578,7 @@ func (c *Client) fetchCPUType(data *SystemResources) *APICallError {
 		data.Info = &SystemInfo{}
 	}
 
+	data.CPUAvailable = true
 	if len(resp) > 0 {
 		raw := resp[0]
 
