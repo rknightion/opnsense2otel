@@ -21,6 +21,74 @@ import (
 	"github.com/rknightion/opnsense2otel/v5/internal/logship"
 )
 
+// failingAcceptListener simulates a persistent local accept failure.
+type failingAcceptListener struct {
+	calls chan time.Time
+}
+
+func (f *failingAcceptListener) Accept() (net.Conn, error) {
+	select {
+	case f.calls <- time.Now():
+	default:
+	}
+	return nil, errors.New("synthetic accept failure")
+}
+func (*failingAcceptListener) Close() error   { return nil }
+func (*failingAcceptListener) Addr() net.Addr { return &net.TCPAddr{} }
+
+func TestAcceptErrorBackoff(t *testing.T) {
+	var backoff errBackoff
+	for i, want := range []time.Duration{5, 10, 20, 40, 80, 160, 320, 640, 1000, 1000} {
+		if got := backoff.next(); got != want*time.Millisecond {
+			t.Errorf("backoff %d = %v, want %v", i, got, want*time.Millisecond)
+		}
+	}
+	backoff.reset()
+	if got := backoff.next(); got != 5*time.Millisecond {
+		t.Errorf("after reset = %v, want 5ms", got)
+	}
+	throttle := NewListener(Config{}, nil, nil, testLogger())
+	for _, key := range []refusalLogKey{refusalUDPRead, refusalTCPAccept, refusalTLSAccept, refusalTCPConnLimit} {
+		if !throttle.logRefusal(key) || throttle.logRefusal(key) {
+			t.Errorf("key %q did not admit exactly one warning", key)
+		}
+	}
+	for _, key := range []refusalLogKey{refusalUDPRead, refusalTCPAccept, refusalTLSAccept} {
+		throttle.refusalLast[key] = time.Now().Add(-refusalLogEvery)
+		if !throttle.logRefusal(key) || throttle.logRefusal(key) {
+			t.Errorf("key %q did not admit exactly one warning in next window", key)
+		}
+	}
+
+	f := &failingAcceptListener{calls: make(chan time.Time, 10000)}
+	var logs bytes.Buffer
+	l := NewListener(Config{}, func([]byte, netip.Addr) {}, nil, slog.New(slog.NewTextHandler(&logs, nil)))
+	l.tlsLn = f
+	done := make(chan struct{})
+	go func() { defer close(done); l.serveTLS() }()
+	var calls []time.Time
+	for len(calls) < 4 {
+		select {
+		case at := <-f.calls:
+			calls = append(calls, at)
+		case <-time.After(time.Second):
+			_ = l.Close()
+			<-done
+			t.Fatal("accept retries did not arrive")
+		}
+	}
+	_ = l.Close()
+	<-done
+	for i, minimum := range []time.Duration{5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond} {
+		if got := calls[i+1].Sub(calls[i]); got < minimum {
+			t.Errorf("retry %d delay = %v, want at least %v", i+1, got, minimum)
+		}
+	}
+	if got := strings.Count(logs.String(), "syslog: TLS accept failed"); got != 1 {
+		t.Errorf("warnings = %d, want 1 per throttle window", got)
+	}
+}
+
 type fakeUDPBufferSocket struct {
 	requested int
 	effective int
@@ -604,28 +672,36 @@ func TestListenerUDPWorkersDrainBeforeRunReturns(t *testing.T) {
 }
 
 func TestListenerTCPDelivers(t *testing.T) {
-	c := newCollector()
-	l := startListener(t, Config{TCPAddr: "127.0.0.1:0"}, c.handle, nil)
-	if l.UDPAddr() != "" {
-		t.Fatalf("UDPAddr = %q, want empty (transport disabled)", l.UDPAddr())
-	}
-
-	conn, err := net.Dial("tcp", l.TCPAddr())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	body := "<134>hello tcp"
-	// Newline framing then octet counting, on the same connection.
-	if _, err := conn.Write([]byte(body + "\n" + strconv.Itoa(len(body)) + " " + body)); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if got := c.await(t, 3*time.Second); got != body {
-		t.Fatalf("first: got %q", got)
-	}
-	if got := c.await(t, 3*time.Second); got != body {
-		t.Fatalf("second: got %q", got)
+	first := "<134>hello tcp\n64 bytes from 192.0.2.1: icmp_seq=0 ttl=64"
+	second := "<134>after"
+	for _, tc := range []struct {
+		name string
+		wire string
+	}{
+		{"newline", first + "\n" + second + "\n"},
+		{"octet", strconv.Itoa(len(first)) + " " + first + strconv.Itoa(len(second)) + " " + second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCollector()
+			l := startListener(t, Config{TCPAddr: "127.0.0.1:0"}, c.handle, nil)
+			if l.UDPAddr() != "" {
+				t.Fatalf("UDPAddr = %q, want empty (transport disabled)", l.UDPAddr())
+			}
+			conn, err := net.Dial("tcp", l.TCPAddr())
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer func() { _ = conn.Close() }()
+			if _, err := conn.Write([]byte(tc.wire)); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if got := c.await(t, 3*time.Second); got != first {
+				t.Fatalf("first: got %q, want %q", got, first)
+			}
+			if got := c.await(t, 3*time.Second); got != second {
+				t.Fatalf("second: got %q, want %q", got, second)
+			}
+		})
 	}
 }
 

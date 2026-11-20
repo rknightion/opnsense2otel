@@ -2,10 +2,13 @@ package opnsense
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -322,6 +325,106 @@ func TestFetchGateways_ServerError(t *testing.T) {
 	}
 }
 
+func TestParseGatewayStatusWarnsOncePerValue(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var warnings gatewayStatusWarnings
+	check := func(status string, tracker *gatewayStatusWarnings, level string) {
+		t.Helper()
+		logs.Reset()
+		if got := parseGatewayStatus(status, logger, status, tracker); got != GatewayStatusUnknown {
+			t.Fatalf("status %q: got %d, want unknown", status, got)
+		}
+		var record struct {
+			Level   string `json:"level"`
+			Message string `json:"msg"`
+			Status  string `json:"status"`
+		}
+		if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
+			t.Fatalf("decode log: %v", err)
+		}
+		if record.Level != level || record.Message != "unknown gateway status detected" || record.Status != status {
+			t.Errorf("unexpected log: %+v, want level %s and status %q", record, level, status)
+		}
+	}
+	check("synthetic status 0", &warnings, "WARN")
+	check("synthetic status 0", &warnings, "DEBUG")
+	for i := 1; i < 32; i++ {
+		check(fmt.Sprintf("synthetic status %d", i), &warnings, "WARN")
+	}
+	check("synthetic status 32", &warnings, "DEBUG")
+	check("synthetic status 32", &warnings, "DEBUG")
+	check("synthetic status 0", &warnings, "DEBUG")
+	check("synthetic nil status", nil, "WARN")
+	check("synthetic nil status", nil, "WARN")
+}
+
+func TestFetchGatewaysUnknownStatusWarningAcrossPolls(t *testing.T) {
+	processGatewayStatusWarnings.mu.Lock()
+	previous := processGatewayStatusWarnings.seen
+	processGatewayStatusWarnings.seen = nil
+	processGatewayStatusWarnings.mu.Unlock()
+	t.Cleanup(func() {
+		processGatewayStatusWarnings.mu.Lock()
+		processGatewayStatusWarnings.seen = previous
+		processGatewayStatusWarnings.mu.Unlock()
+	})
+
+	server, client := newTestClientWithServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"rows":[{"status":"synthetic poll status","disabled":true}]}`))
+	})
+	defer server.Close()
+	var logs bytes.Buffer
+	client.log = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	for i := 0; i < 2; i++ {
+		data, err := client.FetchGateways()
+		if err != nil || len(data.Gateways) != 1 || data.Gateways[0].Status != GatewayStatusUnknown {
+			t.Fatalf("poll %d: data=%+v error=%v", i, data, err)
+		}
+	}
+	counts := map[string]int{}
+	decoder := json.NewDecoder(&logs)
+	for decoder.More() {
+		var record struct {
+			Level  string `json:"level"`
+			Status string `json:"status"`
+		}
+		if err := decoder.Decode(&record); err != nil {
+			t.Fatal(err)
+		}
+		if record.Status == "synthetic poll status" {
+			counts[record.Level]++
+		}
+	}
+	if counts["WARN"] != 1 || counts["DEBUG"] != 1 {
+		t.Errorf("expected one warning and one debug for status, got %v", counts)
+	}
+}
+
+func TestGatewayStatusWarningsConcurrent(t *testing.T) {
+	var warnings gatewayStatusWarnings
+	var wg sync.WaitGroup
+	results := make(chan bool, 64)
+	for i := 0; i < cap(results); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- warnings.first("synthetic concurrent status")
+		}()
+	}
+	wg.Wait()
+	close(results)
+	first := 0
+	for result := range results {
+		if result {
+			first++
+		}
+	}
+	if first != 1 {
+		t.Errorf("got %d first sightings, want 1", first)
+	}
+}
+
 func TestParseGatewayStatus(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	tests := []struct {
@@ -342,7 +445,7 @@ func TestParseGatewayStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseGatewayStatus(tt.in, logger, tt.in)
+			got := parseGatewayStatus(tt.in, logger, tt.in, nil)
 			if got != tt.want {
 				t.Errorf("parseGatewayStatus(%q) = %d, want %d", tt.in, got, tt.want)
 			}

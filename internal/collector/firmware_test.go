@@ -94,6 +94,36 @@ func TestFirmwareCollector_Update(t *testing.T) {
 	}
 }
 
+func TestFirmwareCollectorOmitsUnknownLastCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       float64
+	}{
+		{"missing", `{"status":"none"}`, 0},
+		{"invalid", `{"last_check":"not a timestamp","status":"ok"}`, 0},
+		{"epoch", `{"last_check":"1970-01-01T00:00:00Z","status":"ok"}`, 0},
+		{"before epoch", `{"last_check":"1969-12-31T23:59:59Z","status":"ok"}`, 0},
+		{"valid", `{"last_check":"2024-01-15T10:30:00Z","status":"ok"}`, 1705314600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := firmwareCheckMetrics(t, tc.body)
+			got := firmwareMetricsByName(metrics, "opnsense_firmware_last_check_timestamp_seconds")
+			if tc.want == 0 {
+				if len(got) != 0 {
+					t.Errorf("unknown last check must be absent, got %d series", len(got))
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("expected one last check series, got %d", len(got))
+			}
+			if value := getMetricValue(got[0]); value != tc.want {
+				t.Errorf("last check = %v, want %v", value, tc.want)
+			}
+		})
+	}
+}
+
 func TestFirmwareCollector_Update_StatusNone(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{
@@ -109,10 +139,10 @@ func TestFirmwareCollector_Update_StatusNone(t *testing.T) {
 
 	metrics := collectMetrics(t, c, client)
 
-	// No stored check: only the 10 unconditional metrics. The #373/#380
-	// check-health series are deliberately absent — see
+	// No stored check: 9 metrics remain; the unknown last-check timestamp
+	// is absent, as are the #373/#380 check-health series — see
 	// TestFirmwareCollector_NoStoredCheckEmitsNoCheckSeries.
-	expectedCount := 10
+	expectedCount := 9
 	if len(metrics) != expectedCount {
 		t.Errorf("expected %d metrics, got %d", expectedCount, len(metrics))
 	}
