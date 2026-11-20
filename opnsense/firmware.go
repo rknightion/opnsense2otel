@@ -346,6 +346,9 @@ func parseLastCheckTimestamp(raw string) float64 {
 	if err == nil {
 		return float64(t.UTC().Unix())
 	}
+	if numeric, exact, parseErr := parseOPNsenseTime(time.UnixDate, raw); exact && parseErr == nil {
+		return float64(numeric.Unix())
+	}
 	// OPNsense 25.x+ emits e.g. "Tue Jun  9 10:13:17 BST 2026" (time.UnixDate).
 	// ParseInLocation with UTC keeps the result deterministic regardless of
 	// the host's timezone (plain time.Parse resolves abbreviations like "BST"

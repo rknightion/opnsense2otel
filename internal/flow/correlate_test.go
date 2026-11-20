@@ -1,9 +1,12 @@
 package flow
 
 import (
+	"fmt"
 	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/rknightion/opnsense2otel/v5/internal/options"
 )
 
 // baseNF builds a minimal NetFlow-side record for a given community id, byte count and
@@ -380,6 +383,22 @@ func TestCorrelator_ZenarmorOnlyNeverEmits(t *testing.T) {
 	c.Flush()
 	if len(sink.recs) != 0 {
 		t.Fatalf("Zenarmor-only must never emit, got %d", len(sink.recs))
+	}
+}
+
+func TestCorrelatorNotFedWithoutNetflow(t *testing.T) {
+	cfg := options.FlowConfig{Correlate: true, NetflowEnabled: false}
+	c, sink := newCorr(t, cfg.CorrelationActive(), 3*time.Minute, 50000)
+	t0 := time.Unix(1_700_000_000, 0)
+	for i := 0; i < 1000; i++ {
+		c.Observe(baseZen(fmt.Sprintf("cid-%d", i), 100, t0, t0))
+	}
+	if st := c.Stats(); st.Entries != 0 || st.Emitted != 0 {
+		t.Errorf("stats after Zenarmor records = %+v, want zero entries and emissions", st)
+	}
+	c.Expire(t0.Add(4 * time.Minute))
+	if len(sink.recs) != 0 || c.Stats().Emitted != 0 {
+		t.Errorf("Zenarmor records emitted: sink=%d stats=%+v", len(sink.recs), c.Stats())
 	}
 }
 

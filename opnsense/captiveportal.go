@@ -285,10 +285,16 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 	}
 	data.Present = true
 
+	groupsClient, vouchersClient := *c, *c
+	if c.observer != nil {
+		groupsClient.observer = requestObserverAtPath{observer: c.observer, path: string(groupsBase)}
+		vouchersClient.observer = requestObserverAtPath{observer: c.observer, path: string(vouchersBase)}
+	}
+
 	for _, provider := range providers {
 		groupsPath := EndpointPath(string(groupsBase) + "/" + url.PathEscape(provider))
 		var groups []string
-		if err := c.do("GET", groupsPath, nil, &groups); err != nil {
+		if err := groupsClient.do("GET", groupsPath, nil, &groups); err != nil {
 			c.log.Debug("captiveportal voucher groups call failed for provider; skipping",
 				"component", "opnsense-client",
 				"provider", provider,
@@ -299,7 +305,7 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 		for _, group := range groups {
 			vouchersPath := EndpointPath(string(vouchersBase) + "/" + url.PathEscape(provider) + "/" + url.PathEscape(group))
 			var rows []captivePortalVoucherRow
-			if err := c.do("GET", vouchersPath, nil, &rows); err != nil {
+			if err := vouchersClient.do("GET", vouchersPath, nil, &rows); err != nil {
 				c.log.Debug("captiveportal list_vouchers call failed for group; skipping",
 					"component", "opnsense-client",
 					"provider", provider,

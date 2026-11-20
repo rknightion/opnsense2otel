@@ -341,6 +341,125 @@ func TestListener_BindFailureIsAStartupError(t *testing.T) {
 	}
 }
 
+func TestListenerReadErrorDoesNotEndServe(t *testing.T) {
+	transient := errors.New("transient")
+	var wait time.Duration
+	for _, want := range []time.Duration{5, 10, 20, 40, 80, 160, 320, 640, 1000, 1000} {
+		stop, next := readErrorAction(transient, false, wait)
+		if stop || next != want*time.Millisecond {
+			t.Fatalf("after %v: stop=%v wait=%v, want continue and %vms", wait, stop, next, want)
+		}
+		wait = next
+	}
+	if stop, next := readErrorAction(transient, false, 0); stop || next != 5*time.Millisecond {
+		t.Fatalf("after successful read reset: stop=%v wait=%v", stop, next)
+	}
+	for _, tc := range []struct {
+		err     error
+		closing bool
+	}{{transient, true}, {net.ErrClosed, false}, {errors.Join(transient, net.ErrClosed), false}} {
+		if stop, _ := readErrorAction(tc.err, tc.closing, wait); !stop {
+			t.Fatalf("expected stop for err=%v closing=%v", tc.err, tc.closing)
+		}
+	}
+
+	dec := &fakeDecoder{}
+	var logs bytes.Buffer
+	l := NewListener(ListenerConfig{Addr: "127.0.0.1:0"}, dec, nil, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err := l.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	if err := l.conn.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { l.Serve(); close(done) }()
+	waitFor(t, "repeated read errors", func() bool { return l.Stats().ReadErrors >= 2 })
+	if err := l.conn.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	send(t, l.Addr(), []byte("after-error"))
+	waitFor(t, "datagram after read error", func() bool { return dec.count() == 1 })
+	select {
+	case <-done:
+		t.Fatal("Serve stopped after a transient read error")
+	default:
+	}
+	// Repeated timeouts build a long backoff; Close must interrupt it.
+	if err := l.conn.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	before := l.Stats().ReadErrors
+	waitFor(t, "backoff growth", func() bool { return l.Stats().ReadErrors >= before+8 })
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Serve did not stop promptly during backoff")
+	}
+	if got := strings.Count(logs.String(), "NetFlow read error"); got != 1 {
+		t.Fatalf("read error warnings = %d, want 1: %s", got, logs.String())
+	}
+}
+
+func TestListenerReadWarningIsIndependentAndOmitsEndpoint(t *testing.T) {
+	for _, saturated := range []bool{false, true} {
+		name := "unsaturated"
+		if saturated {
+			name = "saturated"
+		}
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			l := NewListener(ListenerConfig{Addr: "127.0.0.1:0"}, &fakeDecoder{}, nil, slog.New(slog.NewTextHandler(&logs, nil)))
+			if err := l.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = l.Close() })
+			if saturated {
+				for i := 0; i <= maxNoticeKeys; i++ {
+					l.notices.allow(Unidentified{Kind: UnidentifiedField, Detail: uint16(i)}, time.Now())
+				}
+			}
+			if err := l.conn.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			_, _, err := l.conn.ReadFromUDPAddrPort(make([]byte, 1))
+			var opErr *net.OpError
+			if !errors.As(err, &opErr) || opErr.Err == nil {
+				t.Fatalf("expected UDP operation error, got %v", err)
+			}
+			endpoint := l.Addr()
+			if !strings.Contains(err.Error(), endpoint) {
+				t.Fatalf("test requires a read error containing its bound endpoint: %v", err)
+			}
+			done := make(chan struct{})
+			go func() { l.Serve(); close(done) }()
+			waitFor(t, "repeated read errors", func() bool { return l.Stats().ReadErrors >= 2 })
+			if err := l.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("Serve did not stop")
+			}
+			output := logs.String()
+			if got := strings.Count(output, "NetFlow read error"); got != 1 {
+				t.Errorf("read warnings = %d, want 1: %q", got, output)
+			}
+			if strings.Contains(output, endpoint) {
+				t.Errorf("warning exposes bound endpoint: %q", output)
+			}
+			if !strings.Contains(output, opErr.Err.Error()) {
+				t.Errorf("warning lacks underlying socket cause: %q", output)
+			}
+		})
+	}
+}
+
 func TestListener_CloseIsIdempotentAndStopsServe(t *testing.T) {
 	l := newTestListener(t, ListenerConfig{}, &fakeDecoder{}, func(*Datagram, netip.Addr) {})
 	if err := l.Close(); err != nil {

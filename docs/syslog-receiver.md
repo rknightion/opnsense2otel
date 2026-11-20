@@ -53,6 +53,7 @@ ports:
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--logs.syslog.enabled` | `false` | Enables the receiver. Also needs `--logs.enabled`. |
+| `--logs.syslog.legacy-timezone` | *(process timezone)* | IANA timezone for legacy BSD timestamps; also settable with `OPN2OTEL_LOGS_SYSLOG_LEGACY_TIMEZONE`. |
 | `--logs.syslog.listen-udp` | `:5514` | Empty disables the UDP listener. |
 | `--logs.syslog.listen-tcp` | `:5514` | Empty disables the TCP listener. |
 | `--logs.syslog.listen-tls` | *(none)* | TLS listen address (OPNsense `tls4`/`tls6`). Empty disables it. Needs the cert/key flags below. See [TLS transport](#tls-transport-optional). |
@@ -98,7 +99,11 @@ the highest-volume stream on the box and the one most worth not losing.
 **Tick rfc5424.** OPNsense leaves this **off** by default, which sends the legacy BSD
 format. The receiver parses both, so it will work either way - but RFC5424 carries a
 proper timestamp with a UTC offset, where the legacy format has no year at all and
-must be inferred.
+must be inferred. Legacy timestamps also carry no timezone. Set
+`--logs.syslog.legacy-timezone` to the firewall's IANA timezone (for example,
+`Europe/Paris`) when it differs from the exporter's process timezone. An empty value
+keeps the process timezone; an invalid name fails startup when the receiver is enabled.
+RFC5424 uses its own offset.
 
 ## Filtering (optional, off by default)
 

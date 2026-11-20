@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -116,6 +117,132 @@ func TestPollCollectorSkipsWhenUnreachable(t *testing.T) {
 	c.pollCollector(context.Background(), fake)
 	if fake.callCount() != 0 {
 		t.Errorf("poll must skip Update while the box is unreachable, got %d calls", fake.callCount())
+	}
+}
+
+func startTestCollectorPoller(t *testing.T, c *Collector, coll CollectorInstance, interval time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	c.pollSem = make(chan struct{}, 1)
+	c.pollWG.Add(1)
+	go c.runCollectorPoller(ctx, coll, interval)
+	t.Cleanup(func() {
+		cancel()
+		c.StopPolling()
+	})
+	return ctx
+}
+
+func TestSkippedPollRunsOnRecovery(t *testing.T) {
+	t.Run("skipped", func(t *testing.T) {
+		fake := &intervalFake{fakeCollectorInstance: fakeCollectorInstance{name: "fake"}, d: IntervalCold}
+		c := newScrapeTestCollector(t, newCollectorTestClient(t, healthOKServer(t)), fake)
+		c.unreachable.Store(true)
+		ctx := startTestCollectorPoller(t, c, fake, IntervalCold)
+
+		time.Sleep(coldStartJitterCap)
+		if c.store.entry(fake.Name()).nextDeadline.IsZero() {
+			t.Fatal("poller did not start within the startup jitter cap")
+		}
+		if got := fake.callCount(); got != 0 {
+			t.Fatalf("Update calls while unreachable = %d, want 0", got)
+		}
+
+		c.pollHealth(ctx)
+		if h := c.HealthSnapshot(); !h.CheckOK || h.Unreachable {
+			t.Fatalf("health probe did not close the circuit: %+v", h)
+		}
+		deadline := time.Now().Add(coldStartJitterCap + 250*time.Millisecond)
+		for !c.SnapshotWarm() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := fake.callCount(); got != 1 || !c.SnapshotWarm() {
+			t.Fatalf("after recovery within the jitter cap: Update calls = %d, warm = %v; want 1, true", got, c.SnapshotWarm())
+		}
+	})
+	t.Run("not skipped", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			fake := &intervalFake{fakeCollectorInstance: fakeCollectorInstance{name: "fake"}, d: IntervalCold}
+			c := newScrapeTestCollector(t, &opnsense.Client{}, fake)
+			startTestCollectorPoller(t, c, fake, IntervalCold)
+			time.Sleep(coldStartJitterCap)
+			synctest.Wait()
+			if got := fake.callCount(); got != 1 {
+				t.Fatalf("Update calls before outage = %d, want 1", got)
+			}
+
+			// No scheduled tick (and hence no skip) occurs during this outage.
+			c.unreachable.Store(true)
+			c.markReachable()
+			time.Sleep(coldStartJitterCap)
+			synctest.Wait()
+			if got := fake.callCount(); got != 1 {
+				t.Errorf("Update calls after recovery without a skip = %d, want 1", got)
+			}
+		})
+	})
+}
+
+func TestRecoveryPollCoalescesScheduledTick(t *testing.T) {
+	const interval = 2 * coldStartJitterCap
+	for _, tc := range []struct {
+		name  string
+		delay time.Duration
+	}{
+		{name: "tick during jitter"},
+		{name: "tick during recovery poll", delay: interval},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				fake := &fakeCollectorInstance{name: "fake", delay: tc.delay}
+				c := newScrapeTestCollector(t, &opnsense.Client{}, fake)
+				c.maxScrapeDuration = 2 * interval
+				c.unreachable.Store(true)
+				startTestCollectorPoller(t, c, fake, interval)
+				time.Sleep(coldStartJitterCap)
+				synctest.Wait()
+				tick := c.store.entry(fake.Name()).nextDeadline
+				if tick.IsZero() || fake.callCount() != 0 {
+					t.Fatal("initial attempt must be skipped with the ticker running")
+				}
+
+				if tc.delay == 0 {
+					// Recover just before the tick so it fires during recovery jitter.
+					time.Sleep(time.Until(tick) - time.Nanosecond)
+					c.markReachable()
+					synctest.Wait() // let the poller receive recovery before the tick
+					time.Sleep(time.Nanosecond)
+					synctest.Wait()
+					if got := fake.callCount(); got != 1 {
+						t.Errorf("scheduled tick during jitter: Update calls = %d, want 1", got)
+					}
+				} else {
+					// Recover early enough to enter Update before the tick, then hold
+					// the poll for a full interval so the tick lands while it is busy.
+					c.markReachable()
+					time.Sleep(coldStartJitterCap)
+					synctest.Wait()
+					if !time.Now().Before(tick) || fake.callCount() != 1 {
+						t.Fatal("recovery poll must start before the scheduled tick")
+					}
+				}
+
+				next := tick.Add(interval)
+				time.Sleep(time.Until(next) - time.Nanosecond)
+				synctest.Wait()
+				if got := fake.callCount(); got != 1 {
+					t.Errorf("Update calls before the next scheduled tick = %d, want 1", got)
+				}
+				if got := c.store.entry(fake.Name()).nextDeadline; !got.Equal(next) {
+					t.Errorf("next scheduled deadline = %v, want original cadence at %v", got, next)
+				}
+				time.Sleep(time.Nanosecond)
+				synctest.Wait()
+				if got := fake.callCount(); got != 2 {
+					t.Errorf("Update calls at the next scheduled tick = %d, want 2", got)
+				}
+			})
+		})
 	}
 }
 

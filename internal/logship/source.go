@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/opnsense2otel/v5/internal/flow"
 	"github.com/rknightion/opnsense2otel/v5/internal/logship/capture"
 	"github.com/rknightion/opnsense2otel/v5/internal/logship/enrich"
+	"github.com/rknightion/opnsense2otel/v5/internal/options"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
@@ -84,8 +85,13 @@ type ExtraSourceNames interface {
 // logship cannot import it back. Handing over a Registerer lets each source
 // package own and register its own metrics without a cycle.
 type Deps struct {
-	Client *opnsense.Client
-	Logger *slog.Logger
+	// SyslogConfigResolved indicates that SyslogConfig and SyslogEnabled came from
+	// startup validation. When false, the syslog factory resolves its own options.
+	SyslogConfigResolved bool
+	SyslogEnabled        bool
+	SyslogConfig         *options.SyslogConfig
+	Client               *opnsense.Client
+	Logger               *slog.Logger
 	// AfterSourcesStopped runs during pipeline shutdown after every poll and push
 	// source has returned, but before the queue is closed and drained. main uses
 	// this lifecycle seam to quiesce external NetFlow producers and flush their

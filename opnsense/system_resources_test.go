@@ -7,6 +7,41 @@ import (
 	"time"
 )
 
+// SystemController::systemTimeAction builds these with date("D M j G:i:s T Y").
+// The four-digit offsets follow PHP's documented T behaviour; they are not captures.
+func TestFetchSystemTimeNumericZone(t *testing.T) {
+	for _, tc := range []struct {
+		zone   string
+		offset int
+	}{{"+0545", 20700}, {"-0930", -34200}, {"+03", 10800}, {"garbage", 0}} {
+		t.Run(tc.zone, func(t *testing.T) {
+			server, mux, client := newTestClientWithMux(t)
+			defer server.Close()
+			mux.HandleFunc("/api/diagnostics/system/systemTime", func(w http.ResponseWriter, _ *http.Request) {
+				if tc.zone == "garbage" {
+					fmt.Fprint(w, `{"boottime":"garbage","datetime":"garbage","config":"garbage","loadavg":"0.12, 0.34, 0.56"}`)
+					return
+				}
+				fmt.Fprintf(w, `{"boottime":"Tue Nov 10 9:04:05 %s 2026","datetime":"Tue Nov 10 10:04:05 %s 2026","config":"Tue Nov 10 9:34:05 %s 2026"}`, tc.zone, tc.zone, tc.zone)
+			})
+			var data SystemResources
+			if err := client.fetchSystemTime(&data); err != nil {
+				t.Fatal(err)
+			}
+			if tc.zone == "garbage" {
+				if data.Time.UptimeAvailable || data.Time.BootTimestamp != 0 || data.Time.ConfigLastChange != 0 {
+					t.Fatalf("invalid timestamps: %+v", data.Time)
+				}
+				return
+			}
+			boot := float64(time.Date(2026, 11, 10, 9, 4, 5, 0, time.FixedZone("", tc.offset)).Unix())
+			if !data.Time.UptimeAvailable || data.Time.BootTimestamp != boot || data.Time.ConfigLastChange != boot+1800 || data.Time.Uptime != 3600 {
+				t.Errorf("got %+v, want boot %v, config %v, uptime 3600", data.Time, boot, boot+1800)
+			}
+		})
+	}
+}
+
 func TestParseHumanBytes(t *testing.T) {
 	tests := []struct {
 		name     string

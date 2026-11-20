@@ -98,10 +98,10 @@ type SystemMemory struct {
 }
 
 type SystemTime struct {
-	// Available is true only when the systemTime sub-call succeeded. Uptime and
-	// LoadAverage come solely from that call; the collector gates them on this so
-	// a partial fetch does not emit uptime=0 (reads as a host reboot) (#91).
+	// Available indicates that the systemTime call succeeded; UptimeAvailable
+	// additionally requires a parseable boottime.
 	Available        bool
+	UptimeAvailable  bool
 	Uptime           float64
 	LoadAverage      [3]float64
 	ConfigLastChange float64
@@ -179,6 +179,32 @@ func parseHumanBytes(s string) int64 {
 }
 
 const opnsenseTimeFormat = "Mon Jan 2 15:04:05 MST 2006"
+
+func parseOPNsenseTime(layout, value string) (time.Time, bool, error) {
+	fields := strings.Fields(value)
+	if len(fields) >= 2 {
+		zone := fields[len(fields)-2]
+		if (len(zone) == 3 || len(zone) == 5) && (zone[0] == '+' || zone[0] == '-') {
+			digits := true
+			for _, ch := range zone[1:] {
+				if ch < '0' || ch > '9' {
+					digits = false
+					break
+				}
+			}
+			if digits {
+				format := "-07"
+				if len(zone) == 5 {
+					format = "-0700"
+				}
+				t, err := time.Parse(strings.Replace(layout, "MST", format, 1), value)
+				return t, true, err
+			}
+		}
+	}
+	t, err := time.Parse(layout, value)
+	return t, false, err
+}
 
 // dstAbbrevOffset maps the timezone abbreviations OPNsense commonly renders (via
 // PHP's date('T', ts), i.e. the abbreviation in effect at each timestamp) to
@@ -295,9 +321,9 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	}
 	data.Time.Available = true
 
-	// OPNsense renders these timestamps with only a timezone abbreviation
-	// (PHP date('T', ts) — the abbreviation in effect AT each timestamp), not a
-	// numeric offset. time.Parse can only resolve an abbreviation to a real UTC
+	// PHP date('T', ts) may render a numeric offset or an abbreviation in
+	// effect at each timestamp. Numeric offsets are exact. time.Parse can only
+	// resolve an abbreviation to a real UTC
 	// offset when the exporter's own TZ matches the box's zone; under the common
 	// container TZ=UTC it fabricates a zero-offset zone. When boottime and
 	// datetime (or config) straddle a DST transition they carry DIFFERENT
@@ -308,14 +334,17 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	// Residual caveat: for a box in an unlisted/ambiguous zone scraped across a
 	// DST boundary, up to a ±1h skew can remain (#107).
 	now := time.Now()
-	bootTime, errBoot := time.Parse(opnsenseTimeFormat, resp.Boottime)
-	dateTime, errDate := time.Parse(opnsenseTimeFormat, resp.Datetime)
-	configTime, errConfig := time.Parse(opnsenseTimeFormat, resp.Config)
+	bootTime, exactBoot, errBoot := parseOPNsenseTime(opnsenseTimeFormat, resp.Boottime)
+	dateTime, exactDate, errDate := parseOPNsenseTime(opnsenseTimeFormat, resp.Datetime)
+	configTime, exactConfig, errConfig := parseOPNsenseTime(opnsenseTimeFormat, resp.Config)
+	data.Time.UptimeAvailable = errBoot == nil
 
 	// Uptime: datetime - boottime, corrected for any DST transition between them.
 	// Fall back to comparing boottime against the exporter clock if datetime is
 	// unavailable.
 	switch {
+	case errDate == nil && errBoot == nil && exactDate && exactBoot:
+		data.Time.Uptime = dateTime.Sub(bootTime).Seconds()
 	case errDate == nil && errBoot == nil:
 		data.Time.Uptime = dstCorrectedDiffSeconds(dateTime, bootTime)
 	case errBoot == nil:
@@ -327,7 +356,9 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	// the DST-corrected uptime to the exporter clock, which cancels the box's base
 	// offset; only fall back to the raw parse when there is nothing else, since
 	// that one carries the full unresolved-offset error (#421).
-	if abs, ok := absUnixFromAbbrev(bootTime, errBoot); ok {
+	if exactBoot && errBoot == nil {
+		data.Time.BootTimestamp = float64(bootTime.Unix())
+	} else if abs, ok := absUnixFromAbbrev(bootTime, errBoot); ok {
 		data.Time.BootTimestamp = float64(abs)
 	} else {
 		switch {
@@ -343,7 +374,9 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	// abbreviation (DST-correct and independent of the exporter clock). When the
 	// abbreviation is unknown, fall back to the DST-corrected age anchored to the
 	// exporter clock, which cancels the box's base offset.
-	if abs, ok := absUnixFromAbbrev(configTime, errConfig); ok {
+	if exactConfig && errConfig == nil {
+		data.Time.ConfigLastChange = float64(configTime.Unix())
+	} else if abs, ok := absUnixFromAbbrev(configTime, errConfig); ok {
 		data.Time.ConfigLastChange = float64(abs)
 	} else {
 		switch {

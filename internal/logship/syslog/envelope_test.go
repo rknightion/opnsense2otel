@@ -5,6 +5,35 @@ import (
 	"time"
 )
 
+func TestParseEnvelopeRFC3164UsesConfiguredZone(t *testing.T) {
+	loc := time.FixedZone("sender", 2*60*60)
+	now := time.Date(2026, 12, 31, 23, 30, 0, 0, time.UTC)
+	line := []byte("<134>Jan  1 01:20:00 firewall app: message")
+	for _, tc := range []struct {
+		name string
+		loc  *time.Location
+		want time.Time
+	}{
+		{"configured", loc, time.Date(2027, 1, 1, 1, 20, 0, 0, loc)},
+		{"default", nil, time.Date(2027, 1, 1, 1, 20, 0, 0, time.UTC)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseEnvelopeIn(line, now, tc.loc)
+			if err != nil || !got.Timestamp.Equal(tc.want) {
+				t.Fatalf("timestamp = %v, err = %v; want %v", got.Timestamp, err, tc.want)
+			}
+		})
+	}
+	modern := []byte("<134>1 2026-12-31T23:20:00-03:00 firewall app - - - message")
+	want := time.Date(2027, 1, 1, 2, 20, 0, 0, time.UTC)
+	for _, zone := range []*time.Location{nil, loc} {
+		got, err := ParseEnvelopeIn(modern, now, zone)
+		if err != nil || !got.Timestamp.Equal(want) {
+			t.Fatalf("RFC5424 timestamp = %v, err = %v; want %v", got.Timestamp, err, want)
+		}
+	}
+}
+
 func TestParseEnvelope(t *testing.T) {
 	now := time.Date(2026, 7, 14, 20, 0, 0, 0, time.UTC)
 

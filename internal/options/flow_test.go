@@ -10,6 +10,32 @@ import (
 // A flag that quietly does nothing looks exactly like a quiet network, so every
 // incoherent combination is a startup error rather than a silent no-op — the same
 // rule --logs.zenarmor.families validation already follows.
+func TestFlowConfigCorrelationActive(t *testing.T) {
+	for _, tc := range []struct {
+		correlate, netflow, want bool
+	}{
+		{false, false, false}, {false, true, false},
+		{true, false, false}, {true, true, true},
+	} {
+		c := FlowConfig{Correlate: tc.correlate, NetflowEnabled: tc.netflow}
+		if got := c.CorrelationActive(); got != tc.want {
+			t.Errorf("Correlate=%t NetflowEnabled=%t: got %t, want %t", tc.correlate, tc.netflow, got, tc.want)
+		}
+	}
+
+	defaults := map[string]string{}
+	for _, f := range kingpin.CommandLine.Model().Flags {
+		defaults[f.Name] = strings.Join(f.Default, ",")
+	}
+	if defaults["flow.correlate"] != "true" || defaults["flow.netflow.enabled"] != "false" {
+		t.Fatalf("unexpected correlation defaults: correlate=%q netflow=%q", defaults["flow.correlate"], defaults["flow.netflow.enabled"])
+	}
+	c := FlowConfig{Correlate: defaults["flow.correlate"] == "true", NetflowEnabled: defaults["flow.netflow.enabled"] == "true"}
+	if c.CorrelationActive() {
+		t.Error("correlation must be inactive with shipped defaults")
+	}
+}
+
 func TestFlowConfig_RejectsNetflowWithoutFlowEnabled(t *testing.T) {
 	c := FlowConfig{Enabled: false, NetflowEnabled: true, TopN: 1000, MaxKeys: 2500}
 	if err := c.Validate(); err == nil {

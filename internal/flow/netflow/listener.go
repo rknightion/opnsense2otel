@@ -217,6 +217,20 @@ func (l *Listener) Addr() string {
 	return l.conn.LocalAddr().String()
 }
 
+// readErrorAction determines whether a read error ends the loop and the retry delay.
+func readErrorAction(err error, closing bool, previous time.Duration) (bool, time.Duration) {
+	if closing || errors.Is(err, net.ErrClosed) {
+		return true, 0
+	}
+	if previous == 0 {
+		return false, 5 * time.Millisecond
+	}
+	if previous >= 500*time.Millisecond {
+		return false, time.Second
+	}
+	return false, previous * 2
+}
+
 // Serve runs the read loop until Close. It returns when the socket is closed.
 func (l *Listener) Serve() {
 	if l.conn == nil {
@@ -228,18 +242,44 @@ func (l *Listener) Serve() {
 	}
 
 	buf := make([]byte, maxDatagram)
+	var backoff time.Duration
+	var lastReadWarning time.Time
+readLoop:
 	for {
 		n, from, err := l.conn.ReadFromUDPAddrPort(buf)
 		if err != nil {
+			closing := false
 			select {
 			case <-l.closing:
+				closing = true
 			default:
-				l.readErrs.Add(1)
 			}
-			// A closed socket is the ordinary shutdown path; anything else is still
-			// terminal for the read loop, because a UDP socket does not recover.
-			break
+			stop, wait := readErrorAction(err, closing, backoff)
+			if stop {
+				break
+			}
+			l.readErrs.Add(1)
+			now := time.Now()
+			if lastReadWarning.IsZero() || now.Sub(lastReadWarning) >= unidentifiedLogInterval {
+				// UDP operation errors include the bound address; log only the socket cause.
+				var opErr *net.OpError
+				if errors.As(err, &opErr) && opErr.Err != nil {
+					err = opErr.Err
+				}
+				l.log.Warn("NetFlow read error", "err", err)
+				lastReadWarning = now
+			}
+			backoff = wait
+			timer := time.NewTimer(wait)
+			select {
+			case <-l.closing:
+				timer.Stop()
+				break readLoop
+			case <-timer.C:
+			}
+			continue
 		}
+		backoff = 0
 		peer := from.Addr().Unmap()
 		if !l.allowed(peer) {
 			l.peerRejected.Add(1)
