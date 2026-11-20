@@ -51,6 +51,55 @@ func wantTokens(t *testing.T, got []string, want ...string) {
 	}
 }
 
+func TestFrameSplitterNewlineModeIsSticky(t *testing.T) {
+	lines := []string{"<134>first", "64 bytes from 192.0.2.1: icmp_seq=0 ttl=64", "<134>second", "<134>third"}
+	long := append([]string{"<134>first", "12345678 continuation"}, make([]string, 2000)...)
+	for i := 2; i < len(long); i++ {
+		long[i] = "<134>good"
+	}
+	for _, tc := range []struct {
+		name    string
+		lines   []string
+		oneByte bool
+	}{
+		{"four lines", lines, false},
+		{"four lines split across reads", lines, true},
+		{"many lines", long, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oversized := 0
+			split := newFrameSplitter(func() { oversized++ })
+			var r io.Reader = strings.NewReader(strings.Join(tc.lines, "\n") + "\n")
+			if tc.oneByte {
+				r = iotest.OneByteReader(r)
+			}
+			sc := bufio.NewScanner(r)
+			sc.Split(split.splitFunc())
+			var got []string
+			for sc.Scan() {
+				got = append(got, sc.Text())
+				if split.octet {
+					t.Errorf("frame %d incorrectly flagged octet: %q", len(got), sc.Text())
+				}
+			}
+			if err := sc.Err(); err != nil {
+				t.Fatalf("scanner: %v", err)
+			}
+			if oversized != 0 {
+				t.Errorf("oversized = %d, want 0", oversized)
+			}
+			if len(got) != len(tc.lines) {
+				t.Fatalf("got %d frames, want %d", len(got), len(tc.lines))
+			}
+			for i := range got {
+				if got[i] != tc.lines[i] {
+					t.Errorf("frame %d = %q, want %q", i, got[i], tc.lines[i])
+				}
+			}
+		})
+	}
+}
+
 func TestScanFramesOctetCounting(t *testing.T) {
 	wantTokens(t, scanAll(t, "5 hello6 world!"), "hello", "world!")
 }

@@ -195,6 +195,10 @@ type frameSplitter struct {
 	// ends).
 	lineSkip bool
 
+	// Once a newline-framed syslog header arrives, later lines on this
+	// connection are continuations or headers, not octet-counted frames.
+	newlineOnly bool
+
 	// accum/pending hold a newline-framed line whose terminator has not arrived yet.
 	//
 	// The splitter takes custody of those bytes instead of returning (0, nil, nil)
@@ -288,7 +292,7 @@ func (f *frameSplitter) split(data []byte, atEOF bool) (int, []byte, error) {
 				// bufio.Scanner's token stays valid until the next Scan, so pending must
 				// never be appended to again while the caller may still be reading it.
 				f.pending = nil
-				f.octet = false
+				f.recordToken(body, false)
 				return off, body, nil
 			}
 			if len(f.pending)+len(data) > maxMessageBytes {
@@ -315,12 +319,22 @@ func (f *frameSplitter) split(data []byte, atEOF bool) (int, []byte, error) {
 				if len(body) == 0 {
 					return off, nil, nil
 				}
-				f.octet = false
+				f.recordToken(body, false)
 				return off, body, nil
 			}
 			return off, nil, nil
 		}
-		advance, token, more, oversized, octet, partial := scanFrame(data, atEOF)
+		var advance, more int
+		var token []byte
+		var oversized, octet, partial bool
+		if f.newlineOnly {
+			if len(data) == 0 {
+				return off, nil, nil
+			}
+			advance, token, oversized, partial = scanNewline(data, atEOF)
+		} else {
+			advance, token, more, oversized, octet, partial = scanFrame(data, atEOF)
+		}
 		if oversized {
 			if f.onOversized != nil {
 				f.onOversized()
@@ -343,9 +357,16 @@ func (f *frameSplitter) split(data []byte, atEOF bool) (int, []byte, error) {
 			continue
 		}
 		if token != nil {
-			f.octet = octet
+			f.recordToken(token, octet)
 		}
 		return off + advance, token, nil
+	}
+}
+
+func (f *frameSplitter) recordToken(token []byte, octet bool) {
+	f.octet = octet
+	if !octet && len(token) > 0 && token[0] == '<' {
+		f.newlineOnly = true
 	}
 }
 

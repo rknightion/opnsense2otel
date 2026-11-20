@@ -604,28 +604,36 @@ func TestListenerUDPWorkersDrainBeforeRunReturns(t *testing.T) {
 }
 
 func TestListenerTCPDelivers(t *testing.T) {
-	c := newCollector()
-	l := startListener(t, Config{TCPAddr: "127.0.0.1:0"}, c.handle, nil)
-	if l.UDPAddr() != "" {
-		t.Fatalf("UDPAddr = %q, want empty (transport disabled)", l.UDPAddr())
-	}
-
-	conn, err := net.Dial("tcp", l.TCPAddr())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	body := "<134>hello tcp"
-	// Newline framing then octet counting, on the same connection.
-	if _, err := conn.Write([]byte(body + "\n" + strconv.Itoa(len(body)) + " " + body)); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if got := c.await(t, 3*time.Second); got != body {
-		t.Fatalf("first: got %q", got)
-	}
-	if got := c.await(t, 3*time.Second); got != body {
-		t.Fatalf("second: got %q", got)
+	first := "<134>hello tcp\n64 bytes from 192.0.2.1: icmp_seq=0 ttl=64"
+	second := "<134>after"
+	for _, tc := range []struct {
+		name string
+		wire string
+	}{
+		{"newline", first + "\n" + second + "\n"},
+		{"octet", strconv.Itoa(len(first)) + " " + first + strconv.Itoa(len(second)) + " " + second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCollector()
+			l := startListener(t, Config{TCPAddr: "127.0.0.1:0"}, c.handle, nil)
+			if l.UDPAddr() != "" {
+				t.Fatalf("UDPAddr = %q, want empty (transport disabled)", l.UDPAddr())
+			}
+			conn, err := net.Dial("tcp", l.TCPAddr())
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer func() { _ = conn.Close() }()
+			if _, err := conn.Write([]byte(tc.wire)); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if got := c.await(t, 3*time.Second); got != first {
+				t.Fatalf("first: got %q, want %q", got, first)
+			}
+			if got := c.await(t, 3*time.Second); got != second {
+				t.Fatalf("second: got %q, want %q", got, second)
+			}
+		})
 	}
 }
 
