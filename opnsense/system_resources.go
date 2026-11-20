@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/opnsense2otel/v5/internal/fetchshare"
@@ -20,6 +21,31 @@ type systemResourcesMemory struct {
 
 type systemResourcesResponse struct {
 	Memory systemResourcesMemory `json:"memory"`
+}
+
+type systemTimeAnchors struct {
+	mu           sync.Mutex
+	now          func() time.Time
+	boot, config int64
+}
+
+// anchor retains a derived instant within the clock quantisation window. Exact
+// instants always replace it; nil preserves behaviour for literal clients.
+func (a *systemTimeAnchors) anchor(value int64, boot, exact bool) int64 {
+	if a == nil {
+		return value
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	stored := &a.config
+	if boot {
+		stored = &a.boot
+	}
+	if !exact && *stored != 0 && value >= *stored-2 && value <= *stored+2 {
+		return *stored
+	}
+	*stored = value
+	return value
 }
 
 type systemTimeResponse struct {
@@ -334,6 +360,9 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	// Residual caveat: for a box in an unlisted/ambiguous zone scraped across a
 	// DST boundary, up to a ±1h skew can remain (#107).
 	now := time.Now()
+	if c.systemTimeAnchors != nil && c.systemTimeAnchors.now != nil {
+		now = c.systemTimeAnchors.now()
+	}
 	bootTime, exactBoot, errBoot := parseOPNsenseTime(opnsenseTimeFormat, resp.Boottime)
 	dateTime, exactDate, errDate := parseOPNsenseTime(opnsenseTimeFormat, resp.Datetime)
 	configTime, exactConfig, errConfig := parseOPNsenseTime(opnsenseTimeFormat, resp.Config)
@@ -357,14 +386,14 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	// offset; only fall back to the raw parse when there is nothing else, since
 	// that one carries the full unresolved-offset error (#421).
 	if exactBoot && errBoot == nil {
-		data.Time.BootTimestamp = float64(bootTime.Unix())
+		data.Time.BootTimestamp = float64(c.systemTimeAnchors.anchor(bootTime.Unix(), true, true))
 	} else if abs, ok := absUnixFromAbbrev(bootTime, errBoot); ok {
-		data.Time.BootTimestamp = float64(abs)
+		data.Time.BootTimestamp = float64(c.systemTimeAnchors.anchor(abs, true, true))
 	} else {
 		switch {
 		case errDate == nil && errBoot == nil:
 			age := time.Duration(dstCorrectedDiffSeconds(dateTime, bootTime)) * time.Second
-			data.Time.BootTimestamp = float64(now.Add(-age).Unix())
+			data.Time.BootTimestamp = float64(c.systemTimeAnchors.anchor(now.Add(-age).Unix(), true, false))
 		case errBoot == nil:
 			data.Time.BootTimestamp = float64(bootTime.Unix())
 		}
@@ -375,14 +404,14 @@ func (c *Client) fetchSystemTime(data *SystemResources) *APICallError {
 	// abbreviation is unknown, fall back to the DST-corrected age anchored to the
 	// exporter clock, which cancels the box's base offset.
 	if exactConfig && errConfig == nil {
-		data.Time.ConfigLastChange = float64(configTime.Unix())
+		data.Time.ConfigLastChange = float64(c.systemTimeAnchors.anchor(configTime.Unix(), false, true))
 	} else if abs, ok := absUnixFromAbbrev(configTime, errConfig); ok {
-		data.Time.ConfigLastChange = float64(abs)
+		data.Time.ConfigLastChange = float64(c.systemTimeAnchors.anchor(abs, false, true))
 	} else {
 		switch {
 		case errDate == nil && errConfig == nil:
 			age := time.Duration(dstCorrectedDiffSeconds(dateTime, configTime)) * time.Second
-			data.Time.ConfigLastChange = float64(now.Add(-age).Unix())
+			data.Time.ConfigLastChange = float64(c.systemTimeAnchors.anchor(now.Add(-age).Unix(), false, false))
 		case errConfig == nil:
 			data.Time.ConfigLastChange = float64(configTime.Unix())
 		}
