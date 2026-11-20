@@ -97,7 +97,7 @@ tabs; OpenVPN / WireGuard-peer / IPsec-tunnel rows; CARP VIPs, SMART, ACME, DynD
 ### Event annotations
 
 The dashboard ships a generated event timeline (`annotations.py`, #421) so a discontinuity on any
-panel can be attributed without leaving the tab. **16 layers**, each individually toggleable; most
+panel can be attributed without leaving the tab. **19 layers**, each individually toggleable; most
 are on by default and the rest are one click away.
 
 Three mechanisms, chosen per source:
@@ -123,10 +123,11 @@ long-lived gauge value producing a marker per sample, but it drops events: the l
 `config_change` records inside the same second. Duplicate markers at one instant collapse visually;
 a missing config change is a wrong answer to the question the layer exists to answer.
 
-**Default on:** everything except the one layer below — Reboot, Config change, Interface counter
-reset, Boot environment created (upgrade), Certificate renewed, GeoIP database updated, nginx config
-reloaded, Public IP updated, IDS ruleset updated, Config change detail, Gateway alarm, CARP
-transition, Tunnel lifecycle, Exporter-pushed events, and External change events (#523).
+**Default on:** everything except the one layer below - Reboot, Config change, Interface counter
+reset, pf counter reset, Boot environment created, Certificate renewed, GeoIP database updated, nginx
+config reloaded, Public IP updated, IDS ruleset updated, Config change detail, Config revision diff,
+New device observed, Gateway alarm, CARP transition, Tunnel lifecycle, Exporter-pushed events, and
+External change events (#523).
 **Default off:** Threat feed updated — Q-Feeds refreshes on a far tighter schedule than an IDS
 ruleset, so its markers are the ones that would bury the rest of the timeline.
 

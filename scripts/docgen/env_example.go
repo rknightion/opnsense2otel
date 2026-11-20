@@ -10,8 +10,8 @@ import (
 const envExampleWrapWidth = 88
 
 // envVarName derives OPN2OTEL_FOO from a flag's own Envar when set,
-// or from its dotted --flag.name otherwise. All 200 flags in the kingpin
-// model already carry one or the other; the fallback exists only so a future
+// or from its dotted --flag.name otherwise. Every flag in the kingpin model
+// already carries one or the other; the fallback exists only so a future
 // flag added without an explicit Envar still renders instead of vanishing.
 func envVarName(f FlagDoc) string {
 	if f.Envar != "" {

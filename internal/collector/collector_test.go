@@ -99,6 +99,30 @@ func TestCollector(t *testing.T) {
 	}
 }
 
+func TestUpHelpNamesHealthPollInterval(t *testing.T) {
+	client, err := opnsense.NewClient(options.OPNSenseConfig{Protocol: "http", APIKey: "test"}, "test", promslog.NewNopLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(&client, promslog.NewNopLogger(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(c.isUp)
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(families) != 1 || families[0].GetName() != "opnsense_up" {
+		t.Fatalf("unexpected metric families: %v", families)
+	}
+	help := families[0].GetHelp()
+	if !strings.Contains(help, "--collector.health-poll-interval") || strings.Contains(help, "--collector.poll-interval") {
+		t.Errorf("opnsense_up HELP names the wrong poll interval: %q", help)
+	}
+}
+
 func TestWithFirewallRulesDetails(t *testing.T) {
 	// Test the option function directly without calling New() to avoid
 	// duplicate metrics registration on the global prometheus registry.

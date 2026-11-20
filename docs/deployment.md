@@ -22,6 +22,7 @@ Kubernetes manifests live in
 |--------|----------|-------|
 | **Docker / Docker Compose** | Quick setup, homelab, single-host deployments | [Docker & Compose](deployment/docker.md) |
 | **Kubernetes** | Production clusters, Prometheus Operator environments | [Kubernetes](deployment/kubernetes.md) |
+| **Helm chart** | Pinned OCI chart releases on Kubernetes | [Helm chart](deployment/kubernetes.md#helm-chart) |
 | **Systemd** | Bare-metal Linux hosts, VMs | [Systemd](deployment/systemd.md) |
 
 ## Decision matrix
@@ -76,8 +77,10 @@ When the metrics path is not `/`, set `--web.ui-enabled=true` to serve the built
 - **Collectors** - per-collector run stats: state, poll **Interval**, success rate, **Freshness**, runs/failures, **Next run** countdown, last duration (with a sparkline and pass/fail strip), and last error. Fed by the internal poll scheduler.
 - **API** - auth status and the exporter's OPNsense API-request stats, with a top-endpoint-errors table.
 - **Cardinality** - total series and metric families, the highest-cardinality metrics and labels, series growth-rate, and a JSON export (`/cardinality/export.json`, `/api/cardinality.json`).
-- **Config** - the effective runtime configuration, with every secret redacted (rendered once per page load, not on the refresh poll).
+- **Logs / Flow** - receiver and flow pipeline self-metrics from the last passive metric capture.
 - **Devices** - connected devices merged from the ARP table and DHCP leases (IP, MAC, hostname, interface, manufacturer). Loads on demand when you open the tab.
+- **ifIndex** - the resolved NetFlow interface mapping, loaded on demand when you open the tab.
+- **Config** - the effective runtime configuration, with every secret redacted (rendered once per page load, not on the refresh poll).
 
 The console is read-only. It reads only cached/last-scrape data, so the auto-refresh never triggers an extra scrape of the firewall; the Devices tab is the only view that reaches the firewall (ARP/DHCP), and only when you open it.
 
