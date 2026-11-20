@@ -175,7 +175,9 @@ func (c *firmwareCollector) Update(ctx context.Context, client *opnsense.Client,
 	}
 	ch <- prometheus.MustNewConstMetric(c.upgradeNeedsReboot, prometheus.GaugeValue, upgradeNeedsRebootVal, c.instance)
 
-	ch <- prometheus.MustNewConstMetric(c.lastCheckTimestamp, prometheus.GaugeValue, data.LastCheckTimestamp, c.instance)
+	if data.LastCheckTimestamp > 0 {
+		ch <- prometheus.MustNewConstMetric(c.lastCheckTimestamp, prometheus.GaugeValue, data.LastCheckTimestamp, c.instance)
+	}
 
 	ch <- prometheus.MustNewConstMetric(c.newPackagesCount, prometheus.GaugeValue, float64(data.NewPackages), c.instance)
 
