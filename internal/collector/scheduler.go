@@ -41,6 +41,43 @@ type pollReservation struct {
 // begin; pollReservation also initializes one lazily for direct scheduler tests.
 var pollReservations sync.Map // map[*Collector]*pollReservation
 
+// pollRecovery broadcasts circuit closures to the pollers of one Collector.
+// Each close wakes current subscribers; the replacement is for the next outage.
+type pollRecovery struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+var pollRecoveries sync.Map // map[*Collector]*pollRecovery
+
+func (c *Collector) pollRecovery() *pollRecovery {
+	if recovery, ok := pollRecoveries.Load(c); ok {
+		return recovery.(*pollRecovery)
+	}
+	recovery, _ := pollRecoveries.LoadOrStore(c, &pollRecovery{ch: make(chan struct{})})
+	return recovery.(*pollRecovery)
+}
+
+func (r *pollRecovery) subscribe() <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ch
+}
+
+func (c *Collector) markReachable() {
+	if !c.unreachable.Swap(false) {
+		return
+	}
+	// With no subscribers there can be no skipped scheduler attempts to retry.
+	if recovery, ok := pollRecoveries.Load(c); ok {
+		r := recovery.(*pollRecovery)
+		r.mu.Lock()
+		close(r.ch)
+		r.ch = make(chan struct{})
+		r.mu.Unlock()
+	}
+}
+
 // pollRequestObserver delegates the established request metrics while counting
 // logical API failures swallowed by a sub-collector. Calls may arrive concurrently
 // from a collector's internal fan-out, so the failure count is atomic.
@@ -164,6 +201,7 @@ func (c *Collector) StopPolling() {
 	}
 	c.pollWG.Wait()
 	pollReservations.Delete(c)
+	pollRecoveries.Delete(c)
 }
 
 // SnapshotWarm reports whether the snapshot the serving path replays is COMPLETE:
@@ -194,7 +232,8 @@ func (c *Collector) SnapshotWarm() bool {
 }
 
 // runCollectorPoller polls one collector immediately (jittered) then on a ticker,
-// publishing the ticker's ACTUAL next fire as the collector's next-poll deadline
+// with an off-cadence retry for an attempt skipped by the reachability circuit.
+// It publishes the ticker's ACTUAL next fire as the collector's next-poll deadline
 // (#385) so the exported metric and the console read the real schedule instead of
 // each re-deriving lastPoll + interval, which drifts from the ticker the moment a
 // poll takes any appreciable time.
@@ -215,16 +254,56 @@ func (c *Collector) runCollectorPoller(ctx context.Context, coll CollectorInstan
 	defer t.Stop()
 	next := time.Now().Add(interval)
 	c.publishDeadline(name, next)
-	c.pollCollector(ctx, coll)
 
+	recovery := c.pollRecovery()
+	var recovered <-chan struct{}
+	poll := func() bool {
+		// Subscribe before attempting the poll so a recovery between a skip and
+		// its return cannot get lost on the replacement channel.
+		recovered = recovery.subscribe()
+		return c.pollCollector(ctx, coll)
+	}
+	skipped := poll()
+	var retryAt <-chan time.Time // nil unless a recovery retry is waiting out its jitter
+	var retryFinished time.Time
 	for {
+		var tick time.Time
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case tick = <-t.C:
+		case <-recovered:
+			recovered = recovery.subscribe()
+			if skipped {
+				retryAt = time.After(jitterOffset(name, interval))
+			}
+			continue
+		case <-retryAt:
+			// Prefer the scheduled attempt when both timers are ready. A tick
+			// racing with admission below is handled after the retry instead.
+			select {
+			case tick = <-t.C:
+			default:
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if !tick.IsZero() {
 			next = advanceDeadline(next, interval, time.Now())
 			c.publishDeadline(name, next)
-			c.pollCollector(ctx, coll)
+			// A tick due while a recovery attempt was queued or polling is
+			// covered by that attempt. Ordinary polls retain ticker behaviour.
+			if !tick.After(retryFinished) {
+				continue
+			}
+		}
+		// A scheduled attempt supersedes the pending recovery timer without
+		// resetting the ticker. Attempts all run serially on this goroutine.
+		retryAt = nil
+		skipped = poll()
+		if tick.IsZero() && !skipped {
+			retryFinished = time.Now()
 		}
 	}
 }
@@ -264,16 +343,16 @@ func (c *Collector) runHealthPoller(ctx context.Context, interval time.Duration)
 // health poll found the box unreachable and coll needs the API — in which case it skips (retaining the
 // last-good snapshot) rather than adding to a burst of doomed dials (#127). Each
 // poll is bounded by pollTimeout so a wedged endpoint frees its concurrency slot
-// instead of holding it open indefinitely.
-func (c *Collector) pollCollector(ctx context.Context, coll CollectorInstance) {
+// instead of holding it open indefinitely. It returns true only for a circuit skip.
+func (c *Collector) pollCollector(ctx context.Context, coll CollectorInstance) bool {
 	free, ok := coll.(apiFreeCollector)
 	pollsWithoutAPI := ok && free.PollsWithoutAPI()
 	if !pollsWithoutAPI && c.unreachable.Load() {
-		return
+		return true
 	}
 	release, ok := c.acquirePollSlot(ctx, coll)
 	if !ok {
-		return
+		return false
 	}
 	defer release()
 
@@ -290,7 +369,7 @@ func (c *Collector) pollCollector(ctx context.Context, coll CollectorInstance) {
 	// closing it entirely would need a client-level circuit breaker, which is not
 	// warranted for the failure mode being fixed here.
 	if !pollsWithoutAPI && c.unreachable.Load() {
-		return
+		return true
 	}
 
 	pollCtx := ctx
@@ -300,6 +379,7 @@ func (c *Collector) pollCollector(ctx context.Context, coll CollectorInstance) {
 		defer cancel()
 	}
 	c.pollOnce(pollCtx, coll)
+	return false
 }
 
 // initPollReservation resets this collector's general-poll gate for the current
@@ -467,13 +547,13 @@ func (c *Collector) pollHealth(ctx context.Context) {
 			// Reachable but erroring: the box answered, so the circuit stays closed
 			// and collectors keep polling. Only a transport failure means "nothing
 			// is listening", and only that should pause the fleet (#384).
-			c.unreachable.Store(false)
+			c.markReachable()
 			c.log.Error("failed to fetch system health status", "component", "collector", "err", err)
 		}
 		return
 	}
 
-	c.unreachable.Store(false)
+	c.markReachable()
 	c.healthOK = true
 	c.healthLastError = ""
 	c.isUp.Set(1)
@@ -541,17 +621,21 @@ func advanceDeadline(next time.Time, interval time.Duration, now time.Time) time
 	return next
 }
 
-// sleepJitter waits a deterministic per-name offset in [0, min(interval, cap))
-// before a poller's first poll, spreading the cold-start herd. Returns false if
-// ctx is cancelled during the wait.
-func sleepJitter(ctx context.Context, name string, interval time.Duration) bool {
+// jitterOffset spreads both cold-start and recovery polls over a deterministic
+// per-name window capped by the smaller of the interval and coldStartJitterCap.
+func jitterOffset(name string, interval time.Duration) time.Duration {
 	span := min(interval, coldStartJitterCap)
 	if span <= 0 {
-		return ctx.Err() == nil
+		return 0
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name))
-	offset := time.Duration(uint64(h.Sum32()) % uint64(span))
+	return time.Duration(uint64(h.Sum32()) % uint64(span))
+}
+
+// sleepJitter waits before the first poll. It returns false if ctx is cancelled.
+func sleepJitter(ctx context.Context, name string, interval time.Duration) bool {
+	offset := jitterOffset(name, interval)
 	if offset <= 0 {
 		return ctx.Err() == nil
 	}
