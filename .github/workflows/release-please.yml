@@ -78,7 +78,7 @@ jobs:
       pre-cmd: "go install github.com/anchore/syft/cmd/syft@v1.57.2" # archive SBOMs
 
   # Build, sign, attest, and publish the container image; attach third-party notices + SBOMs.
-  # Delegates image work to the shared reusable; the notices job runs make notices sbom locally.
+  # Delegates image work to the shared reusable; publish.yml generates notices with just notices.
   publish:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'

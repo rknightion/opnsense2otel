@@ -44,6 +44,15 @@ jobs:
       - name: Check for un-allowlisted globally routable IP literals (#565)
         run: just check-public-ips
 
+      - name: Test textfile companions
+        run: just textfile-test
+
+      - name: Test release gate
+        run: just release-gate-test
+
+      - name: Check justfile formatting
+        run: just --fmt --check
+
   lint:
     name: Lint
     runs-on: ubuntu-26.04
@@ -185,6 +194,9 @@ jobs:
       # never run anywhere, and three of sixteen had rotted into failure unnoticed.
       - name: Run the grafana builder unit tests
         run: just grafana-test
+
+      - name: Test GitSync verifier
+        run: just gitsync-test
 
       # Coverage gate (every catalogue metric on the dashboard) + regeneration
       # staleness (dashboard.json / dashboard-stats.json / grafana-managed manifests)

@@ -10,7 +10,7 @@ on:
       - 'scripts/docgen/**'
   workflow_dispatch:
 
-permissions: {} # uses DOCS_SYNC_PAT (a PAT), not GITHUB_TOKEN — no token scopes needed
+permissions: {} # the job mints a brokered token; no workflow-level GITHUB_TOKEN scopes needed
 
 concurrency:
   group: docs-sync-${{ github.repository }}
