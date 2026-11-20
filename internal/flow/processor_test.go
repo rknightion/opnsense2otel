@@ -223,6 +223,35 @@ func TestProcessor_HeldRecordSuppressedByNATLeavesHeldGauge(t *testing.T) {
 	}
 }
 
+func TestProcessor_DropCountEqualsVLANPlusNATDuplicates(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	ifaces := []enrich.IfaceInfo{
+		{Device: "trunk", Name: "LAN"},
+		{Device: "trunk_vlan50", Name: "VLAN", VlanParent: "trunk", VlanTag: "50"},
+		{Device: "wan", Name: "WAN", IsWAN: true, Addrs: addrs(natWANAddr)},
+	}
+	r := newNATRepairer(t)
+	p := NewProcessor(&captureSink{}, r, nil)
+	p.SetIfMap(BuildIfMap(IfMapInput{Order: devicesOf(ifaces), Ifaces: ifaces, Built: now}))
+	pre := netflow.Record{Proto: 6, SrcAddr: mustAddr(t, natLANAddr), DstAddr: mustAddr(t, natRemote), SrcPort: 36180, DstPort: 8007, Bytes: 3048, Packets: 15, InIfIndex: 2, OutIfIndex: 3, First: now, Last: now.Add(time.Second)}
+	post := pre
+	post.SrcAddr, post.SrcPort, post.InIfIndex = mustAddr(t, natWANAddr), 42031, 1
+	vlan := pre
+	vlan.VLANID, vlan.InIfIndex, vlan.OutIfIndex = 50, 1, 1
+	p.ObserveDatagram(&netflow.Datagram{Records: []netflow.Record{pre, post, vlan}}, now)
+	p.ReleaseDue(now.Add(vlanHoldWindow))
+	st, rs := p.Stats(), r.Stats()
+	if rs.VLANDuplicatesDropped != 1 || rs.NATDuplicatesDropped+rs.NATConversationDuplicates != 1 {
+		t.Fatalf("repair stats = %+v, want one VLAN and one NAT suppression", rs)
+	}
+	if st.RecordsDropped != rs.VLANDuplicatesDropped+rs.NATDuplicatesDropped+rs.NATConversationDuplicates {
+		t.Errorf("processor drops = %d, repair stats = %+v", st.RecordsDropped, rs)
+	}
+	if int64(st.RecordsIn) != int64(st.RecordsEmitted+st.RecordsDropped+st.RecordsNoAddr)+st.RecordsHeld {
+		t.Errorf("funnel not conserved: %+v", st)
+	}
+}
+
 func TestProcessor_EmitsRecordsAndCountsThem(t *testing.T) {
 	sink := &captureSink{}
 	p := NewProcessor(sink, NewRepairer(100, 1000), nil)

@@ -5,8 +5,6 @@ runtime.gomaxprocs
 # "--exporter.disable-<name>"; the token regex captures the stem.
 exporter.disable
 exporter.enable
-# Tutorial placeholder in docs/development/adding-collector.md:
-OPN2OTEL_DISABLE_EXAMPLE
 
 # Retired by the syslog receiver (#248). These are no longer registered flags, but the
 # migration notes in docs/syslog-receiver.md and the changelog MUST still name them --

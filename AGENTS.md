@@ -138,9 +138,8 @@ file such as `ROADMAP.md` beside them.
   to us; the receivers never poll. `internal/logship` also runs opt-in polled sources (Unbound
   per-query, CrowdSec, IDS, config change, routing change) on `--logs.poll-interval` with per-source
   floors, off the `/metrics` path.
-- Every env var is prefixed `OPN2OTEL_`, except the standard OTel SDK pair
-  `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, which the log shipper
-  honours unprefixed (`docs/log-shipping.md`). The `*_FILE` secret vars also accept legacy unprefixed
+- Every env var is prefixed `OPN2OTEL_`, except the standard `OTEL_EXPORTER_OTLP_*` variables,
+  which are honoured unprefixed (`docs/log-shipping.md`). The `*_FILE` secret vars also accept legacy unprefixed
   aliases (`OPS_API_KEY_FILE`, `OPS_API_SECRET_FILE`, `PYROSCOPE_AUTH_USER_FILE`,
   `PYROSCOPE_AUTH_PASSWORD_FILE`) for backwards compatibility, with the prefixed form winning.
 

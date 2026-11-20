@@ -118,6 +118,39 @@ func runReplayPipeline(t *testing.T) ([]Record, RepairStats, ProcessorStats) {
 	return sink.recs, rep.Stats(), p.Stats()
 }
 
+// TestReplay_OrientationCensus measures the chosen first fragment, not the emitted
+// union of flags. The fixture is not representative of live traffic.
+func TestReplay_OrientationCensus(t *testing.T) {
+	recs, _, _ := runReplayPipeline(t)
+	c, _ := newCorr(t, true, 3*time.Minute, 0)
+	for _, r := range recs {
+		c.Observe(r)
+	}
+	var total, both, inboundNoSYN int
+	for _, e := range c.cells {
+		if !e.hasNF || e.zen != nil || e.sample.Proto != 6 {
+			continue
+		}
+		total++
+		if e.mirror == nil {
+			continue
+		}
+		both++
+		chosen, _ := e.orientation()
+		if chosen.TCPFlags&0x02 == 0 && chosen.Direction == DirectionInbound {
+			inboundNoSYN++
+		}
+	}
+	if total == 0 {
+		t.Fatal("fixture produced no NetFlow-only TCP entries")
+	}
+	share := 0.0
+	if both > 0 {
+		share = 100 * float64(inboundNoSYN) / float64(both)
+	}
+	t.Logf("NetFlow-only TCP entries: %d; two halves: %d; chosen first fragment no SYN and inbound: %d/%d (%.2f%% of two-half entries)", total, both, inboundNoSYN, both, share)
+}
+
 // dedupKey is the instance identity the repair keys on: the DIRECTIONAL tuple, the
 // flow's own First/Last, and its volume (repair.go instanceKey). Two records with this
 // key on a parent and its VLAN child are the duplicate pair ng_netflow exports for

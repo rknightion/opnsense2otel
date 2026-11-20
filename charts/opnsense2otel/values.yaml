@@ -81,12 +81,12 @@ settings:
   # Hostname or IP address of OPNsense API
   # opnsense.address: ""
   #
-  # API key to use to connect to OPNsense API. This flag/ENV or the OPS_API_KEY_FILE may be
-  # set.
+  # API key to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_KEY_FILE
+  # (legacy alias OPS_API_KEY_FILE) may be set.
   # opnsense.api-key: ""
   #
-  # API secret to use to connect to OPNsense API. This flag/ENV or the OPS_API_SECRET_FILE
-  # may be set.
+  # API secret to use to connect to OPNsense API. This flag/ENV or
+  # OPN2OTEL_OPS_API_SECRET_FILE (legacy alias OPS_API_SECRET_FILE) may be set.
   # opnsense.api-secret: ""
   #
   # Disable TLS certificate verification
@@ -723,11 +723,12 @@ settings:
   # pyroscope.application-name: "opnsense2otel"
   #
   # HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This
-  # flag/ENV or PYROSCOPE_AUTH_PASSWORD_FILE may be set.
+  # flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE (legacy alias
+  # PYROSCOPE_AUTH_PASSWORD_FILE) may be set.
   # pyroscope.auth-password: ""
   #
   # HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This flag/ENV or
-  # PYROSCOPE_AUTH_USER_FILE may be set.
+  # OPN2OTEL_PYROSCOPE_AUTH_USER_FILE (legacy alias PYROSCOPE_AUTH_USER_FILE) may be set.
   # pyroscope.auth-user: ""
   #
   # Disable mutex/block contention profiling. On by default; disabling drops the two

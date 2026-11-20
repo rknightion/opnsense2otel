@@ -18,12 +18,12 @@ var (
 	pyroscopeAuthUser = kingpin.Flag(
 		"pyroscope.auth-user",
 		"HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). "+
-			"This flag/ENV or PYROSCOPE_AUTH_USER_FILE may be set.",
+			"This flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_USER_FILE (legacy alias PYROSCOPE_AUTH_USER_FILE) may be set.",
 	).Envar("OPN2OTEL_PYROSCOPE_AUTH_USER").Default("").String()
 	pyroscopeAuthPassword = kingpin.Flag(
 		"pyroscope.auth-password",
 		"HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). "+
-			"This flag/ENV or PYROSCOPE_AUTH_PASSWORD_FILE may be set.",
+			"This flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE (legacy alias PYROSCOPE_AUTH_PASSWORD_FILE) may be set.",
 	).Envar("OPN2OTEL_PYROSCOPE_AUTH_PASSWORD").Default("").String()
 	pyroscopeTenantID = kingpin.Flag(
 		"pyroscope.tenant-id",

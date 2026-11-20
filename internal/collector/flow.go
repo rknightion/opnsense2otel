@@ -734,9 +734,9 @@ func (c *flowCollector) registerNetflow() {
 		"Records the NetFlow lane discarded, by reason. \"no_template\" is a data flowset arriving "+
 			"before the template describing it - normal for up to ~2 minutes after either end restarts, "+
 			"since ng_netflow resends templates about every 2 minutes, and a sustained rate means "+
-			"template datagrams are being lost. \"vlan_duplicate\" is the parent-interface copy of a "+
-			"VLAN flow, which ng_netflow captures twice (~4% of bytes on the reference box) and which "+
-			"would otherwise be counted twice AND attributed to the parent. \"no_address\" is a record "+
+			"template datagrams are being lost. \"vlan_duplicate\" is a suppressed VLAN/parent "+
+			"duplicate, avoiding double counting and parent attribution. \"nat_duplicate\" is a "+
+			"suppressed post-NAT copy or conversation duplicate. \"no_address\" is a record "+
 			"with unusable endpoints.",
 		reasonLabel,
 	)
@@ -1261,7 +1261,8 @@ func (c *flowCollector) collectNetflow(ch chan<- prometheus.Metric) {
 	counter(c.nfDecoded, nf.Decoder.Records)
 	counter(c.nfEmitted, nf.Pipeline.RecordsEmitted)
 	counter(c.nfDropped, nf.Decoder.NoTemplate, "no_template")
-	counter(c.nfDropped, nf.Pipeline.RecordsDropped, "vlan_duplicate")
+	counter(c.nfDropped, nf.Repair.VLANDuplicatesDropped, "vlan_duplicate")
+	counter(c.nfDropped, nf.Repair.NATDuplicatesDropped+nf.Repair.NATConversationDuplicates, "nat_duplicate")
 	counter(c.nfDropped, nf.Pipeline.RecordsNoAddr, "no_address")
 	// Not a drop reason: an unmapped record emits with an empty interface label, so
 	// folding it into records_dropped_total would break decoded = emitted + dropped

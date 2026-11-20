@@ -21,11 +21,11 @@ var (
 	).Envar("OPN2OTEL_OPS_API").Required().String()
 	opnsenseAPIKey = kingpin.Flag(
 		"opnsense.api-key",
-		"API key to use to connect to OPNsense API. This flag/ENV or the OPS_API_KEY_FILE may be set.",
+		"API key to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_KEY_FILE (legacy alias OPS_API_KEY_FILE) may be set.",
 	).Default("").Envar("OPN2OTEL_OPS_API_KEY").String()
 	opnsenseAPISecret = kingpin.Flag(
 		"opnsense.api-secret",
-		"API secret to use to connect to OPNsense API. This flag/ENV or the OPS_API_SECRET_FILE may be set.",
+		"API secret to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_SECRET_FILE (legacy alias OPS_API_SECRET_FILE) may be set.",
 	).Default("").Envar("OPN2OTEL_OPS_API_SECRET").String()
 	opnsenseInsecure = kingpin.Flag(
 		"opnsense.insecure",

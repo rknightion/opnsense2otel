@@ -27,6 +27,15 @@ func TestExtractDocTokens(t *testing.T) {
 	}
 }
 
+func TestDoclintAcceptsPrefixedFileSecretVars(t *testing.T) {
+	text := "OPN2OTEL_OPS_API_KEY_FILE OPN2OTEL_OPS_API_SECRET_FILE " +
+		"OPN2OTEL_PYROSCOPE_AUTH_USER_FILE OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE"
+	problems := lintText("doc.md", text, knownTokens(collectAllFlags()), map[string]bool{})
+	if len(problems) != 0 {
+		t.Fatalf("expected no problems, got %v", problems)
+	}
+}
+
 func TestDoclintFlagsUnknownTokens(t *testing.T) {
 	known := knownTokens(collectAllFlags())
 	problems := lintText("doc.md", "set --opnsense.adress and OPN2OTEL_TYPO_VAR", known, map[string]bool{})

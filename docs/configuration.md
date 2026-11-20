@@ -20,8 +20,8 @@ These settings control how the exporter connects to the OPNsense API.
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--opnsense.address` | `OPN2OTEL_OPS_API` | -- | **Required.** Hostname or IP address of OPNsense API |
-| `--opnsense.api-key` | `OPN2OTEL_OPS_API_KEY` | -- | API key to use to connect to OPNsense API. This flag/ENV or the OPS_API_KEY_FILE may be set. |
-| `--opnsense.api-secret` | `OPN2OTEL_OPS_API_SECRET` | -- | API secret to use to connect to OPNsense API. This flag/ENV or the OPS_API_SECRET_FILE may be set. |
+| `--opnsense.api-key` | `OPN2OTEL_OPS_API_KEY` | -- | API key to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_KEY_FILE (legacy alias OPS_API_KEY_FILE) may be set. |
+| `--opnsense.api-secret` | `OPN2OTEL_OPS_API_SECRET` | -- | API secret to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_SECRET_FILE (legacy alias OPS_API_SECRET_FILE) may be set. |
 | `--opnsense.insecure` | `OPN2OTEL_OPS_INSECURE` | `false` | Disable TLS certificate verification |
 | `--opnsense.max-concurrent-requests` | `OPN2OTEL_OPS_MAX_CONCURRENT_REQUESTS` | `16` | Maximum number of background OPNsense API requests in flight across all scheduled collector polls, including nested sub-requests. Bounds the simultaneous PHP/configd load on the firewall: lower it (e.g. 4-8) to protect a low-power appliance at the cost of queued or longer polls; raise it to let more independent polls progress concurrently on capable hardware. It does not affect /metrics replay. Must be >= 1. |
 | `--opnsense.max-retries` | `OPN2OTEL_OPS_MAX_RETRIES` | `3` | Number of attempts for a failed OPNsense API request (transport errors / retryable 5xx). The HTTP request-timeout budget is --opnsense.timeout x this value, except firmware info uses max(--opnsense.timeout, 60s) x this value. This excludes retry backoff and concurrency-slot queue waits; it is not an elapsed-time bound. Caller deadlines bound elapsed time and may end the sequence sooner. |
@@ -38,13 +38,15 @@ These settings control how the exporter connects to the OPNsense API.
 
 In containers and orchestrated environments, credentials can be read from files:
 
-| Env Var | Description |
-|---------|-------------|
-| `OPS_API_KEY_FILE` | Path to a file containing the API key (first line is read) |
-| `OPS_API_SECRET_FILE` | Path to a file containing the API secret (first line is read) |
+| Canonical env var | Legacy alias | Description |
+|-------------------|--------------|-------------|
+| `OPN2OTEL_OPS_API_KEY_FILE` | `OPS_API_KEY_FILE` | Path to a file containing the API key (first line is read) |
+| `OPN2OTEL_OPS_API_SECRET_FILE` | `OPS_API_SECRET_FILE` | Path to a file containing the API secret (first line is read) |
 
 !!! note
-    These environment variables do **not** use the `OPN2OTEL_` prefix. They are checked first: if a file-based secret is set and non-empty, it takes precedence over the flag/env var value.
+    The prefixed name is canonical; the legacy alias is still accepted. The first file with a
+    non-empty first line wins, with the prefixed name checked before the alias. A non-empty file
+    value takes precedence over the flag or direct environment value. An unreadable file is an error.
 
 ## Exporter settings
 
@@ -239,8 +241,8 @@ is set. There are no unauthenticated `/debug/pprof/*` endpoints.
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--pyroscope.application-name` | `OPN2OTEL_PYROSCOPE_APPLICATION_NAME` | `opnsense2otel` | Pyroscope application name profiles are reported under. |
-| `--pyroscope.auth-password` | `OPN2OTEL_PYROSCOPE_AUTH_PASSWORD` | -- | HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This flag/ENV or PYROSCOPE_AUTH_PASSWORD_FILE may be set. |
-| `--pyroscope.auth-user` | `OPN2OTEL_PYROSCOPE_AUTH_USER` | -- | HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This flag/ENV or PYROSCOPE_AUTH_USER_FILE may be set. |
+| `--pyroscope.auth-password` | `OPN2OTEL_PYROSCOPE_AUTH_PASSWORD` | -- | HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE (legacy alias PYROSCOPE_AUTH_PASSWORD_FILE) may be set. |
+| `--pyroscope.auth-user` | `OPN2OTEL_PYROSCOPE_AUTH_USER` | -- | HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_USER_FILE (legacy alias PYROSCOPE_AUTH_USER_FILE) may be set. |
 | `--pyroscope.disable-mutex-block` | `OPN2OTEL_PYROSCOPE_DISABLE_MUTEX_BLOCK` | `false` | Disable mutex/block contention profiling. On by default; disabling drops the two contention profiles and their process-global sampling rates. CPU, memory, goroutine (and goroutine-leak, when built with the experiment) profiling are unaffected. |
 | `--pyroscope.server-address` | `OPN2OTEL_PYROSCOPE_SERVER_ADDRESS` | -- | Grafana Cloud Pyroscope endpoint URL. When empty, continuous profiling is disabled. |
 | `--pyroscope.tenant-id` | `OPN2OTEL_PYROSCOPE_TENANT_ID` | -- | Pyroscope tenant ID (only needed for multi-tenancy; unused for Grafana Cloud). |
@@ -878,8 +880,8 @@ Every flag the exporter accepts, generated from the binary's own flag definition
 | `--logs.zenarmor.tls-key-file` | `OPN2OTEL_LOGS_ZENARMOR_TLS_KEY_FILE` | -- | PEM private key for --logs.zenarmor.tls-cert-file. |
 | `--logs.zenarmor.transport` | `OPN2OTEL_LOGS_ZENARMOR_TRANSPORT` | `elasticsearch` | How Zenarmor delivers its reporting data: 'elasticsearch' (default) runs the built-in Elasticsearch receiver on --logs.zenarmor.listen-http; 'syslog' ingests it through the shared syslog receiver (requires --logs.syslog.enabled and a business-tier Zenarmor licence). families/exclude/enrich/drop-self-traffic apply to either transport. |
 | `--opnsense.address` | `OPN2OTEL_OPS_API` | -- | **Required.** Hostname or IP address of OPNsense API |
-| `--opnsense.api-key` | `OPN2OTEL_OPS_API_KEY` | -- | API key to use to connect to OPNsense API. This flag/ENV or the OPS_API_KEY_FILE may be set. |
-| `--opnsense.api-secret` | `OPN2OTEL_OPS_API_SECRET` | -- | API secret to use to connect to OPNsense API. This flag/ENV or the OPS_API_SECRET_FILE may be set. |
+| `--opnsense.api-key` | `OPN2OTEL_OPS_API_KEY` | -- | API key to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_KEY_FILE (legacy alias OPS_API_KEY_FILE) may be set. |
+| `--opnsense.api-secret` | `OPN2OTEL_OPS_API_SECRET` | -- | API secret to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_SECRET_FILE (legacy alias OPS_API_SECRET_FILE) may be set. |
 | `--opnsense.insecure` | `OPN2OTEL_OPS_INSECURE` | `false` | Disable TLS certificate verification |
 | `--opnsense.max-concurrent-requests` | `OPN2OTEL_OPS_MAX_CONCURRENT_REQUESTS` | `16` | Maximum number of background OPNsense API requests in flight across all scheduled collector polls, including nested sub-requests. Bounds the simultaneous PHP/configd load on the firewall: lower it (e.g. 4-8) to protect a low-power appliance at the cost of queued or longer polls; raise it to let more independent polls progress concurrently on capable hardware. It does not affect /metrics replay. Must be >= 1. |
 | `--opnsense.max-retries` | `OPN2OTEL_OPS_MAX_RETRIES` | `3` | Number of attempts for a failed OPNsense API request (transport errors / retryable 5xx). The HTTP request-timeout budget is --opnsense.timeout x this value, except firmware info uses max(--opnsense.timeout, 60s) x this value. This excludes retry backoff and concurrency-slot queue waits; it is not an elapsed-time bound. Caller deadlines bound elapsed time and may end the sequence sooner. |
@@ -900,8 +902,8 @@ Every flag the exporter accepts, generated from the binary's own flag definition
 | `--otlp.tls-cert-file` | `OPN2OTEL_OTLP_TLS_CERT_FILE` | -- | Path to a client certificate file for OTLP mutual TLS (requires --otlp.tls-key-file). |
 | `--otlp.tls-key-file` | `OPN2OTEL_OTLP_TLS_KEY_FILE` | -- | Path to a client key file for OTLP mutual TLS (requires --otlp.tls-cert-file). |
 | `--pyroscope.application-name` | `OPN2OTEL_PYROSCOPE_APPLICATION_NAME` | `opnsense2otel` | Pyroscope application name profiles are reported under. |
-| `--pyroscope.auth-password` | `OPN2OTEL_PYROSCOPE_AUTH_PASSWORD` | -- | HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This flag/ENV or PYROSCOPE_AUTH_PASSWORD_FILE may be set. |
-| `--pyroscope.auth-user` | `OPN2OTEL_PYROSCOPE_AUTH_USER` | -- | HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This flag/ENV or PYROSCOPE_AUTH_USER_FILE may be set. |
+| `--pyroscope.auth-password` | `OPN2OTEL_PYROSCOPE_AUTH_PASSWORD` | -- | HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE (legacy alias PYROSCOPE_AUTH_PASSWORD_FILE) may be set. |
+| `--pyroscope.auth-user` | `OPN2OTEL_PYROSCOPE_AUTH_USER` | -- | HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_USER_FILE (legacy alias PYROSCOPE_AUTH_USER_FILE) may be set. |
 | `--pyroscope.disable-mutex-block` | `OPN2OTEL_PYROSCOPE_DISABLE_MUTEX_BLOCK` | `false` | Disable mutex/block contention profiling. On by default; disabling drops the two contention profiles and their process-global sampling rates. CPU, memory, goroutine (and goroutine-leak, when built with the experiment) profiling are unaffected. |
 | `--pyroscope.server-address` | `OPN2OTEL_PYROSCOPE_SERVER_ADDRESS` | -- | Grafana Cloud Pyroscope endpoint URL. When empty, continuous profiling is disabled. |
 | `--pyroscope.tenant-id` | `OPN2OTEL_PYROSCOPE_TENANT_ID` | -- | Pyroscope tenant ID (only needed for multi-tenancy; unused for Grafana Cloud). |

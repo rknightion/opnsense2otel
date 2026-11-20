@@ -118,7 +118,9 @@ the parent interface. On the reference box that is 9,657 of 80,275 flow instance
 ~4% of bytes, all of it silently inflating LAN. The exporter keeps the child copy and
 drops the parent, counting each as
 `records_dropped_total{reason="vlan_duplicate"}`. A flat zero there on a VLAN'd
-network means the de-dup is not firing and your volume is double-counted.
+network means the de-dup is not firing and your volume is double-counted. Separately,
+`records_dropped_total{reason="nat_duplicate"}` counts suppressed post-NAT copies and
+conversation duplicates; it is not a VLAN de-dup health check.
 
 Which copy survives is not a detail. The box flushes the trunk hook's records and
 the child hook's records in separate consecutive datagrams, trunk first, so keeping
