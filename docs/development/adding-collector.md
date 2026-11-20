@@ -7,251 +7,181 @@ tags:
 
 # Adding a Collector
 
-This guide adds a new collector to opnsense2otel: five steps across three packages.
+This guide follows the registration contract using the temperature collector as a concrete example. The maintained reference is `reference/adding-a-collector.md`.
 
-## Overview
+## Step 1: Implement and register the collector
 
-1. Create the collector file in `internal/collector/`
-2. Add an `init()` function for auto-registration
-3. Add a `Fetch*()` method and data structs in `opnsense/`
-4. Add a disable flag in `internal/options/collectors.go`
-5. Wire the disable flag in `internal/collector/collector.go` and `main.go`
-6. Update the docs: add `SubsystemDisplayNames` + `CollectorFlags` entries, then run `just docs`
+Implement `CollectorInstance` in `internal/collector/` and append the instance in `init()`. There is no central registration list. Use `buildPrometheusDesc` so docgen can discover descriptors. The interface requires this signature:
 
-## Step 1: Create the collector
+`Update(ctx context.Context, client *opnsense.Client, ch chan<- prometheus.Metric) *opnsense.APICallError`
 
-Create a new file `internal/collector/<subsystem>.go` implementing the `CollectorInstance` interface:
+The following is `internal/collector/temperature.go`; its `init`, `Register`, `Describe`, and `Update` show the complete pattern. `TestTemperatureCollector_Update` checks its behaviour.
 
-```go title="internal/collector/example.go"
+```go
 package collector
 
 import (
-    "log/slog"
+	"context"
+	"log/slog"
+	"strconv"
 
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/rknightion/opnsense2otel/v5/opnsense"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
-type exampleCollector struct {
-    log           *slog.Logger
-    instanceLabel string
+type temperatureCollector struct {
+	log *slog.Logger
 
-    // Define your metric descriptors
-    exampleGauge *prometheus.Desc
-    exampleTotal *prometheus.Desc
+	celsius *prometheus.Desc
+
+	subsystem string
+	instance  string
 }
 
 func init() {
-    collectorInstances = append(collectorInstances, &exampleCollector{})
+	collectorInstances = append(collectorInstances, &temperatureCollector{
+		subsystem: TemperatureSubsystem,
+	})
 }
 
-func (c *exampleCollector) Name() string {
-    return "example" // Must match a subsystem constant
+func (c *temperatureCollector) Name() string {
+	return c.subsystem
 }
 
-func (c *exampleCollector) Register(namespace, instance string, log *slog.Logger) {
-    c.log = log
-    c.instanceLabel = instance
+func (c *temperatureCollector) Register(namespace, instanceLabel string, log *slog.Logger) {
+	c.log = log
+	c.instance = instanceLabel
+	c.log.Debug("Registering collector", "collector", c.Name())
 
-    c.exampleGauge = prometheus.NewDesc(
-        prometheus.BuildFQName(namespace, "example", "value"),
-        "Description of the metric",
-        []string{"label1", "label2"},  // variable labels
-        prometheus.Labels{
-            instanceLabelName: instance,
-        },
-    )
-
-    c.exampleTotal = prometheus.NewDesc(
-        prometheus.BuildFQName(namespace, "example", "items_total"),
-        "Total number of example items",
-        nil,
-        prometheus.Labels{
-            instanceLabelName: instance,
-        },
-    )
+	c.celsius = buildPrometheusDesc(c.subsystem, "celsius",
+		"Temperature reading in Celsius",
+		[]string{"device", "type", "device_seq"},
+	)
 }
 
-func (c *exampleCollector) Describe(ch chan<- *prometheus.Desc) {
-    ch <- c.exampleGauge
-    ch <- c.exampleTotal
+func (c *temperatureCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.celsius
 }
 
-func (c *exampleCollector) Update(
-    client *opnsense.Client,
-    ch chan<- prometheus.Metric,
-) *opnsense.APICallError {
-    data, err := client.FetchExample()
-    if err != nil {
-        return err
-    }
+func (c *temperatureCollector) Update(ctx context.Context, client *opnsense.Client, ch chan<- prometheus.Metric) *opnsense.APICallError {
+	readings, err := client.FetchTemperatures()
+	if err != nil {
+		return err
+	}
 
-    // Emit the total count
-    ch <- prometheus.MustNewConstMetric(
-        c.exampleTotal,
-        prometheus.GaugeValue,
-        float64(len(data.Items)),
-    )
+	for _, r := range readings {
+		ch <- prometheus.MustNewConstMetric(
+			c.celsius,
+			prometheus.GaugeValue,
+			r.Celsius,
+			r.Device,
+			r.Type,
+			strconv.Itoa(r.DeviceSeq),
+			c.instance,
+		)
+	}
 
-    // Emit per-item metrics
-    for _, item := range data.Items {
-        ch <- prometheus.MustNewConstMetric(
-            c.exampleGauge,
-            prometheus.GaugeValue,
-            item.Value,
-            item.Label1,
-            item.Label2,
-        )
-    }
-
-    return nil
+	return nil
 }
 ```
 
-## Step 2: Auto-registration
+## Step 2: Assign a poll tier
 
-The `init()` function in the collector file (shown above) handles registration: it appends the collector instance to the global `collectorInstances` slice. No central registry file to touch.
+Add a non-medium collector to `collectorTiers` in `internal/collector/interval_tiers.go`. An absent entry means the 60 second medium default, as for temperature. Operators can override the interval using the collector poll interval override. There is no test that requires an explicit tier: select one based on data volatility.
 
-Add a subsystem constant to `internal/collector/collector.go`:
+## Step 3: Add the API method and endpoint
+
+Add the response types and fetch method in `opnsense/`, and register the endpoint in `defaultEndpoints()` in `opnsense/client.go`. Add its ACL entry in `opnsense/acl.go`: `TestEndpointACLCoversEveryEndpoint` checks coverage, and `TestNewClient_UsesDefaultEndpoints` checks the client's defaults. For a plugin-gated endpoint, return empty data and nil on a 404, as `FetchACMECertificates` does. Temperature is a plain GET and is not plugin-gated. Its `opnsense/temperature.go` is:
 
 ```go
-const ExampleSubsystem = "example"
-```
-
-## Step 3: Add the API fetch method
-
-Create or modify a file in `opnsense/` to add the fetch method and data structures:
-
-```go title="opnsense/example.go"
 package opnsense
 
-// ExampleData represents the API response structure
-type ExampleData struct {
-    Items []ExampleItem `json:"items"`
+type temperatureReading struct {
+	Device         string `json:"device"`
+	DeviceSeq      int    `json:"device_seq"`
+	Temperature    string `json:"temperature"`
+	TypeTranslated string `json:"type_translated"`
+	Type           string `json:"type"`
 }
 
-type ExampleItem struct {
-    Label1 string  `json:"label1"`
-    Label2 string  `json:"label2"`
-    Value  float64 `json:"value"`
+type TemperatureReading struct {
+	Device    string
+	DeviceSeq int
+	Type      string
+	Celsius   float64
 }
 
-// FetchExample retrieves example data from the OPNsense API
-func (c *Client) FetchExample() (*ExampleData, *APICallError) {
-    var data ExampleData
+func (c *Client) FetchTemperatures() ([]TemperatureReading, *APICallError) {
+	var resp []temperatureReading
 
-    url, ok := c.endpoints["example"]
-    if !ok {
-        return nil, &APICallError{
-            Endpoint: "example",
-            Err:      ErrEndpointNotFound,
-        }
-    }
+	url, ok := c.endpoints["systemTemperature"]
+	if !ok {
+		return nil, &APICallError{
+			Endpoint:   "systemTemperature",
+			Message:    "endpoint not found in client endpoints",
+			StatusCode: 0,
+		}
+	}
 
-    if err := c.do("GET", url, &data); err != nil {
-        return nil, &APICallError{
-            Endpoint: string(url),
-            Err:      err,
-        }
-    }
+	if err := c.do("GET", url, nil, &resp); err != nil {
+		return nil, err
+	}
 
-    return &data, nil
-}
-```
+	readings := make([]TemperatureReading, 0, len(resp))
+	for _, r := range resp {
+		readings = append(readings, TemperatureReading{
+			Device:    r.Device,
+			DeviceSeq: r.DeviceSeq,
+			Type:      r.Type,
+			Celsius:   safeParseFloat(r.Temperature),
+		})
+	}
 
-Register the endpoint in the client's endpoint map (in `opnsense/client.go` or the relevant setup):
-
-```go
-"example": "/api/example/endpoint",
-```
-
-## Step 4: Add the disable flag
-
-Add a new flag in `internal/options/collectors.go`:
-
-```go
-exampleCollectorDisabled = kingpin.Flag(
-    "exporter.disable-example",
-    "Disable the scraping of example metrics",
-).Envar("OPN2OTEL_DISABLE_EXAMPLE").Default("false").Bool()
-```
-
-Add the field to `CollectorsDisableSwitch`:
-
-```go
-type CollectorsDisableSwitch struct {
-    // ... existing fields ...
-    Example bool
+	return readings, nil
 }
 ```
 
-Wire it in `CollectorsSwitches()`:
+## Step 4: Register POST endpoints
 
-```go
-func CollectorsSwitches() CollectorsDisableSwitch {
-    return CollectorsDisableSwitch{
-        // ... existing fields ...
-        Example: !*exampleCollectorDisabled,
-    }
-}
-```
+For POST requests only, add the endpoint key to `postEndpoints` in `opnsense/contract.go` and update the golden POST count in `opnsense/contract_test.go`; `TestContractManifestCoversAllEndpoints` checks the manifest. GET endpoints are derived automatically, so temperature needs no POST entry.
 
-## Step 5: Wire the disable flag
+## Step 5: Cache plugin absence
 
-Add the `Without` option in `internal/collector/collector.go`:
+For a plugin-gated GET or POST, add its endpoint to `NegativeCacheable404Endpoints()` in `opnsense/cache.go`, subject to the distinction below. Never add a core endpoint: a cached health-check 404 could hide recovery. `TestPluginGatedEndpoints_ExcludesCoreEndpoints` checks this protection. Temperature is not plugin-gated and needs no entry.
 
-```go
-func WithoutExampleCollector() Option {
-    return withoutCollectorInstance(ExampleSubsystem)
-}
-```
+## Step 6: Register the schema
 
-Wire it in `main.go`:
+Add the response struct to `schemaRegistry` in `opnsense/schema_registry.go` and run `just schemas`; `TestSchemaRegistryComplete` checks coverage. POST endpoints also need a request body in `captureRequests` in `opnsense/capture_requests.go`. These feed the on-demand, dispatch-only live schema canary. Golden schemas contain structure only, never response values.
 
-```go
-if !collectorsSwitches.Example {
-    collectorOptionFuncs = append(collectorOptionFuncs, collector.WithoutExampleCollector())
-    logger.Info("example collector disabled")
-}
-```
+## Step 7: Add the subsystem and option
+
+Add the subsystem constant, `Without<Subsystem>Collector()` option and `SubsystemDisplayNames` entry in `internal/collector/collector.go`. Temperature's corresponding entries are in that file. `TestSubsystemDisplayNamesComplete` checks display-name coverage; `TestEveryCollectorHasDisableSwitch` checks registered collectors against switches.
+
+## Step 8: Add the switch
+
+Add the flag, `CollectorsDisableSwitch` field, switch entry and `CollectorFlags` binding in `internal/options/collectors.go`. Use a default-on disable flag for low-cardinality collectors; reserve a default-off enable flag for extra API cost or high cardinality. `TestCollectorFlagsCoverAllSwitchFlags` and `TestEveryCollectorHasDisableSwitch` check the bindings.
+
+## Step 9: Wire the switch
+
+Wire the switch in `main.go` to the collector's `Without` option. `TestEveryDisableSwitchWiredInMain` checks that switch fields are wired.
+
+## Two 404 lists
+
+`NegativeCacheable404Endpoints()` asks whether a 404 may be cached; `PluginGatedEndpoints()` asks whether it means a plugin is absent. The latter is a superset used by the canary and ACLs. When a query string prevents the cache key matching the request, list the endpoint only in `PluginGatedEndpoints()`; otherwise the canary treats the missing plugin as a vanished core route.
+
+## What may be cached
+
+Successful bodies may be cached only for GETs with wholly slow-moving payloads. Counters, rates and live status would freeze; POST bodies must never be cached because requests can differ. A plugin-absence 404 can be cached for any method, even when successful data is live. See `opnsense/cache.go` for the policy.
 
 ## Testing
 
-Add tests for the new collector in `internal/collector/example_test.go` and for the fetch method in `opnsense/example_test.go`.
-
-Run the tests:
+Add collector and API tests, then run:
 
 ```bash
-go test ./internal/collector/ -run TestExample
-go test ./opnsense/ -run TestFetchExample
+just test TestTemperatureCollector_Update
+just test TestFetchTemperatures
 ```
 
-## Step 6: Update the documentation
+## Docs and dashboard
 
-Documentation is generated. Never hand-edit content between `<!-- docgen:begin/end -->` markers
-or the docgen-generated pages. After the code is in place:
-
-1. Add the subsystem's display name to `SubsystemDisplayNames` in
-   `internal/collector/collector.go` (a unit test fails without it).
-2. Add a `CollectorFlags` entry in `internal/options/collectors.go` binding the
-   new flag to the subsystem string (a unit test fails without it).
-3. Run `just docs` and commit the result. It regenerates the metrics/collector
-   references, re-injects the flag tables in `docs/configuration.md`, re-pins
-   metric/collector counts across the site and README, lints all doc flag/env
-   tokens, and cross-checks docs against the live collector registry. CI
-   (`just docs-check`) fails if any of this is stale.
-
-## Checklist
-
-- [ ] Collector implements `CollectorInstance` interface
-- [ ] `init()` function registers the collector
-- [ ] Subsystem constant added to `collector.go`
-- [ ] `Fetch*()` method and data structs added to `opnsense/`
-- [ ] API endpoint registered in the client (and `testEndpoints()` / endpoint count updated)
-- [ ] Disable flag added to `internal/options/collectors.go`
-- [ ] `Without*()` option added to `collector.go`
-- [ ] Disable logic wired in `main.go`
-- [ ] Tests added and passing
-- [ ] `SubsystemDisplayNames` entry added in `internal/collector/collector.go`
-- [ ] `CollectorFlags` entry added in `internal/options/collectors.go`
-- [ ] `just docs` run and output committed
+Run `just docs` and `just docs-check`. Do not hand-edit generated pages or docgen regions. Every catalogue metric must appear on the Grafana dashboard: add panels in `grafana/tabs/` following `grafana/tabs/AUTHORING.md`, then run `just dashboard`. It fails if a catalogue metric is missing. Add alert and recording rules through `grafana/alerts/build_rules.py` and run `just rules`; `just grafana-check` gates the generated artifacts.
