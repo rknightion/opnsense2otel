@@ -547,13 +547,6 @@ func (c *Client) Endpoints() map[EndpointName]EndpointPath {
 	return c.endpoints
 }
 
-// SameClient reports whether both clients are the same client or request-scoped
-// clones sharing the HTTP client created by NewClient. It compares no connection
-// settings or credentials.
-func (c *Client) SameClient(other *Client) bool {
-	return c != nil && other != nil && (c == other || (c.httpClient != nil && c.httpClient == other.httpClient))
-}
-
 // WithContext returns a shallow copy of the client whose requests are bound to
 // ctx (deadline and cancellation). The clone shares the underlying http.Client,
 // endpoint table and credentials; only the request context differs.

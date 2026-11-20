@@ -3,8 +3,6 @@ package collector
 import (
 	"context"
 	"log/slog"
-	"sync"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
@@ -19,14 +17,7 @@ import (
 var captivePortalVoucherStates = []string{"valid", "unused", "expired"}
 
 type captivePortalCollector struct {
-	now func() time.Time
 	log *slog.Logger
-
-	voucherMu      sync.Mutex
-	voucherClient  *opnsense.Client
-	voucherData    opnsense.CaptivePortalVouchers
-	voucherFetched time.Time
-	voucherCached  bool
 
 	serviceRunning    *prometheus.Desc
 	zonesTotal        *prometheus.Desc
@@ -79,13 +70,6 @@ func (c *captivePortalCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *captivePortalCollector) Update(_ context.Context, client *opnsense.Client, ch chan<- prometheus.Metric) *opnsense.APICallError {
-	// Anchor expiry to the poll start so polls five minutes apart refresh even
-	// when the preceding session or voucher requests have variable latency.
-	now := time.Now
-	if c.now != nil {
-		now = c.now
-	}
-	started := now()
 	data, err := client.FetchCaptivePortalSessions()
 	if err != nil {
 		return err
@@ -127,33 +111,10 @@ func (c *captivePortalCollector) Update(_ context.Context, client *opnsense.Clie
 			running, c.instance)
 	}
 
-	vouchers, vErr := c.fetchVouchers(client, started)
+	vouchers, vErr := client.FetchCaptivePortalVouchers()
 	if vErr != nil {
 		c.log.Warn("failed to fetch captive portal vouchers", "err", vErr)
-	} else {
-		c.emitVouchers(vouchers, ch)
-	}
-
-	return nil
-}
-
-func (c *captivePortalCollector) fetchVouchers(client *opnsense.Client, started time.Time) (opnsense.CaptivePortalVouchers, *opnsense.APICallError) {
-	c.voucherMu.Lock()
-	defer c.voucherMu.Unlock()
-	age := started.Sub(c.voucherFetched)
-	if c.voucherCached && c.voucherClient.SameClient(client) && age >= 0 && age < IntervalSlow {
-		return c.voucherData, nil
-	}
-	c.voucherCached = false
-	data, err := client.FetchCaptivePortalVouchers()
-	if err == nil {
-		c.voucherClient, c.voucherData, c.voucherFetched, c.voucherCached = client, data, started, true
-	}
-	return data, err
-}
-
-func (c *captivePortalCollector) emitVouchers(vouchers opnsense.CaptivePortalVouchers, ch chan<- prometheus.Metric) {
-	if vouchers.Present {
+	} else if vouchers.Present {
 		for _, g := range vouchers.Groups {
 			// Emit every known state (0-filled when absent) plus any
 			// unrecognised state the box reported, so alerting/rate() queries
@@ -178,4 +139,6 @@ func (c *captivePortalCollector) emitVouchers(vouchers opnsense.CaptivePortalVou
 			}
 		}
 	}
+
+	return nil
 }
