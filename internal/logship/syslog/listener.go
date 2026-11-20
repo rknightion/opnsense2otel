@@ -61,7 +61,7 @@ const refusalLogEvery = 30 * time.Second
 // NOT keyed by peer, certificate identity or error text: an attacker-controlled key
 // would make the throttle map itself the memory leak the throttle exists to prevent,
 // and the same rule that keeps those values out of metric labels keeps them out of
-// here. Four constants, four map entries, for the life of the process.
+// here. Seven constants, seven map entries, for the life of the process.
 type refusalLogKey string
 
 const (
@@ -69,7 +69,35 @@ const (
 	refusalTLSConnLimit refusalLogKey = "tls_conn_limit"
 	refusalTLSHandshake refusalLogKey = "tls_handshake"
 	refusalTLSDeadline  refusalLogKey = "tls_deadline"
+	refusalUDPRead      refusalLogKey = "udp_read_error"
+	refusalTCPAccept    refusalLogKey = "tcp_accept_error"
+	refusalTLSAccept    refusalLogKey = "tls_accept_error"
 )
+
+type errBackoff struct{ delay time.Duration }
+
+func (b *errBackoff) next() time.Duration {
+	if b.delay == 0 {
+		b.delay = 5 * time.Millisecond
+	} else {
+		b.delay = min(b.delay*2, time.Second)
+	}
+	return b.delay
+}
+
+func (b *errBackoff) reset() { b.delay = 0 }
+
+// waitErrorBackoff returns false when shutdown interrupts the retry delay.
+func (l *Listener) waitErrorBackoff(b *errBackoff) bool {
+	timer := time.NewTimer(b.next())
+	defer timer.Stop()
+	select {
+	case <-l.closing:
+		return false
+	case <-timer.C:
+		return true
+	}
+}
 
 // Config configures the receiver's sockets. An empty address disables that
 // transport. AllowedPeers, when non-empty, is an allowlist: anything else is
@@ -324,7 +352,7 @@ func NewListener(cfg Config, handle func(line []byte, peer netip.Addr), m *logsh
 		slots:   newSlotGauges(cfg.Registerer, cfg.MaxConns, slotTransports),
 		closing: make(chan struct{}),
 
-		refusalLast: make(map[refusalLogKey]time.Time, 4),
+		refusalLast: make(map[refusalLogKey]time.Time, 7),
 	}
 }
 
@@ -542,15 +570,22 @@ func (l *Listener) allowed(peer netip.Addr) bool {
 func (l *Listener) serveUDP() {
 	defer close(l.udpQ)
 	buf := make([]byte, maxMessageBytes)
+	var backoff errBackoff
 	for {
 		n, addr, err := l.udp.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			if l.closed() || errors.Is(err, net.ErrClosed) {
 				return
 			}
-			l.log.Warn("syslog: UDP read failed", "err", err)
+			if l.logRefusal(refusalUDPRead) {
+				l.log.Warn("syslog: UDP read failed", "err", err, "log_throttle", refusalLogEvery.String())
+			}
+			if !l.waitErrorBackoff(&backoff) {
+				return
+			}
 			continue
 		}
+		backoff.reset()
 		peer := addr.Addr().Unmap()
 		if !l.allowed(peer) {
 			l.m.Reject("peer")
@@ -586,6 +621,7 @@ func (l *Listener) serveUDPWorker() {
 // serveTCP accepts connections, capping concurrency and rejecting disallowed peers
 // at accept. One bad connection never kills the listener.
 func (l *Listener) serveTCP() {
+	var backoff errBackoff
 	for {
 		conn, err := l.tcp.AcceptTCP()
 		if err != nil {
@@ -596,9 +632,15 @@ func (l *Listener) serveTCP() {
 			if errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
-			l.log.Warn("syslog: TCP accept failed", "err", err)
+			if l.logRefusal(refusalTCPAccept) {
+				l.log.Warn("syslog: TCP accept failed", "err", err, "log_throttle", refusalLogEvery.String())
+			}
+			if !l.waitErrorBackoff(&backoff) {
+				return
+			}
 			continue
 		}
+		backoff.reset()
 
 		peer := peerAddr(conn.RemoteAddr())
 		if !l.allowed(peer) {
@@ -647,6 +689,7 @@ func (l *Listener) serveTCP() {
 // short deadline before serveConn, so the slot is held pre-authentication for seconds
 // rather than for connIdleTimeout (#328).
 func (l *Listener) serveTLS() {
+	var backoff errBackoff
 	for {
 		conn, err := l.tlsLn.Accept()
 		if err != nil {
@@ -657,9 +700,15 @@ func (l *Listener) serveTLS() {
 			if errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
-			l.log.Warn("syslog: TLS accept failed", "err", err)
+			if l.logRefusal(refusalTLSAccept) {
+				l.log.Warn("syslog: TLS accept failed", "err", err, "log_throttle", refusalLogEvery.String())
+			}
+			if !l.waitErrorBackoff(&backoff) {
+				return
+			}
 			continue
 		}
+		backoff.reset()
 
 		peer := peerAddr(conn.RemoteAddr())
 		if !l.allowed(peer) {
