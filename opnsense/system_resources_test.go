@@ -1,8 +1,10 @@
 package opnsense
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -40,6 +42,58 @@ func TestFetchSystemTimeNumericZone(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFetchSystemTimeFallbackIsSticky(t *testing.T) {
+	server, mux, client := newTestClientWithMux(t)
+	defer server.Close()
+	clock := time.Date(2026, 11, 10, 10, 4, 5, 0, time.UTC)
+	client.systemTimeAnchors = &systemTimeAnchors{now: func() time.Time { return clock }}
+	datetime := "Tue Nov 10 10:04:05 JST 2026"
+	boot := "Tue Nov 10 9:04:05 JST 2026"
+	config := "Tue Nov 10 9:34:05 JST 2026"
+	mux.HandleFunc("/api/diagnostics/system/systemTime", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"boottime":%q,"datetime":%q,"config":%q}`, boot, datetime, config)
+	})
+	fetch := func() SystemTime {
+		t.Helper()
+		var data SystemResources
+		if err := client.WithContext(context.Background()).fetchSystemTime(&data); err != nil {
+			t.Fatal(err)
+		}
+		return data.Time
+	}
+	first := fetch()
+	clock = clock.Add(2 * time.Second)
+	datetime = "Tue Nov 10 10:04:06 JST 2026"
+	second := fetch()
+	if second.BootTimestamp != first.BootTimestamp || second.ConfigLastChange != first.ConfigLastChange {
+		t.Errorf("one-second flap: first %+v, second %+v", first, second)
+	}
+	boot = "Tue Nov 10 9:04:15 JST 2026"
+	config = "Tue Nov 10 9:34:15 JST 2026"
+	third := fetch()
+	if third.BootTimestamp != first.BootTimestamp+11 || third.ConfigLastChange != first.ConfigLastChange+11 {
+		t.Errorf("changed events: first %+v, third %+v", first, third)
+	}
+	// Exact offsets must replace, rather than stick to, the nearby derived value.
+	boot = "Tue Nov 10 9:04:17 +0000 2026"
+	config = "Tue Nov 10 9:34:17 +0000 2026"
+	exact := fetch()
+	if exact.BootTimestamp != first.BootTimestamp+12 || exact.ConfigLastChange != first.ConfigLastChange+12 {
+		t.Errorf("exact values must replace nearby anchors: %+v", exact)
+	}
+	boot = "Tue Nov 10 9:04:16 JST 2026"
+	config = "Tue Nov 10 9:34:16 JST 2026"
+	afterExact := fetch()
+	if afterExact.BootTimestamp != exact.BootTimestamp || afterExact.ConfigLastChange != exact.ConfigLastChange {
+		t.Errorf("fallback should retain exact anchors: %+v", afterExact)
+	}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() { fetch() })
+	}
+	wg.Wait()
 }
 
 func TestParseHumanBytes(t *testing.T) {

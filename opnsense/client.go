@@ -354,7 +354,8 @@ type Client struct {
 	// SetEndpointCacheTTL. It is a pointer so the per-scrape WithContext clone shares
 	// one cache with its parent; a value field would hand every scrape an empty cache.
 	// nil (and a cache with no TTLs) means every request goes to the box.
-	cache *responseCache
+	cache             *responseCache
+	systemTimeAnchors *systemTimeAnchors
 	// cacheObserver, when set, is notified of every cache hit/miss on an endpoint that
 	// has a TTL, so the collector layer can record cache self-metrics. nil means no
 	// instrumentation.
@@ -485,9 +486,10 @@ func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Lo
 			// advertising them would risk an undecodable body.
 			"Accept-Encoding": "gzip",
 		},
-		sslInsecure: cfg.Insecure,
-		maxRetries:  maxRetries,
-		sem:         sem,
+		systemTimeAnchors: &systemTimeAnchors{},
+		sslInsecure:       cfg.Insecure,
+		maxRetries:        maxRetries,
+		sem:               sem,
 		httpClient: &http.Client{
 			Timeout: timeout,
 			// Never follow a redirect (#306/#307). Every request carries the API

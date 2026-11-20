@@ -3,8 +3,10 @@ package collector
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -90,6 +92,140 @@ func TestPollOnceErrorRetainsAndRecordsFailure(t *testing.T) {
 	}
 	if got := counterValue(t, c.endpointErrors.WithLabelValues("ep", "test")); got != 1 {
 		t.Errorf("endpoint error should be counted, got %v", got)
+	}
+}
+
+type cancellationPollFake struct {
+	fakeCollectorInstance
+	started chan struct{}
+}
+
+func (f *cancellationPollFake) Update(ctx context.Context, client *opnsense.Client, sink chan<- prometheus.Metric) *opnsense.APICallError {
+	close(f.started)
+	return f.fakeCollectorInstance.Update(ctx, client, sink)
+}
+
+func TestPollCancelledAtShutdownKeepsSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout bool
+		err     *opnsense.APICallError
+	}{
+		{name: "shutdown error", err: &opnsense.APICallError{Endpoint: "ep", Message: "cancelled"}},
+		{name: "shutdown swallowed error"},
+		{name: "poll timeout", timeout: true, err: &opnsense.APICallError{Endpoint: "ep", Message: "timeout"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seed := &fakeCollectorInstance{name: "fake", emit: []prometheus.Metric{testMetric("opnsense_x", 7)}}
+			c := newScrapeTestCollector(t, newCollectorTestClient(t, healthOKServer(t)), seed)
+			c.statusTracker = NewStatusTracker()
+			c.pollSem = make(chan struct{}, 1)
+			c.pollOnce(context.Background(), seed)
+			before := c.store.entry("fake")
+			stats := c.statusTracker.Snapshot()
+			fake := &cancellationPollFake{fakeCollectorInstance: fakeCollectorInstance{
+				name: "fake", blockOnCtx: true, err: tc.err,
+				emit: []prometheus.Metric{testMetric("opnsense_x", 2)},
+			}, started: make(chan struct{})}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.timeout {
+				c.maxScrapeDuration = 50 * time.Millisecond
+			}
+			done := make(chan struct{})
+			go func() { defer close(done); c.pollCollector(ctx, fake) }()
+			select {
+			case <-fake.started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("poll did not start")
+			}
+			if !tc.timeout {
+				cancel()
+			}
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatal("poll did not finish")
+			}
+			after := c.store.entry("fake")
+			errors := counterValue(t, c.endpointErrors.WithLabelValues("ep", "test"))
+			if tc.timeout {
+				if ctx.Err() != nil || after.lastOK || len(after.metrics) != 1 || getMetricValue(after.metrics[0]) != 2 || errors != 1 {
+					t.Errorf("timeout must record partial failure with live parent: parent=%v snapshot=%+v errors=%v", ctx.Err(), after, errors)
+				}
+			} else {
+				if !reflect.DeepEqual(before, after) {
+					t.Errorf("shutdown changed snapshot: before=%+v after=%+v", before, after)
+				}
+				if errors != 0 {
+					t.Errorf("shutdown counted endpoint error: %v", errors)
+				}
+				if got := c.statusTracker.Snapshot(); !reflect.DeepEqual(stats, got) {
+					t.Errorf("shutdown changed status: before=%+v after=%+v", stats, got)
+				}
+			}
+		})
+	}
+}
+
+type blockingErrorHandler struct {
+	slog.Handler
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (h *blockingErrorHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *blockingErrorHandler) Handle(ctx context.Context, record slog.Record) error {
+	close(h.entered)
+	<-h.release
+	return h.Handler.Handle(ctx, record)
+}
+
+func TestPollErrorCommittedWhenShutdownDuringLogging(t *testing.T) {
+	seed := &fakeCollectorInstance{name: "fake", emit: []prometheus.Metric{testMetric("opnsense_x", 7)}}
+	c := newScrapeTestCollector(t, newCollectorTestClient(t, healthOKServer(t)), seed)
+	c.statusTracker = NewStatusTracker()
+	c.pollSem = make(chan struct{}, 1)
+	c.pollOnce(context.Background(), seed)
+
+	h := &blockingErrorHandler{Handler: c.log.Handler(), entered: make(chan struct{}), release: make(chan struct{})}
+	c.log = slog.New(h)
+	fake := &fakeCollectorInstance{name: "fake", emit: []prometheus.Metric{testMetric("opnsense_x", 2)}, err: &opnsense.APICallError{Endpoint: "ep", Message: "boom"}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { defer close(done); c.pollCollector(ctx, fake) }()
+	released := false
+	defer func() {
+		if !released {
+			close(h.release)
+		}
+	}()
+	select {
+	case <-h.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("error log was not reached")
+	}
+	cancel() // Update already returned, so its failure must be recorded consistently.
+	// Unblock exactly once, including on early failure above.
+	close(h.release)
+	released = true
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("poll did not finish")
+	}
+	e := c.store.entry("fake")
+	if e.lastOK || len(e.metrics) != 1 || getMetricValue(e.metrics[0]) != 2 {
+		t.Errorf("completed error must publish its partial failure, got %+v", e)
+	}
+	if got := counterValue(t, c.endpointErrors.WithLabelValues("ep", "test")); got != 1 {
+		t.Errorf("completed error counter = %v, want 1", got)
+	}
+	stats := c.statusTracker.Snapshot()
+	if len(stats) != 1 || stats[0].Runs != 2 || stats[0].Failures != 1 || stats[0].LastOK {
+		t.Errorf("completed error must be recorded in status, got %+v", stats)
 	}
 }
 

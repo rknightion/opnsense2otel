@@ -231,6 +231,76 @@ func TestSystemCollectorOmitsUptimeWhenBoottimeUnparseable(t *testing.T) {
 	}
 }
 
+func TestSystemCollectorOmitsInfoWhenFetchFailed(t *testing.T) {
+	for _, tc := range []struct {
+		name, failedPath, info, cpu string
+		wantInfo                    bool
+	}{
+		{"healthy", "", `{"name":"firewall","versions":["OPNsense 24.1","FreeBSD 14","OpenSSL 3"]}`, `["Example CPU (2 cores, 4 threads)"]`, true},
+		{"system information failure", "/api/diagnostics/system/system_information", `{"name":"firewall","versions":["OPNsense 24.1","FreeBSD 14","OpenSSL 3"]}`, `["Example CPU (2 cores, 4 threads)"]`, false},
+		{"CPU type failure", "/api/diagnostics/cpu_usage/getCPUType", `{"name":"firewall","versions":["OPNsense 24.1","FreeBSD 14","OpenSSL 3"]}`, `["Example CPU (2 cores, 4 threads)"]`, false},
+		{"successful empty fields", "", `{"name":"","versions":[]}`, `[]`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			responses := map[string]string{
+				"/api/diagnostics/system/systemResources":    `{"memory":{"total":"100","used":50}}`,
+				"/api/diagnostics/system/systemTime":         `{"boottime":"Mon Jan 2 15:04:05 UTC 2006","datetime":"Mon Jan 2 16:04:05 UTC 2006","loadavg":"0.12, 0.34, 0.56"}`,
+				"/api/diagnostics/system/systemDisk":         `{"devices":[]}`,
+				"/api/diagnostics/system/systemSwap":         `{"swap":[]}`,
+				"/api/diagnostics/system/system_information": tc.info,
+				"/api/diagnostics/cpu_usage/getCPUType":      tc.cpu,
+			}
+			for path, body := range responses {
+				mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == tc.failedPath {
+						http.Error(w, "unavailable", http.StatusInternalServerError)
+						return
+					}
+					_, _ = w.Write([]byte(body))
+				})
+			}
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			c := &systemCollector{subsystem: SystemSubsystem}
+			c.Register(namespace, "test", promslog.NewNopLogger())
+			metrics := collectMetrics(t, c, newCollectorTestClient(t, server))
+			foundInfo, foundUptime := false, false
+			loads := map[string]float64{}
+			for _, m := range metrics {
+				if hasFqName(m, "opnsense_system_info") {
+					foundInfo = true
+					if tc.name == "healthy" {
+						labels := getMetricLabels(m)
+						for k, want := range map[string]string{"hostname": "firewall", "opnsense_version": "24.1", "freebsd_version": "14", "openssl_version": "3", "cpu_model": "Example CPU", "cpu_cores": "2", "cpu_threads": "4"} {
+							if labels[k] != want {
+								t.Errorf("label %s = %q, want %q", k, labels[k], want)
+							}
+						}
+					}
+				}
+				if hasFqName(m, "opnsense_system_uptime_seconds") {
+					foundUptime = true
+				}
+				if hasFqName(m, "opnsense_system_load_average") {
+					loads[getMetricLabels(m)["interval"]] = getMetricValue(m)
+				}
+			}
+			if foundInfo != tc.wantInfo {
+				t.Errorf("system_info present = %v, want %v", foundInfo, tc.wantInfo)
+			}
+			if !foundUptime {
+				t.Error("uptime missing")
+			}
+			for period, want := range map[string]float64{"1": 0.12, "5": 0.34, "15": 0.56} {
+				if got, ok := loads[period]; !ok || got != want {
+					t.Errorf("load %s = %v, present %v; want %v", period, got, ok, want)
+				}
+			}
+		})
+	}
+}
+
 func TestSystemCollector_Name(t *testing.T) {
 	c := &systemCollector{subsystem: SystemSubsystem}
 	if c.Name() != SystemSubsystem {

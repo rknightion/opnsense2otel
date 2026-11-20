@@ -473,10 +473,12 @@ func (c *Collector) pollOnce(ctx context.Context, coll CollectorInstance) {
 	}()
 
 	success := true
+	cancelled := false
 	var lastErr string
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
+				cancelled = errors.Is(ctx.Err(), context.Canceled)
 				success = false
 				lastErr = fmt.Sprintf("panic: %v", r)
 				c.endpointErrors.WithLabelValues("panic:"+coll.Name(), c.instanceLabel).Inc()
@@ -487,7 +489,9 @@ func (c *Collector) pollOnce(ctx context.Context, coll CollectorInstance) {
 				)
 			}
 		}()
-		if apiErr := coll.Update(ctx, client, sink); apiErr != nil {
+		apiErr := coll.Update(ctx, client, sink)
+		cancelled = errors.Is(ctx.Err(), context.Canceled)
+		if apiErr != nil && !cancelled {
 			success = false
 			lastErr = apiErr.Error()
 			c.endpointErrors.WithLabelValues(apiErr.Endpoint, c.instanceLabel).Inc()
@@ -498,13 +502,16 @@ func (c *Collector) pollOnce(ctx context.Context, coll CollectorInstance) {
 			)
 		}
 	}()
-	if success {
+	if success && !cancelled {
 		if failures := observer.failures.Load(); failures > 0 {
 			c.partialFetchFailures.WithLabelValues(coll.Name(), c.instanceLabel).Add(float64(failures))
 		}
 	}
 	close(sink)
 	<-done
+	if cancelled {
+		return
+	}
 
 	dur := time.Since(begin)
 	c.store.put(coll.Name(), buf, dur, success)
