@@ -337,6 +337,23 @@ func TestFlowCollector_UnmappedIsNotADropReason(t *testing.T) {
 	}
 }
 
+func TestFlowCollector_DropReasonsSeparateVLANAndNAT(t *testing.T) {
+	store := newFlowStore(10, 100)
+	store.SetNetflowStats(func() NetflowStats {
+		return NetflowStats{
+			Pipeline: flow.ProcessorStats{RecordsDropped: 3},
+			Repair:   flow.RepairStats{VLANDuplicatesDropped: 1, NATDuplicatesDropped: 1, NATConversationDuplicates: 1},
+		}
+	})
+	got := collect(t, newFlowTestCollector(t, store))
+	for reason, want := range map[string]float64{"vlan_duplicate": 1, "nat_duplicate": 2} {
+		key := "opnsense_flow_netflow_records_dropped_total|reason=" + reason
+		if value, ok := got[key]; !ok || value != want {
+			t.Errorf("%s = %v (present %v), want %v", key, value, ok, want)
+		}
+	}
+}
+
 func TestFlowCollector_CountsThePayloadByteFallback(t *testing.T) {
 	store := newFlowStore(10, 100)
 	r := flowRec("LAN", "Network Management", 74, 1)

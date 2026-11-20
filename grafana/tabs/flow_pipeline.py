@@ -147,6 +147,8 @@ def build(b: Builder):
              "VLAN flow being suppressed — ng_netflow captures both the trunk and the child, so this "
              "SHOULD be non-zero on a VLAN'd box (~4% of bytes on the reference capture) and a flat "
              "zero there means the de-dup is not firing and volume is double-counted. "
+             "reason=\"nat_duplicate\" counts suppressed post-NAT copies and conversation duplicates, "
+             "separately from VLAN duplicates. "
              "reason=\"no_template\" is normal for ~2 minutes after either end restarts; sustained, it "
              "means template datagrams are being lost and records are being discarded wholesale.",
     )

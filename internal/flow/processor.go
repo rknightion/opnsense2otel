@@ -143,9 +143,8 @@ func (p *Processor) ObserveDatagram(dg *netflow.Datagram, now time.Time) {
 		}
 
 		// Repair mutates in place and reports what to do with the record. A drop is a
-		// VLAN/parent duplicate: the same packets already counted on the child
-		// interface, which is ~4% of bytes on the reference capture. A hold means the
-		// repair stage has parked the record because a copy on a VLAN child could still
+		// VLAN/parent or NAT duplicate already represented by another record. A hold means
+		// the repair stage has parked the record because a copy on a VLAN child could still
 		// arrive and beat it (#357); it comes back from the release path below.
 		if p.rep != nil {
 			switch p.rep.Repair(&rec, m, snap, now) {
