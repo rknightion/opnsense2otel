@@ -62,7 +62,7 @@ type ProcessorStats struct {
 	Datagrams       uint64
 	RecordsIn       uint64
 	RecordsEmitted  uint64
-	RecordsDropped  uint64 // VLAN/parent duplicates suppressed by the repair stage
+	RecordsDropped  uint64 // VLAN/parent and NAT duplicates suppressed by the repair stage
 	RecordsNoAddr   uint64 // unparseable or missing endpoints
 	RecordsUnmapped uint64 // neither ifIndex resolved to a device
 	// RecordsHeld is how many records are parked in the repair stage's hold buffer
@@ -177,14 +177,24 @@ func (p *Processor) Flush(now time.Time) {
 	if p.rep == nil {
 		return
 	}
-	p.emitReleased(p.rep.Flush(), now)
+	recs, dropped := p.rep.Flush()
+	if dropped > 0 {
+		p.held.Add(-int64(dropped))
+		p.dropped.Add(uint64(dropped))
+	}
+	p.emitReleased(recs, now)
 }
 
 func (p *Processor) releaseDue(now time.Time) {
 	if p.rep == nil {
 		return
 	}
-	p.emitReleased(p.rep.Release(now), now)
+	recs, dropped := p.rep.Release(now)
+	if dropped > 0 {
+		p.held.Add(-int64(dropped))
+		p.dropped.Add(uint64(dropped))
+	}
+	p.emitReleased(recs, now)
 }
 
 // emitReleased ships records that came back from the hold buffer. They arrive already

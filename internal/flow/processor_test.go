@@ -178,6 +178,51 @@ func TestInterfaceLabel_NamesTheWANFacingSide(t *testing.T) {
 	}
 }
 
+func TestProcessor_HeldRecordSuppressedByNATLeavesHeldGauge(t *testing.T) {
+	for _, mode := range []string{"release", "flush"} {
+		t.Run(mode, func(t *testing.T) {
+			now := time.Unix(1700000000, 0)
+			ifaces := []enrich.IfaceInfo{
+				{Device: "trunk", Name: "LAN"},
+				{Device: "trunk_vlan50", Name: "VLAN", VlanParent: "trunk", VlanTag: "50"},
+				{Device: "wan", Name: "WAN", IsWAN: true, Addrs: addrs(natWANAddr)},
+			}
+			r := newNATRepairer(t)
+			sink := &captureSink{}
+			p := NewProcessor(sink, r, nil)
+			p.SetIfMap(BuildIfMap(IfMapInput{Order: devicesOf(ifaces), Ifaces: ifaces, Built: now}))
+			pre := netflow.Record{Proto: 6, SrcAddr: mustAddr(t, natLANAddr), DstAddr: mustAddr(t, natRemote), SrcPort: 36180, DstPort: 8007, Bytes: 3048, Packets: 15, InIfIndex: 2, OutIfIndex: 3, First: now, Last: now.Add(time.Second)}
+			post := pre
+			post.SrcAddr, post.SrcPort, post.InIfIndex = mustAddr(t, natWANAddr), 42031, 1
+			p.ObserveDatagram(&netflow.Datagram{Records: []netflow.Record{pre, post}}, now)
+			if st := p.Stats(); st.RecordsEmitted != 1 || st.RecordsHeld != 1 || st.RecordsDropped != 0 {
+				t.Fatalf("before release: %+v, want one emitted and one held", st)
+			}
+			if mode == "release" {
+				p.ReleaseDue(now.Add(vlanHoldWindow))
+			} else {
+				p.Flush(now)
+			}
+			check := func(stage string) {
+				t.Helper()
+				st := p.Stats()
+				if st.RecordsHeld != 0 || st.RecordsDropped != 1 || st.RecordsEmitted != 1 || st.RecordsIn != 2 || st.RecordsNoAddr != 0 {
+					t.Errorf("%s: stats = %+v, want one emitted, one dropped, none held", stage, st)
+				}
+				if int64(st.RecordsIn) != int64(st.RecordsEmitted+st.RecordsDropped+st.RecordsNoAddr)+st.RecordsHeld {
+					t.Errorf("%s: funnel not conserved: %+v", stage, st)
+				}
+			}
+			check(mode)
+			p.Flush(now.Add(vlanHoldWindow))
+			check("closing flush")
+			if len(sink.recs) != 1 || sink.recs[0].SrcAddr != mustAddr(t, natLANAddr) || r.Stats().NATDuplicatesDropped != 1 {
+				t.Errorf("sink = %+v, repair stats = %+v; want only pre-NAT record and one NAT suppression", sink.recs, r.Stats())
+			}
+		})
+	}
+}
+
 func TestProcessor_EmitsRecordsAndCountsThem(t *testing.T) {
 	sink := &captureSink{}
 	p := NewProcessor(sink, NewRepairer(100, 1000), nil)
