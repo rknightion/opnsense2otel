@@ -211,9 +211,15 @@ func (c *Client) FetchTrafficTop(identifiers []string) (TrafficTop, *APICallErro
 	}
 	path := EndpointPath(string(basePath) + "/" + strings.Join(escaped, ","))
 
+	requestClient := *c
+	if c.observer != nil {
+		requestClient.observer = requestObserverAtPath{observer: c.observer, path: string(basePath)}
+	}
 	var resp map[string]trafficTopInterfaceRow
-	if err := c.do("GET", path, nil, &resp); err != nil {
-		return data, err
+	if err := requestClient.do("GET", path, nil, &resp); err != nil {
+		returnedErr := *err
+		returnedErr.Endpoint = string(basePath)
+		return data, &returnedErr
 	}
 	for identifier, row := range resp {
 		entry := TrafficTopInterface{Status: row.Status, Records: make([]TrafficTopRecord, 0, len(row.Records))}

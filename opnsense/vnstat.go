@@ -182,13 +182,17 @@ func (c *Client) FetchVnstat() (VnstatData, *APICallError) {
 	// query-carrying request, so listing it there would be inert. The
 	// interface_list gate above already prevents any get_json_data calls at
 	// all on a box without the plugin.
+	requestClient := *c
+	if c.observer != nil {
+		requestClient.observer = requestObserverAtPath{observer: c.observer, path: string(dataPath)}
+	}
 	for _, ifaceName := range listResp.Interfaces {
 		query := url.Values{}
 		query.Set("iface", ifaceName)
 		ifacePath := EndpointPath(string(dataPath) + "?" + query.Encode())
 
 		var jr vnstatJSONResponse
-		if err := c.do("GET", ifacePath, nil, &jr); err != nil {
+		if err := requestClient.do("GET", ifacePath, nil, &jr); err != nil {
 			c.log.Debug("vnstat get_json_data call failed for interface; skipping",
 				"component", "opnsense-client",
 				"interface", ifaceName,
