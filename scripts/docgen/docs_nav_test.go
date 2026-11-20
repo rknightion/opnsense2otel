@@ -2,10 +2,11 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -55,10 +56,9 @@ func TestEveryDocsPageIsInNav(t *testing.T) {
 }
 
 // docsNavPages handles the current docs.toml navigation layout: one site.nav
-// table per section and double-quoted paths, not arbitrary TOML syntax.
+// table per section and single-line double-quoted strings, not arbitrary TOML syntax.
 func docsNavPages(r io.Reader) (map[string]bool, error) {
 	listed := make(map[string]bool)
-	page := regexp.MustCompile(`"([^"\n]+\.md)"`)
 	inNav := false
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -67,8 +67,29 @@ func docsNavPages(r io.Reader) (map[string]bool, error) {
 			inNav = line == "[[site.nav]]"
 		}
 		if inNav {
-			for _, match := range page.FindAllStringSubmatch(line, -1) {
-				listed[match[1]] = true
+			for i := 0; i < len(line); i++ {
+				if line[i] != '"' {
+					continue
+				}
+				start := i
+				for i++; i < len(line); i++ {
+					if line[i] == '\\' {
+						i++
+					} else if line[i] == '"' {
+						break
+					}
+				}
+				if i >= len(line) {
+					return nil, fmt.Errorf("unterminated navigation string: %s", line)
+				}
+				value, err := strconv.Unquote(line[start : i+1])
+				if err != nil {
+					return nil, fmt.Errorf("invalid navigation string: %w", err)
+				}
+				// A quoted string followed by '=' is a label, not a destination.
+				if rest := strings.TrimSpace(line[i+1:]); !strings.HasPrefix(rest, "=") {
+					listed[value] = true
+				}
 			}
 		}
 	}
@@ -104,6 +125,8 @@ Pages = [
   "present.md", # "absent.md"
   # "also-absent.md",
   { "Hash # label" = "hash#page.md" },
+  { "missing.md" = "existing.md" },
+  { "Label \"nested.md\" text" = "actual.md" },
 ]
 [assets] # not nav
 other = "outside.md"
@@ -113,8 +136,9 @@ other = "outside.md"
 		t.Fatal(err)
 	}
 	for name, want := range map[string]bool{
-		"present.md": true, "hash#page.md": true,
+		"present.md": true, "hash#page.md": true, "existing.md": true, "actual.md": true,
 		"absent.md": false, "also-absent.md": false, "outside.md": false,
+		"missing.md": false, "nested.md": false,
 	} {
 		if pages[name] != want {
 			t.Errorf("navigation presence of %q = %v, want %v", name, pages[name], want)
