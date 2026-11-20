@@ -92,7 +92,11 @@ const fetchFirewallStatesPayload = `{"current":1,"rowCount":-1,"searchPhrase":""
 // This is a CORE route — every OPNsense install has it — so a 404 here is a real
 // fault, not an absent plugin, and the endpoint is deliberately kept out of
 // NegativeCacheable404Endpoints().
-func (c *Client) FetchFirewallStates() (FirewallStates, *APICallError) {
+func (client *Client) FetchFirewallStates() (FirewallStates, *APICallError) {
+	// A timed-out full table dump is expensive; never repeat it within one refresh.
+	copyClient := *client
+	copyClient.maxRetries = 1
+	c := &copyClient
 	var resp firewallStatesResponse
 	var data FirewallStates
 
