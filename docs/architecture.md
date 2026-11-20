@@ -136,7 +136,7 @@ type CollectorInstance interface {
 - **`exporter.go`** - Server config (listen address, metrics path, instance label)
 - **`collectors.go`** - Per-collector disable/enable switches
 
-All environment variables use the `OPN2OTEL_` prefix, except for `OPS_API_KEY_FILE` and `OPS_API_SECRET_FILE`.
+The OPNsense API key and secret and the Pyroscope auth user and password file secrets use canonical `OPN2OTEL_` names and accept legacy unprefixed aliases; the prefixed file is checked first, and the first non-empty file value wins over the flag or direct environment value (an unreadable file is an error).
 
 ### `internal/logship/` - Log shipping
 

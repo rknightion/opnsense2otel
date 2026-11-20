@@ -53,11 +53,11 @@ services:
       # ==========================================================================
       # Hostname or IP address of OPNsense API
       OPN2OTEL_OPS_API: "opnsense.example.com"
-      # API key to use to connect to OPNsense API. This flag/ENV or the OPS_API_KEY_FILE
-      # may be set.
+      # API key to use to connect to OPNsense API. This flag/ENV or
+      # OPN2OTEL_OPS_API_KEY_FILE (legacy alias OPS_API_KEY_FILE) may be set.
       # OPN2OTEL_OPS_API_KEY: ""
-      # API secret to use to connect to OPNsense API. This flag/ENV or the
-      # OPS_API_SECRET_FILE may be set.
+      # API secret to use to connect to OPNsense API. This flag/ENV or
+      # OPN2OTEL_OPS_API_SECRET_FILE (legacy alias OPS_API_SECRET_FILE) may be set.
       # OPN2OTEL_OPS_API_SECRET: ""
       # Disable TLS certificate verification
       # OPN2OTEL_OPS_INSECURE: "false"
@@ -595,10 +595,12 @@ services:
       # Pyroscope application name profiles are reported under.
       # OPN2OTEL_PYROSCOPE_APPLICATION_NAME: "opnsense2otel"
       # HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This
-      # flag/ENV or PYROSCOPE_AUTH_PASSWORD_FILE may be set.
+      # flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE (legacy alias
+      # PYROSCOPE_AUTH_PASSWORD_FILE) may be set.
       # OPN2OTEL_PYROSCOPE_AUTH_PASSWORD: ""
       # HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This
-      # flag/ENV or PYROSCOPE_AUTH_USER_FILE may be set.
+      # flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_USER_FILE (legacy alias
+      # PYROSCOPE_AUTH_USER_FILE) may be set.
       # OPN2OTEL_PYROSCOPE_AUTH_USER: ""
       # Disable mutex/block contention profiling. On by default; disabling drops the two
       # contention profiles and their process-global sampling rates. CPU, memory,

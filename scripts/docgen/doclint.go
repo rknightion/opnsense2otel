@@ -35,6 +35,8 @@ var envTokenRe = regexp.MustCompile(`\b(OPN[A-Z0-9]*(?:_[A-Z0-9]+)+|OPS_API_(?:K
 // fileSecretEnvVars are env vars read via os.LookupEnv in internal/options
 // (not part of the kingpin model).
 var fileSecretEnvVars = []string{
+	"OPN2OTEL_OPS_API_KEY_FILE", "OPN2OTEL_OPS_API_SECRET_FILE",
+	"OPN2OTEL_PYROSCOPE_AUTH_USER_FILE", "OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE",
 	"OPS_API_KEY_FILE", "OPS_API_SECRET_FILE",
 	"PYROSCOPE_AUTH_USER_FILE", "PYROSCOPE_AUTH_PASSWORD_FILE",
 	"OPN2OTEL_OTLP_GRAFANA_CLOUD_INSTANCE_ID_FILE",
