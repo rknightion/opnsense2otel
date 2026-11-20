@@ -705,6 +705,40 @@ func TestCorrelator_EarliestStartWinsOverLocality(t *testing.T) {
 	}
 }
 
+// TestCorrelator_ContinuationWindowOrientation pins current behaviour, not intended
+// behaviour: a fresh cache window can reverse a locally initiated conversation.
+func TestCorrelator_ContinuationWindowOrientation(t *testing.T) {
+	window := 3 * time.Minute
+	c, sink := newCorr(t, true, window, 0)
+	t0 := time.Unix(1_700_000_000, 0)
+	for i := 0; i < 2; i++ {
+		end := t0.Add(time.Duration(i) * 2 * window)
+		local := baseNF("cid-A", 100, 1, end, end)
+		local.Enrich.SrcScope, local.Enrich.DstScope = "lan", "remote"
+		remote := mirrorNF("cid-A", 200, 2, end, end.Add(time.Second))
+		if i == 0 {
+			local.TCPFlags = 0x02
+			local.Start = end.Add(-2 * time.Second)
+		} else {
+			remote.Start = end.Add(-2 * time.Second)
+		}
+		c.Observe(local)
+		c.Observe(remote)
+		c.Expire(end.Add(4 * time.Minute))
+		if len(sink.recs) != i+1 {
+			t.Fatalf("window %d: got %d emitted records, want %d", i+1, len(sink.recs), i+1)
+		}
+		got := sink.recs[i]
+		want := local
+		if i == 1 {
+			want = remote
+		}
+		if got.SrcAddr != want.SrcAddr || got.DstAddr != want.DstAddr || got.SrcPort != want.SrcPort || got.DstPort != want.DstPort || got.Direction != want.Direction || got.In != want.In || got.Out != want.Out {
+			t.Errorf("window %d: orientation = %v:%d -> %v:%d, %v, %v -> %v; want %v:%d -> %v:%d, %v, %v -> %v", i+1, got.SrcAddr, got.SrcPort, got.DstAddr, got.DstPort, got.Direction, got.In, got.Out, want.SrcAddr, want.SrcPort, want.DstAddr, want.DstPort, want.Direction, want.In, want.Out)
+		}
+	}
+}
+
 // Rule 1 outranks rule 2: Zenarmor is the only connection-oriented source here, so
 // when it states a direction the half matching it wins even against an earlier
 // Start. NetFlow's FIRST_SWITCHED is initiation evidence by inference; a conn
