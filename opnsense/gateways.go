@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // GatewayStatus is the custom type that represents the status of a gateway
@@ -142,11 +143,34 @@ func convertPriorityToString(priority any) string {
 	}
 }
 
+type gatewayStatusWarnings struct {
+	mu   sync.Mutex
+	seen map[string]struct{}
+}
+
+func (w *gatewayStatusWarnings) first(status string) bool {
+	if w == nil {
+		return true
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, ok := w.seen[status]; ok || len(w.seen) >= 32 {
+		return false
+	}
+	if w.seen == nil {
+		w.seen = make(map[string]struct{})
+	}
+	w.seen[status] = struct{}{}
+	return true
+}
+
+var processGatewayStatusWarnings gatewayStatusWarnings
+
 // parseGatewayStatus parses a translated status string to a GatewayStatusType.
 // OPNsense may report combined statuses such as "Latency, Packetloss"; the
 // worst component wins (Offline > Offline (forced) > Packetloss > Latency >
 // Pending > Online). Ported from upstream PR #103.
-func parseGatewayStatus(statusTranslated string, logger *slog.Logger, originalStatus string) GatewayStatusType {
+func parseGatewayStatus(statusTranslated string, logger *slog.Logger, originalStatus string, warnings *gatewayStatusWarnings) GatewayStatusType {
 	worst := GatewayStatusUnknown
 	worstRank := -1
 	rank := map[GatewayStatusType]int{
@@ -173,7 +197,11 @@ func parseGatewayStatus(statusTranslated string, logger *slog.Logger, originalSt
 		case "Offline (forced)":
 			s = GatewayStatusForcedDown
 		default:
-			logger.Warn("unknown gateway status detected", "status", originalStatus)
+			if warnings.first(originalStatus) {
+				logger.Warn("unknown gateway status detected", "status", originalStatus)
+			} else {
+				logger.Debug("unknown gateway status detected", "status", originalStatus)
+			}
 			return GatewayStatusUnknown
 		}
 		if r := rank[s]; r > worstRank {
@@ -271,7 +299,7 @@ func (c *Client) FetchGateways() (Gateways, *APICallError) {
 			Virtual:              v.Virtual,
 			Upstream:             v.Upstream,
 			InterfaceDescription: v.InterfaceDescription,
-			Status:               parseGatewayStatus(v.Status, c.log, v.Status),
+			Status:               parseGatewayStatus(v.Status, c.log, v.Status, &processGatewayStatusWarnings),
 			Delay:                delay,
 			StdDev:               stdDev,
 			Loss:                 loss,
