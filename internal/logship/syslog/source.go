@@ -61,23 +61,29 @@ var (
 )
 
 func init() {
-	logship.RegisterPushSource(func(d logship.Deps) (logship.PushSource, error) {
-		cfg, enabled, err := options.LogsSyslog()
+	logship.RegisterPushSource(buildSource)
+}
+
+func buildSource(d logship.Deps) (logship.PushSource, error) {
+	cfg, enabled := d.SyslogConfig, d.SyslogEnabled
+	if !d.SyslogConfigResolved {
+		var err error
+		cfg, enabled, err = options.LogsSyslog()
 		if err != nil {
 			return nil, err
 		}
-		if !enabled {
-			return nil, nil
-		}
-		s := newSource(cfg, d)
-		// Bind EAGERLY, here in the factory rather than in Run: a port that is already
-		// in use is a configuration error the operator must see at startup, not a
-		// receiver that is silently dead for the life of the process.
-		if err := s.Start(); err != nil {
-			return nil, err
-		}
-		return s, nil
-	})
+	}
+	if !enabled {
+		return nil, nil
+	}
+	s := newSource(cfg, d)
+	// Bind EAGERLY, here in the factory rather than in Run: a port that is already
+	// in use is a configuration error the operator must see at startup, not a
+	// receiver that is silently dead for the life of the process.
+	if err := s.Start(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // source implements logship.PushSource. It owns the listeners, turns each received
@@ -88,13 +94,14 @@ func init() {
 // holding finished records. Nothing on this path may ever make a network call — see
 // enrich.Refresher.NoteMiss, which is deliberately non-blocking for exactly this reason.
 type source struct {
-	l        *Listener
-	cache    *enrich.Cache
-	dnsCache *flow.DNSCache
-	miss     func(table string)
-	m        *logship.ReceiverMetrics
-	filter   *Filter
-	log      *slog.Logger
+	l              *Listener
+	cache          *enrich.Cache
+	dnsCache       *flow.DNSCache
+	miss           func(table string)
+	m              *logship.ReceiverMetrics
+	filter         *Filter
+	log            *slog.Logger
+	legacyLocation *time.Location
 
 	// sink receives derived-metric observations (#258). Never nil: a NopMetricSink is
 	// substituted when metric derivation is disabled (log_events collector off).
@@ -161,11 +168,12 @@ func newSource(cfg *options.SyslogConfig, d logship.Deps) *source {
 			Stages:     ParseStages,
 			Subsystems: Subsystems,
 		}),
-		filter:      NewFilter(cfg.IncludePrograms, cfg.ExcludePrograms, cfg.MinSeverity, cfg.HasMinSeverity),
-		log:         d.Logger,
-		sink:        sink,
-		sample:      cfg.Sample,
-		sampledAttr: cfg.SampledAttr,
+		legacyLocation: cfg.LegacyLocation,
+		filter:         NewFilter(cfg.IncludePrograms, cfg.ExcludePrograms, cfg.MinSeverity, cfg.HasMinSeverity),
+		log:            d.Logger,
+		sink:           sink,
+		sample:         cfg.Sample,
+		sampledAttr:    cfg.SampledAttr,
 	}
 	s.unparsed = func(subsystem string) { observeUnparsed(s.m, subsystem) }
 	// The shared sink arrives via Deps; it is used only when this receiver opted in.
@@ -229,7 +237,7 @@ func (s *source) handle(line []byte, peer netip.Addr) {
 	}
 	line = []byte(redactAPIAuthFailure(string(line)))
 	now := time.Now()
-	env, err := ParseEnvelope(line, now)
+	env, err := ParseEnvelopeIn(line, now, s.legacyLocation)
 	if err != nil {
 		if safeEnv, safeRaw, recognized := sanitizeMalformedFreeRADIUS(line, now); recognized {
 			// The original envelope was malformed, so retain the closed parse-error

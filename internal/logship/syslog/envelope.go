@@ -37,6 +37,12 @@ var (
 // panics: every malformed input returns an error, and the caller ships the raw
 // line rather than dropping it.
 func ParseEnvelope(line []byte, now time.Time) (Envelope, error) {
+	return ParseEnvelopeIn(line, now, nil)
+}
+
+// ParseEnvelopeIn parses a line using loc for legacy timestamps. A nil loc uses
+// now's location; RFC5424 timestamps always retain their own offset.
+func ParseEnvelopeIn(line []byte, now time.Time, loc *time.Location) (Envelope, error) {
 	var env Envelope
 	if len(line) == 0 {
 		return env, errEmpty
@@ -52,7 +58,7 @@ func ParseEnvelope(line []byte, now time.Time) (Envelope, error) {
 	if len(rest) >= 2 && rest[0] == '1' && rest[1] == ' ' {
 		return parse5424(rest[2:], env)
 	}
-	return parse3164(rest, env, now)
+	return parse3164(rest, env, now, loc)
 }
 
 // parsePRI consumes the leading "<N>" and returns the remainder plus N.
@@ -220,13 +226,13 @@ var bsdMonths = map[string]time.Month{
 }
 
 // parse3164 parses the legacy BSD envelope: MMM DD HH:MM:SS SP HOST SP TAG[PID]: SP MSG.
-func parse3164(b []byte, env Envelope, now time.Time) (Envelope, error) {
+func parse3164(b []byte, env Envelope, now time.Time, loc *time.Location) (Envelope, error) {
 	// "Jul 14 19:50:01" is exactly 15 bytes; the day may be space-padded ("Jul  4").
 	const stampLen = 15
 	if len(b) < stampLen+1 || b[stampLen] != ' ' {
 		return env, errTruncated
 	}
-	ts, err := parseBSDTime(b[:stampLen], now)
+	ts, err := parseBSDTime(b[:stampLen], now, loc)
 	if err != nil {
 		return env, err
 	}
@@ -270,7 +276,7 @@ func splitTagPID(tag []byte) (prog, pid string) {
 // case, where a 31 Dec line is parsed on 1 Jan. The mirror case is a sender whose
 // clock is ahead of ours: its 1 Jan line arrives while we still read 31 Dec, and
 // belongs to the next year whenever that puts it within the same 24h of now.
-func parseBSDTime(b []byte, now time.Time) (time.Time, error) {
+func parseBSDTime(b []byte, now time.Time, loc *time.Location) (time.Time, error) {
 	if len(b) < 15 {
 		return time.Time{}, errBadTime
 	}
@@ -295,11 +301,10 @@ func parseBSDTime(b []byte, now time.Time) (time.Time, error) {
 	if hh > 23 || mm > 59 || ss > 60 {
 		return time.Time{}, errBadTime
 	}
-	loc := now.Location()
 	if loc == nil {
-		loc = time.UTC
+		loc = now.Location()
 	}
-	t := time.Date(now.Year(), mon, day, hh, mm, ss, 0, loc)
+	t := time.Date(now.In(loc).Year(), mon, day, hh, mm, ss, 0, loc)
 	if t.Sub(now) > 24*time.Hour {
 		t = t.AddDate(-1, 0, 0)
 	} else if next := t.AddDate(1, 0, 0); next.Sub(now) <= 24*time.Hour {

@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/kingpin/v2"
 )
@@ -19,6 +20,11 @@ import (
 // Off by default like every log source (see logs.go): --logs.enabled only starts the
 // pipeline; a source must also opt in before anything ships.
 var (
+	logsSyslogLegacyTimezone = kingpin.Flag(
+		"logs.syslog.legacy-timezone",
+		"IANA timezone for RFC3164 timestamps; empty uses the exporter process timezone.",
+	).Envar("OPN2OTEL_LOGS_SYSLOG_LEGACY_TIMEZONE").Default("").String()
+
 	logsSyslogEnabled = kingpin.Flag(
 		"logs.syslog.enabled",
 		"Enable the syslog receiver: listens for logs pushed by OPNsense (RFC5424 or RFC3164, "+
@@ -168,6 +174,7 @@ var (
 
 // SyslogConfig is the resolved configuration for the syslog receiver.
 type SyslogConfig struct {
+	LegacyLocation   *time.Location
 	UDPAddr          string
 	UDPReceiveBuffer int
 	TCPAddr          string
@@ -229,6 +236,13 @@ func LogsSyslog() (*SyslogConfig, bool, error) {
 		Sample:           *logsSyslogSample,
 		SampledAttr:      *logsSyslogSampledAttr,
 		DebugCapture:     *logsSyslogDebugCapture,
+	}
+	if zone := *logsSyslogLegacyTimezone; zone != "" {
+		loc, err := time.LoadLocation(zone)
+		if err != nil {
+			return nil, false, fmt.Errorf("logs.syslog.legacy-timezone: %w", err)
+		}
+		cfg.LegacyLocation = loc
 	}
 	if cfg.UDPReceiveBuffer < 0 {
 		return nil, false, fmt.Errorf(
