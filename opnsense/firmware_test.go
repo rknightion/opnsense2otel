@@ -193,6 +193,9 @@ func TestParseLastCheckTimestamp(t *testing.T) {
 		{"Undefined", "undefined", 0},
 		{"Empty string", "", 0},
 		{"Garbage", "garbage", 0},
+		{"numeric +0545", "Tue Jun  9 10:13:17 +0545 2026", 1780999997 - 20700},
+		{"numeric -0930", "Tue Jun  9 10:13:17 -0930 2026", 1780999997 + 34200},
+		{"numeric +03", "Tue Jun  9 10:13:17 +03 2026", 1780999997 - 10800},
 		{"UnixDate BST", "Tue Jun  9 10:13:17 BST 2026", 1780999997},
 		{"UnixDate UTC", "Tue Jun  9 10:13:17 UTC 2026", 1780999997},
 	}

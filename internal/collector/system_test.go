@@ -204,6 +204,33 @@ func TestSystemCollector_Update_NoArc(t *testing.T) {
 	}
 }
 
+func TestSystemCollectorOmitsUptimeWhenBoottimeUnparseable(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/diagnostics/system/systemTime", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"boottime":"garbage","datetime":"garbage","config":"garbage","loadavg":"0.12, 0.34, 0.56"}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := newCollectorTestClient(t, server)
+	c := &systemCollector{subsystem: SystemSubsystem}
+	c.Register(namespace, "test", promslog.NewNopLogger())
+	loads := map[string]float64{}
+	for _, m := range collectMetrics(t, c, client) {
+		d := m.Desc().String()
+		if strings.Contains(d, "uptime_seconds") {
+			t.Error("unparseable boottime emitted uptime")
+		}
+		if strings.Contains(d, "load_average") {
+			loads[getMetricLabels(m)["interval"]] = getMetricValue(m)
+		}
+	}
+	for period, want := range map[string]float64{"1": 0.12, "5": 0.34, "15": 0.56} {
+		if got, ok := loads[period]; !ok || got != want {
+			t.Errorf("load %s = %v, present %v; want %v", period, got, ok, want)
+		}
+	}
+}
+
 func TestSystemCollector_Name(t *testing.T) {
 	c := &systemCollector{subsystem: SystemSubsystem}
 	if c.Name() != SystemSubsystem {

@@ -147,17 +147,18 @@ func (c *systemCollector) Update(ctx context.Context, client *opnsense.Client, c
 		)
 	}
 
-	// Uptime and load average come solely from the systemTime sub-call. Skip them
-	// when it failed rather than emitting uptime=0, which reads as a host reboot
-	// and can fire false "host rebooted" alerts (#91).
-	if data.Time.Available {
+	// A failed call suppresses both uptime and loads. A failed boottime parse
+	// suppresses uptime alone: a fabricated zero reads as a host reboot.
+	if data.Time.Available && data.Time.UptimeAvailable {
 		ch <- prometheus.MustNewConstMetric(
 			c.uptimeSeconds,
 			prometheus.GaugeValue,
 			float64(data.Time.Uptime),
 			c.instance,
 		)
+	}
 
+	if data.Time.Available {
 		ch <- prometheus.MustNewConstMetric(
 			c.loadAverage,
 			prometheus.GaugeValue,
