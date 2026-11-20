@@ -842,6 +842,9 @@ settings:
   # everything. Mutually exclusive with --logs.syslog.exclude-programs.
   # logs.syslog.include-programs: ""
   #
+  # IANA timezone for RFC3164 timestamps; empty uses the exporter process timezone.
+  # logs.syslog.legacy-timezone: ""
+  #
   # TCP listen address for the syslog receiver. Empty disables the TCP listener. Prefer TCP
   # for firewall logs: UDP datagram loss is silent and unrecoverable.
   # logs.syslog.listen-tcp: ":5514"

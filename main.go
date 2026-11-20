@@ -898,11 +898,13 @@ func main() {
 				flowlog.Sink.Emit(r)
 			}
 			corr := flow.NewCorrelator(flow.CorrelatorConfig{
-				Enabled:    flowCfg.Correlate,
+				Enabled:    flowCfg.CorrelationActive(),
 				Window:     flowCfg.CorrelateWindow,
 				MaxEntries: flowCfg.CorrelateMaxEntries,
 			}, emit)
-			flowSink = flow.Tee(collector.Flow, corr)
+			if flowCfg.NetflowEnabled {
+				flowSink = flow.Tee(collector.Flow, corr)
+			}
 			collector.Flow.SetCorrelatorStats(corr.Stats)
 			collector.Flow.SetFlowLogStats(func() collector.FlowLogStats {
 				s := flowlog.Sink.Stats()
@@ -1658,9 +1660,12 @@ func main() {
 		// syslog receiver reads per log line. The refresher owns the network I/O on its
 		// own goroutine; the receiver never makes an API call on its read path.
 		deps := logship.Deps{
-			Client:     &opnsenseClient,
-			Logger:     logger,
-			Registerer: selfMetricsRegistry,
+			SyslogConfigResolved: true,
+			SyslogEnabled:        cfg.SyslogOn,
+			SyslogConfig:         cfg.Syslog,
+			Client:               &opnsenseClient,
+			Logger:               logger,
+			Registerer:           selfMetricsRegistry,
 			// Zenarmor is a correlator producer owned by the log pipeline, while
 			// NetFlow is external to it. This hook runs only after Zenarmor and every
 			// other log source has returned, then quiesces NetFlow and performs the

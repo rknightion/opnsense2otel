@@ -707,6 +707,8 @@ services:
       # Comma-separated syslog programs to ship, dropping everything else. Empty ships
       # everything. Mutually exclusive with --logs.syslog.exclude-programs.
       # OPN2OTEL_LOGS_SYSLOG_INCLUDE_PROGRAMS: ""
+      # IANA timezone for RFC3164 timestamps; empty uses the exporter process timezone.
+      # OPN2OTEL_LOGS_SYSLOG_LEGACY_TIMEZONE: ""
       # TCP listen address for the syslog receiver. Empty disables the TCP listener.
       # Prefer TCP for firewall logs: UDP datagram loss is silent and unrecoverable.
       # OPN2OTEL_LOGS_SYSLOG_LISTEN_TCP: ":5514"
