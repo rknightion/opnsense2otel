@@ -600,21 +600,23 @@ func (r *Repairer) Repair(rec *Record, m *IfMap, snap *enrich.Snapshot, now time
 
 // Release returns every held record whose window has elapsed, plus anything the hold
 // buffer had to let go early, each with repairs 2 and 3 applied. The caller enriches
-// and ships them exactly as it would a RepairEmit record.
+// and ships them exactly as it would a RepairEmit record. The second result counts
+// held records suppressed by NAT de-duplication.
 //
 // It is cheap to call and safe to call often: the common case is a bounded scan that
 // stops at the first record not yet due. The caller should drive it from both the
 // receive path (so a busy lane needs no timer at all) and a ticker (so a lane that has
 // gone quiet still flushes what it is holding).
-func (r *Repairer) Release(now time.Time) []Record {
+func (r *Repairer) Release(now time.Time) ([]Record, int) {
 	return r.release(now, false)
 }
 
 // Flush returns every held record regardless of its deadline, for a clean shutdown.
 // After it returns the hold buffer is empty. Its counterpart is Correlator.Flush, and
 // it exists for the same reason: a record parked in a buffer at exit is a record the
-// process was told about and never reported.
-func (r *Repairer) Flush() []Record {
+// process was told about and never reported. The second result counts records
+// suppressed by NAT de-duplication.
+func (r *Repairer) Flush() ([]Record, int) {
 	return r.release(time.Time{}, true)
 }
 
@@ -623,7 +625,7 @@ func (r *Repairer) Flush() []Record {
 // The two repairs run OUTSIDE the lock, both because correctEgress takes it itself and
 // because there is no reason to hold the hot path's mutex across work that touches
 // nothing shared.
-func (r *Repairer) release(now time.Time, all bool) []Record {
+func (r *Repairer) release(now time.Time, all bool) ([]Record, int) {
 	r.mu.Lock()
 	due := r.dueEarly
 	r.dueEarly = nil
@@ -650,13 +652,15 @@ func (r *Repairer) release(now time.Time, all bool) []Record {
 	r.mu.Unlock()
 
 	if len(due) == 0 {
-		return nil
+		return nil, 0
 	}
 	out := make([]Record, 0, len(due))
+	dropped := 0
 	for _, h := range due {
 		// Repair 5 runs at RELEASE for a held record, not at arrival: the copy that
 		// wins the VLAN contest is the one whose identity belongs in the NAT table.
 		if !r.natAdmit(&h.rec, now) {
+			dropped++
 			continue
 		}
 		r.correctEgress(&h.rec, h.m)
@@ -664,7 +668,7 @@ func (r *Repairer) release(now time.Time, all bool) []Record {
 		r.setDirection(&h.rec, h.m, h.snap)
 		out = append(out, h.rec)
 	}
-	return out
+	return out, dropped
 }
 
 // repairWith is the real entry point, resolving against the narrow seam so the

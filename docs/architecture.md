@@ -203,10 +203,10 @@ sequenceDiagram
 
 `StartPolling` launches one goroutine per enabled collector plus a health goroutine, each on its own timer (its data-volatility tier, jittered at startup to spread the cold-start herd). A shared semaphore caps concurrent API calls at `min(GOMAXPROCS, 8)` so a box with many collectors is never dialled by dozens of pollers at once.
 
-1. A collector's timer fires. If the last health poll found the box unreachable, the poll is skipped and the previous snapshot entry is retained (#127).
-2. Otherwise the collector's `Update()` runs under the concurrency cap and the per-poll timeout (`--exporter.max-scrape-duration`, now a per-poll bound), invoking one or more `Fetch*()` methods and emitting metrics into a buffer.
+1. A collector's timer fires. If the last health poll found the box unreachable, an API-dependent collector's poll is skipped and the previous snapshot entry is retained (#127). Collectors that make no API call are polled regardless of reachability.
+2. Otherwise the collector's `Update()` runs under the concurrency cap and the per-poll timeout (`--exporter.max-scrape-duration`, now a per-poll bound), emitting metrics into a buffer. API-dependent collectors invoke one or more `Fetch*()` methods.
 3. The buffer, its duration, and its success flag are stored under the collector's name (`snapshot.put`), replacing that collector's previous entry.
-4. The health goroutine polls the system status API on the global interval and sets the persistent health gauges: `opnsense_up` (API reachability), `opnsense_system_status_code`, the `opnsense_firewall_status` / `opnsense_crash_reporter_status` gauges, and `opnsense_system_subsystem_status_code` (one series per subsystem the payload reports - disk space, root lock, plugin overrides, and anything beyond the two dedicated gauges). A transport-level failure flags the box unreachable, which pauses the collector polls until it recovers.
+4. The health goroutine polls the system status API on the global interval and sets the persistent health gauges: `opnsense_up` (API reachability), `opnsense_system_status_code`, the `opnsense_firewall_status` / `opnsense_crash_reporter_status` gauges, and `opnsense_system_subsystem_status_code` (one series per subsystem the payload reports - disk space, root lock, plugin overrides, and anything beyond the two dedicated gauges). A transport-level failure flags the box unreachable, which pauses API-dependent collector polls until it recovers.
 
 ### Serve lifecycle
 

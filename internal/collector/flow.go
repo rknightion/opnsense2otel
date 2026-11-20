@@ -337,6 +337,8 @@ func init() {
 
 func (c *flowCollector) Name() string { return c.subsystem }
 
+func (*flowCollector) PollsWithoutAPI() bool { return true }
+
 func (c *flowCollector) Register(namespace, instanceLabel string, log *slog.Logger) {
 	c.log = log
 	c.instance = instanceLabel

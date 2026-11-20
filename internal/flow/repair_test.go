@@ -214,7 +214,8 @@ func rpRun(r *Repairer, m ifTopology, snap *enrich.Snapshot, now time.Time, recs
 			kept = append(kept, rec)
 		}
 	}
-	return append(kept, r.Flush()...)
+	released, _ := r.Flush()
+	return append(kept, released...)
 }
 
 // rpOne feeds ONE record through the repairer and returns it as it LEAVES the stage,
@@ -394,7 +395,7 @@ func TestRepairer_HoldStillCoversAnUnresolvedTrunkSide(t *testing.T) {
 	if got := r.Stats().VLANSubnetAttributed; got != 1 {
 		t.Errorf("VLANSubnetAttributed = %d, want 1", got)
 	}
-	out := r.Flush()
+	out, _ := r.Flush()
 	if len(out) != 1 || out[0].In.Device != "ixl0_vlan50" {
 		t.Fatalf("released %d records, first In = %+v; want one record on ixl0_vlan50", len(out), out[0].In)
 	}
@@ -818,11 +819,11 @@ func TestRepairer_HeldRecordIsReleasedWhenItsWindowElapses(t *testing.T) {
 	if st := r.Stats(); st.HeldEntries != 1 {
 		t.Fatalf("HeldEntries = %d, want 1", st.HeldEntries)
 	}
-	if got := r.Release(rpT0.Add(vlanHoldWindow - time.Millisecond)); len(got) != 0 {
+	if got, _ := r.Release(rpT0.Add(vlanHoldWindow - time.Millisecond)); len(got) != 0 {
 		t.Fatalf("released %d records before the window elapsed, want 0", len(got))
 	}
 
-	got := r.Release(rpT0.Add(vlanHoldWindow))
+	got, _ := r.Release(rpT0.Add(vlanHoldWindow))
 	if len(got) != 1 {
 		t.Fatalf("released %d records at the deadline, want 1", len(got))
 	}
@@ -855,7 +856,8 @@ func TestRepairer_HoldBufferOverflowReleasesRatherThanDrops(t *testing.T) {
 		if v := r.repairWith(&rec, rpBox(), rpSnapshot(), rpT0); v != RepairHold {
 			t.Fatalf("record %d verdict = %v, want RepairHold", i, v)
 		}
-		held = append(held, r.Release(rpT0)...)
+		released, _ := r.Release(rpT0)
+		held = append(held, released...)
 	}
 
 	st := r.Stats()
@@ -1443,7 +1445,8 @@ func TestRepairer_VLANDedupeAgainstTheRealIfMap(t *testing.T) {
 			kept = append(kept, rec)
 		}
 	}
-	kept = append(kept, r.Flush()...)
+	released, _ := r.Flush()
+	kept = append(kept, released...)
 	if len(kept) != 1 {
 		t.Fatalf("kept %d records, want 1", len(kept))
 	}
