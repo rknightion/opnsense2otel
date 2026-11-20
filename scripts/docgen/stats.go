@@ -112,13 +112,17 @@ func statRules(s docStats) []statRule {
 			Replace: fmt.Sprintf("**%d collectors**", s.Collectors), MinHits: 1},
 		{File: "docs/index.md", Pattern: subCollectors, Replace: subCollectorsRepl, MinHits: 1},
 		{File: "docs/metrics/index.md", Pattern: allProm, Replace: allPromRepl, MinHits: 1},
-		{File: "docs/metrics/index.md", Pattern: across, Replace: acrossRepl, MinHits: 1},
+		{File: "docs/metrics/index.md", Pattern: across, Replace: acrossRepl, MinHits: 2},
 		{File: "docs/metrics/index.md", Pattern: regexp.MustCompile(`\*\*\d+\+? metrics\*\* across \d+ collectors`),
 			Replace: fmt.Sprintf("**%d metrics** across %d collectors", s.Metrics, s.Collectors), MinHits: 1},
 		{File: "docs/collectors/index.md", Pattern: regexp.MustCompile(`all \d+ opnsense2otel collectors`),
 			Replace: fmt.Sprintf("all %d opnsense2otel collectors", s.Collectors), MinHits: 1},
 		{File: "docs/collectors/index.md", Pattern: subCollectors, Replace: subCollectorsRepl, MinHits: 1},
 		{File: "docs/architecture.md", Pattern: subCollectors, Replace: subCollectorsRepl, MinHits: 1},
+		{File: "docs/comparison.md", Pattern: across, Replace: acrossRepl, MinHits: 2},
+		{File: "docs/comparison.md", Pattern: eachCollectors, Replace: eachCollectorsRepl, MinHits: 1},
+		{File: "docs/comparison.md", Pattern: allProm, Replace: allPromRepl, MinHits: 1},
+		{File: "docs/faq.md", Pattern: across, Replace: acrossRepl, MinHits: 1},
 		// The agent instructions + these three docs pages sat outside the pin allowlist and drifted
 		// to a stale "30 collectors" while the real count grew to 47 (#117). Pin them so just
 		// docs-check fails on future drift. The agent instructions moved CLAUDE.md -> AGENTS.md on

@@ -45,49 +45,7 @@ These metrics are always emitted regardless of which sub-collectors are enabled:
 
 ## Collector reference
 
-### Enabled by default
-
-| Collector | Subsystem | Description | Disable flag |
-|-----------|-----------|-------------|-------------|
-| ARP table | `arp_table` | ARP cache entries | `--exporter.disable-arp-table` |
-| Gateways | `gateways` | Gateway status, RTT, loss, configuration | Always enabled |
-| Interfaces | `interfaces` | Interface traffic counters, packet totals, queue stats, link state, line rate | Always enabled |
-| Protocol stats | `protocol` | CARP, pfsync, IP, TCP, ARP protocol statistics (39+ metrics) | Always enabled |
-| Services | `services` | Service running status across all OPNsense services | Always enabled |
-| Cron jobs | `cron` | Cron table entries | `--exporter.disable-cron-table` |
-| WireGuard | `wireguard` | WireGuard tunnels, peers, transfer stats, service status | `--exporter.disable-wireguard` |
-| IPsec | `ipsec` | IPsec tunnels, phase1/phase2 status, service status | `--exporter.disable-ipsec` |
-| Unbound DNS | `unbound_dns` | DNS resolver statistics (30+ metrics), blocklist status, service status | `--exporter.disable-unbound` |
-| OpenVPN | `openvpn` | OpenVPN instances, sessions, traffic | `--exporter.disable-openvpn` |
-| Firewall | `firewall` | PF interface packet/byte counters (IPv4/IPv6 pass/block), state table, per-interface hits | `--exporter.disable-firewall` |
-| Firewall rules | `firewall_rule` | Total rule count; opt-in per-rule detail metrics | `--exporter.disable-firewall-rules` |
-| Firmware | `firmware` | Firmware version info, update status, reboot flags | `--exporter.disable-firmware` |
-| System | `system` | Memory, uptime, load averages, disk/swap usage, system info | `--exporter.disable-system` |
-| Temperature | `temperature` | Hardware temperature sensors | `--exporter.disable-temperature` |
-| Dnsmasq DHCP | `dnsmasq` | DHCP leases (total, by interface, reserved vs dynamic) | `--exporter.disable-dnsmasq` |
-| Mbuf stats | `mbuf` | FreeBSD network buffers, allocation failures, sendfile stats | `--exporter.disable-mbuf` |
-| NTP | `ntp` | NTP peer metrics (stratum, delay, offset, jitter) | `--exporter.disable-ntp` |
-| Certificates | `certificate` | Certificate validity timestamps, expiry monitoring | `--exporter.disable-certificates` |
-| CARP/VIP | `carp` | CARP HA status, demotion counter, per-VIP state | `--exporter.disable-carp` |
-| Activity | `activity` | CPU percentages (user/nice/system/interrupt/idle), thread counts | `--exporter.disable-activity` |
-| Kea DHCP | `kea` | Kea DHCPv4/v6 leases (total, by interface, reserved vs dynamic) | `--exporter.disable-kea` |
-| PF stats | `pf_stats` | PF state table, counters, limit counters, memory limits, timeouts | `--exporter.disable-pf-stats` |
-| NDP | `ndp` | IPv6 neighbor discovery table entries | `--exporter.disable-ndp` |
-| ISC DHCPv4 | `dhcpv4` | ISC DHCPv4 lease metrics (silent when the legacy ISC DHCP backend is absent) | `--exporter.disable-dhcpv4` |
-| ACME client | `acme` | ACME certificate renewal status and expiry (silent when `os-acme-client` is absent) | `--exporter.disable-acme` |
-| SMART disk health | `smart` | Per-disk SMART health, temperature, power-on hours (silent when `os-smart` is absent) | `--exporter.enable-smart` |
-| DynDNS | `dyndns` | DynDNS (ddclient) account update status (silent when `os-ddclient` is absent) | `--exporter.disable-dyndns` |
-| Syslog | `syslog` | syslog-ng per-destination processed/dropped/queued/written stats, truncation, memory, events-per-second | `--exporter.disable-syslog` |
-| Q-Feeds | `qfeeds` | Q-Feeds threat-intel feed entries, blocked packets/bytes/addresses, license expiry (silent when `os-q-feeds-connector` is absent) | `--exporter.disable-qfeeds` |
-| Tailscale | `tailscale` | Node-local Tailscale state: service/backend status, peer counts; opt-in per-peer details (silent when `os-tailscale` is absent) | `--exporter.disable-tailscale` |
-| Firewall aliases | `alias` | pf alias table entry counts and global table used/limit; opt-in per-table pf counters | `--exporter.disable-alias` |
-
-### Disabled by default (opt-in)
-
-| Collector | Subsystem | Description | Enable flag |
-|-----------|-----------|-------------|-------------|
-| Network diagnostics | `network_diag` | Kernel netisr stats, socket counts, route counts, pfsync HA nodes | `--exporter.enable-network-diagnostics` |
-| NetFlow | `netflow` | NetFlow service status, per-interface cache statistics | `--exporter.enable-netflow` |
+See the [generated collector reference](reference.md) for the complete inventory, subsystem names, and enable or disable flags.
 
 ### High-cardinality detail metrics
 

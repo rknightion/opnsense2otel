@@ -34,7 +34,7 @@ genuinely a good answer: it is small, you can read all of it, and there is nothi
 operate. Most of what follows is about what stops being true once you have several
 firewalls, plugins that come and go, or a metrics bill.
 
-**This exporter.** 65 collectors, 1006 metrics, polling decoupled from scraping, and both a
+**This exporter.** 1051 metrics across 82 collectors, polling decoupled from scraping, and both a
 Prometheus endpoint and native OTLP output. What that buys, and what it costs, is below.
 
 ## Design choices specific to this exporter
@@ -70,7 +70,7 @@ see which is which.
 
 **Cardinality has a declared budget.** `--exporter.series-budget` is compared against
 `opnsense_exporter_series`, and the web UI's cardinality report replays the same set.
-1006 metrics is a lot of metrics; the budget exists so that "a lot" stays a number somebody
+1051 metrics across 82 collectors is a lot of metrics; the budget exists so that "a lot" stays a number somebody
 chose rather than a number somebody discovers on an invoice.
 
 **Prometheus and OTLP, not one or the other.** `--otlp.enabled` pushes native OTLP metrics
@@ -110,6 +110,6 @@ those edges are.
 ## See also
 
 - [Architecture](architecture.md) — package structure and data flow
-- [Collectors](collectors/index.md) — what each of the 65 collectors reads
-- [Metrics Reference](metrics/index.md) — all 1006 metrics with types and labels
+- [Collectors](collectors/index.md) — what each of the 82 collectors reads
+- [Metrics Reference](metrics/index.md) — all 1051 Prometheus metrics with types and labels
 - [Security](security.md) — API key scope and what the exporter can reach

@@ -119,8 +119,8 @@ Zenarmor stream at once. See [Flow Volume](flow.md) and [Log Shipping](log-shipp
 
 ### Do I need the syslog or Zenarmor receivers to get any data at all?
 
-No - the 65 polling collectors and their ~1006 metrics work with just an API key, no receiver
-required. The syslog and Zenarmor receivers are separate, opt-in **push** sources that add
+No - polling works with just an API key, no receiver required; the exporter provides
+1051 metrics across 82 collectors. The syslog and Zenarmor receivers are separate, opt-in **push** sources that add
 event-level data (parsed, enriched firewall/IDS/DNS logs) the polling collectors don't cover.
 Flow volume metrics specifically need at least one of the Zenarmor receiver or the NetFlow
 receiver enabled to have any data to roll up. See [Log Shipping](log-shipping.md#sources) and

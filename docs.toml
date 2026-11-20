@@ -59,6 +59,7 @@ Collectors = [
     "metrics/index.md",
     { Overview = "metrics/overview.md" },
     { "Complete Reference" = "metrics/metrics.md" },
+    { "Self-Metrics" = "metrics/self-metrics.md" },
 ]
 
 [[site.nav]]

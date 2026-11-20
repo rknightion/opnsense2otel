@@ -80,7 +80,7 @@ secrets:
 Full walkthrough: [Getting started](https://m7kni.io/opnsense2otel/getting-started/). Other
 deployment methods: [Docker & Compose](https://m7kni.io/opnsense2otel/deployment/docker/) ·
 [Kubernetes](https://m7kni.io/opnsense2otel/deployment/kubernetes/) (manifests in
-[`deploy/k8s/`](./deploy/k8s/)) ·
+[`deploy/k8s/`](./deploy/k8s/) or [Helm chart](https://m7kni.io/opnsense2otel/deployment/kubernetes/#helm-chart)) ·
 [Systemd](https://m7kni.io/opnsense2otel/deployment/systemd/)
 
 ## OpenTelemetry and log shipping

@@ -90,7 +90,7 @@ curl http://localhost:8080/metrics
 You should see output containing lines like:
 
 ```text
-# HELP opnsense_up Whether the OPNsense API was reachable on the last health poll (1 = reachable, 0 = unreachable), updated on --collector.poll-interval independently of scrapes. A reachable box reporting a degraded subsystem stays 1; see opnsense_system_status_code and the per-subsystem status metrics.
+# HELP opnsense_up Whether the OPNsense API was reachable on the last health poll (1 = reachable, 0 = unreachable), updated on --collector.health-poll-interval independently of scrapes. A reachable box reporting a degraded subsystem stays 1; see opnsense_system_status_code and the per-subsystem status metrics.
 # TYPE opnsense_up gauge
 opnsense_up{opnsense_instance="my-firewall"} 1
 ```

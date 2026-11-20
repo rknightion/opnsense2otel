@@ -16,6 +16,37 @@ Deploy opnsense2otel in a Kubernetes cluster with file-based secrets and Prometh
 - OPNsense API credentials (key and secret)
 - Optional: [Prometheus Operator](https://prometheus-operator.dev/) for automated scrape configuration
 
+## Helm chart
+
+The signed Helm chart is published as an OCI package. Create the API credential Secret in the
+release namespace before installing the chart. Its default keys are `key` and `secret`; set
+`opnsense.existingSecret` to its name. For other key names, set `opnsense.secretKeys.apiKey` and
+`opnsense.secretKeys.apiSecret`. After rotating the Secret, change `opnsense.secretRevision` to a
+non-secret revision string and upgrade to roll the pod.
+
+Choose a published release and replace `3.0.0` below with its version without the leading `v`:
+
+```sh
+helm upgrade --install edge-fw oci://ghcr.io/rknightion/charts/opnsense2otel \
+  --version 3.0.0 --namespace monitoring \
+  --set opnsense.address=edge-fw.example.net \
+  --set opnsense.existingSecret=edge-fw-api
+```
+
+Syslog, Zenarmor and NetFlow receivers are disabled by default. Enabling a receiver under
+`receivers.*` adds its flags and ports; set its `allowedPeers` CIDR list to restrict senders.
+Prefer the schema-checked `settings` map for non-secret exporter flags: its keys are flag names
+without the leading dashes. Reserved keys fail the render, including entire receiver flag
+prefixes. Use a dedicated chart value where one exists; some reserved flags have no chart value
+and cannot be configured through the chart. See the [chart README](https://github.com/rknightion/opnsense2otel/tree/main/charts/opnsense2otel#readme)
+for values and receiver examples.
+
+Both `settings` and `extraArgs` become container arguments; do not put tokens, passwords or header
+values in either. The chart mounts only the API key pair. Other secrets have no chart mount route
+yet; see [issue #1124 (mounting other chart secrets)](https://github.com/rknightion/opnsense2otel/issues/1124).
+
+Steps 1 to 3 below describe the separate raw-manifest route, not the Helm installation.
+
 ## Step 1: Create the Secret
 
 When you [generate API keys](https://docs.opnsense.org/development/how-tos/api.html#creating-keys) on OPNsense, you get a `.txt` file with the key and secret. Add your OPNsense host and protocol to this file:

@@ -1,6 +1,6 @@
 ---
 title: Metrics Reference
-description: Explore the 1,006 Prometheus metrics exposed by 65 opnsense2otel collectors across OPNsense firewall subsystems.
+description: Explore 1051 Prometheus metrics across 82 collectors, covering every OPNsense firewall subsystem.
 tags:
   - Prometheus
   - Monitoring
@@ -33,6 +33,14 @@ is missing.
     Auto-generated list of every metric with type, labels, and help text.
 
     [:octicons-arrow-right-24: Complete reference](metrics.md)
+
+-   :material-heart-pulse:{ .lg .middle } **Self-Metrics**
+
+    ---
+
+    Exporter health and pipeline telemetry.
+
+    [:octicons-arrow-right-24: Self-metrics](self-metrics.md)
 
 </div>
 

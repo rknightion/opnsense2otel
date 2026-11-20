@@ -6,6 +6,18 @@ This Helm v3 application chart deploys one secure OPNsense exporter for one fire
 
 Create the API credential Secret outside Helm. By default its keys must be the canonical raw-manifest names `key` and `secret`; the chart mounts them as the internal files `api-key` and `api-secret` and never accepts or renders credential values.
 
+Install the signed OCI package, pinning a published release version without the leading `v`.
+Replace `3.0.0` with the release you choose and create the namespace and Secret first:
+
+```sh
+helm upgrade --install edge-fw oci://ghcr.io/rknightion/charts/opnsense2otel \
+  --version 3.0.0 --namespace monitoring \
+  --set opnsense.address=edge-fw.example.net \
+  --set opnsense.existingSecret=edge-fw-api
+```
+
+For a source checkout instead:
+
 ```sh
 kubectl -n monitoring create secret generic edge-fw-api \
   --from-literal=key='...' \
@@ -42,9 +54,13 @@ receivers:
     allowedPeers: ["10.0.0.254/32"]
 ```
 
-The chart adds the corresponding exporter flags: `--logs.enabled --logs.syslog.enabled`, `--logs.enabled --logs.zenarmor.enabled`, and `--flow.enabled --flow.netflow.enabled`. Peer allowlists become receiver arguments, not Kubernetes labels. Use the `extraArgs` string array for advanced exporter flags.
+The chart adds the corresponding exporter flags: `--logs.enabled --logs.syslog.enabled`, `--logs.enabled --logs.zenarmor.enabled`, and `--flow.enabled --flow.netflow.enabled`. Peer allowlists become receiver arguments, not Kubernetes labels.
 
-Syslog and Zenarmor feed the log-shipping pipeline. Its default sink is OTLP, so configure the matching `--otlp.*` transport arguments in `extraArgs`, or select `--logs.sink=stdout`. The chart does not silently replace the exporter's sink default.
+For non-secret exporter flags, prefer the generated, schema-checked `settings` map over the free-text `extraArgs` array. Keys are flag names without the leading dashes. Reserved flags fail rendering in `settings` or `extraArgs`, including entire receiver flag prefixes. Use a dedicated chart value where one exists; some reserved flags have no chart value and cannot be configured through the chart. The settings inventory is in `values.yaml`.
+
+Syslog and Zenarmor feed the log-shipping pipeline. Its default sink is OTLP, so configure non-secret `--otlp.*` transport settings through `settings`, or select `--logs.sink=stdout`. The chart does not silently replace the exporter's sink default.
+
+Both `settings` and `extraArgs` become container arguments. Do not put tokens, passwords or header values in either. The chart mounts only the API key pair; other secrets have no chart mount route yet. See [issue #1124 (mounting other chart secrets)](https://github.com/rknightion/opnsense2otel/issues/1124).
 
 The pod runs as UID/GID `65532`, has no service-account token, drops all capabilities, disallows privilege escalation, uses a read-only root filesystem, and sets the RuntimeDefault seccomp profile. A hardened `config-check` init container validates configuration and mounted credentials before the exporter starts.
 

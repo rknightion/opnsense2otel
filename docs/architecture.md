@@ -155,7 +155,7 @@ Backs the README's NetFlow/flow-volume row (#346). Also push-based: OPNsense's `
 
 ### `internal/webui/` - Operator console
 
-Backs the README's operator console row (#302): a single server-rendered page at `/` (Overview / Collectors / API / Cardinality / Devices / Config tabs), self-registering routes via `init()`. **No console request may call `Gather()` on the live Prometheus registry** — that would mean a page load in a browser tab silently triggers a firewall scrape. Instead every tab renders from already-passive sources: the `internal/metricsnap` capture, `collector.StatusTracker`, and the API-client cache view. The Devices tab is the one deliberate exception (it hits ARP/DHCP directly on tab-open), and the Config tab reads secret files from disk once per page load — neither touches the collector/metric path.
+Backs the README's operator console row (#302): a single server-rendered page at `/` (Overview / Collectors / API / Cardinality / Logs / Flow / Devices / ifIndex / Config tabs), self-registering routes via `init()`. **No console request may call `Gather()` on the live Prometheus registry** — that would mean a page load in a browser tab silently triggers a firewall scrape. Instead every tab renders from already-passive sources: the `internal/metricsnap` capture, `collector.StatusTracker`, and the API-client cache view. The Devices tab is the one deliberate exception (it hits ARP/DHCP directly on tab-open), and the Config tab reads secret files from disk once per page load — neither touches the collector/metric path.
 
 ### `internal/metricsnap/` - Passive metric capture
 
@@ -225,40 +225,7 @@ A scrape taken during cold start replays only the collectors that have already p
 
 ## Metric namespace
 
-All metrics use the `opnsense` namespace prefix. The subsystem constants define the second-level grouping:
-
-| Constant | Value |
-|----------|-------|
-| `ArpTableSubsystem` | `arp_table` |
-| `GatewaysSubsystem` | `gateways` |
-| `InterfacesSubsystem` | `interfaces` |
-| `ProtocolSubsystem` | `protocol` |
-| `FirewallSubsystem` | `firewall` |
-| `FirewallRulesSubsystem` | `firewall_rule` |
-| `FirmwareSubsystem` | `firmware` |
-| `SystemSubsystem` | `system` |
-| `TemperatureSubsystem` | `temperature` |
-| `UnboundDNSSubsystem` | `unbound_dns` |
-| `DnsmasqSubsystem` | `dnsmasq` |
-| `MbufSubsystem` | `mbuf` |
-| `NTPSubsystem` | `ntp` |
-| `CertificatesSubsystem` | `certificate` |
-| `CARPSubsystem` | `carp` |
-| `ActivitySubsystem` | `activity` |
-| `KeaSubsystem` | `kea` |
-| `CronTableSubsystem` | `cron` |
-| `WireguardSubsystem` | `wireguard` |
-| `IPsecSubsystem` | `ipsec` |
-| `OpenVPNSubsystem` | `openvpn` |
-| `ServicesSubsystem` | `services` |
-| `NetworkDiagSubsystem` | `network_diag` |
-| `NetflowSubsystem` | `netflow` |
-| `PFStatsSubsystem` | `pf_stats` |
-| `NDPSubsystem` | `ndp` |
-| `Dhcpv4Subsystem` | `dhcpv4` |
-| `ACMESubsystem` | `acme` |
-| `SMARTSubsystem` | `smart` |
-| `DynDNSSubsystem` | `dyndns` |
+All metrics use the `opnsense` namespace prefix. See the [generated collector reference](collectors/reference.md) for collector subsystem names.
 
 ## Profiling
 
