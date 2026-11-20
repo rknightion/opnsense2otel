@@ -282,6 +282,78 @@ jobs:
               echo "- only ${names} distinct \`opnsense_*\` metric names (floor ${METRIC_NAME_FLOOR}) ❌"
               fail=1
             fi
+            # Bound the informational probe to 16 MiB total, 64 KiB per line,
+            # 4096 distinct commands and 5 seconds (plus 1 second to kill).
+            # Capture output atomically and suppress all parser/timeout diagnostics:
+            # neither errors nor partial output may expose label values.
+            if activity_summary=$(timeout --kill-after=1s 5s python3 - /tmp/metrics.txt 2>/dev/null <<'PY'
+          import re
+          import sys
+
+          families = {
+              'opnsense_activity_command_cpu_percent',
+              'opnsense_activity_command_memory_bytes',
+              'opnsense_activity_command_threads',
+          }
+          label = re.compile(r'[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)[ \t]*=[ \t]*"((?:[^"\\\n]|\\[\\"n])*)"[ \t]*')
+          sample = re.compile(r'[ \t]+(?:[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|Inf)|NaN)(?:[ \t]+[+-]?[0-9]+)?[ \t]*(?:\r?\n)?\Z')
+          values = set()
+          seen = False
+          total = 0
+          with open(sys.argv[1], 'rb') as metrics:
+              while True:
+                  raw = metrics.readline(65537)
+                  if not raw:
+                      break
+                  total += len(raw)
+                  if len(raw) > 65536 or total > 16 * 1024 * 1024:
+                      raise ValueError('input budget exceeded')
+                  line = raw.decode('utf-8')
+                  name = re.match(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)', line)
+                  if not name or name.group(1) not in families:
+                      continue
+                  seen = True
+                  rest = line[name.end():]
+                  if not rest.startswith('{'):
+                      raise ValueError('invalid labels')
+                  pos = 1
+                  command = None
+                  keys = set()
+                  while True:
+                      match = label.match(rest, pos)
+                      if not match:
+                          raise ValueError('invalid label')
+                      key, value = match.groups()
+                      if key in keys:
+                          raise ValueError('duplicate label')
+                      keys.add(key)
+                      if key == 'command':
+                          command = re.sub(r'\\([\\"n])', lambda m: '\n' if m[1] == 'n' else m[1], value)
+                      pos = match.end()
+                      if rest[pos:pos + 1] == '}':
+                          break
+                      if rest[pos:pos + 1] != ',':
+                          raise ValueError('invalid separator')
+                      pos += 1
+                  if command is None or not sample.fullmatch(rest[pos + 1:]):
+                      raise ValueError('invalid sample')
+                  values.add(command)
+                  if len(values) > 4096:
+                      raise ValueError('command budget exceeded')
+          if not seen:
+              print('- Activity command labels: absent')
+          else:
+              whitespace = sum(any(c.isspace() for c in value) for value in values)
+              arguments = sum(any(token.startswith('-') or '/' in token or '=' in token
+                                  for token in value.split()) for value in values)
+              print(f'- Activity command labels: distinct={len(values)}, whitespace={whitespace}, '
+                    f'argument-shaped={arguments}, longest={max(map(len, values))}')
+          PY
+            ); then
+              printf '%s\n' "$activity_summary"
+            else
+              echo '- Activity command labels: unavailable (parse error)'
+            fi
           } >> out/report.md
           cat out/report.md >> "$GITHUB_STEP_SUMMARY"
           echo "failed=$fail" >> "$GITHUB_OUTPUT"
