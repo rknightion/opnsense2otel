@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -115,16 +114,12 @@ func (o *pollRequestObserver) isPluginAbsent(endpoint string, apiErr *opnsense.A
 // every collector still lands within a few seconds (D4) while staggering the herd.
 const coldStartJitterCap = 5 * time.Second
 
-// pollConcurrency is the effective per-process poll fan-out cap: min(GOMAXPROCS, 8).
-func pollConcurrency() int {
-	n := runtime.GOMAXPROCS(0)
-	if n > maxPollConcurrency {
-		return maxPollConcurrency
+// pollConcurrency caps polls by the client request limit and the firewall-safe ceiling.
+func (c *Collector) pollConcurrency() int {
+	if n := c.Client.MaxConcurrentRequests(); n > 0 && n < maxPollConcurrency {
+		return n
 	}
-	if n < 1 {
-		return 1
-	}
-	return n
+	return maxPollConcurrency
 }
 
 // pollGlobalInterval is the default interval for collectors that declare no tier.
@@ -166,7 +161,7 @@ func (c *Collector) resolveInterval(coll CollectorInstance) time.Duration {
 func (c *Collector) StartPolling(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	c.pollCancel = cancel
-	c.pollSem = make(chan struct{}, pollConcurrency())
+	c.pollSem = make(chan struct{}, c.pollConcurrency())
 	c.initPollReservation()
 
 	c.pollWG.Add(1)
@@ -189,7 +184,7 @@ func (c *Collector) StartPolling(ctx context.Context) {
 		"collectors", len(c.collectors),
 		"default_interval", c.pollGlobalInterval().String(),
 		"health_interval", c.healthPollInterval().String(),
-		"concurrency", pollConcurrency(),
+		"concurrency", c.pollConcurrency(),
 	)
 }
 

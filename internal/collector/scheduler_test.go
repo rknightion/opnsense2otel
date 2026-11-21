@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/rknightion/opnsense2otel/v5/internal/cpustream"
+	"github.com/rknightion/opnsense2otel/v5/internal/options"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
@@ -48,6 +50,39 @@ func (f *wedgedSchedulerCollector) Update(ctx context.Context, _ *opnsense.Clien
 	}
 	<-ctx.Done()
 	return nil
+}
+
+func TestPollConcurrencyIndependentOfGOMAXPROCS(t *testing.T) {
+	previous := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
+	for _, tc := range []struct{ limit, want int }{{0, 8}, {4, 4}, {1, 1}, {16, 8}} {
+		t.Run(fmt.Sprint(tc.limit), func(t *testing.T) {
+			client, err := opnsense.NewClient(options.OPNSenseConfig{MaxConcurrentRequests: tc.limit}, "test", slog.Default())
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := newScrapeTestCollector(t, &client)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			c.StartPolling(ctx)
+			defer c.StopPolling()
+			if got := cap(c.pollSem); got != tc.want {
+				t.Errorf("scheduled poll capacity = %d, want %d", got, tc.want)
+			}
+			reservation := c.pollReservation()
+			if tc.want == 1 {
+				if reservation != nil {
+					t.Error("single slot must not be reserved")
+				}
+			} else if reservation == nil || cap(reservation.general) != tc.want-1 {
+				t.Errorf("general reservation = %v, want capacity %d", reservation, tc.want-1)
+			}
+			transport := reflect.ValueOf(&client).Elem().FieldByName("httpClient").Elem().FieldByName("Transport").Elem().Elem()
+			if got := int(transport.FieldByName("MaxIdleConnsPerHost").Int()); got != tc.want {
+				t.Errorf("idle pool capacity = %d, want %d", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestPollOnceCapturesRecordsAndPropagatesCtx(t *testing.T) {
