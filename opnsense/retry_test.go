@@ -8,6 +8,32 @@ import (
 	"time"
 )
 
+// TestTimeoutIsNotRetried ensures a slow upstream is not sent duplicate requests.
+func TestTimeoutIsNotRetried(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			var attempts atomic.Int32
+			server, client := newTestClientWithServer(t, func(_ http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				<-r.Context().Done()
+			})
+			defer server.Close()
+			client.httpClient.Timeout = 100 * time.Millisecond
+			var out map[string]any
+			err := client.do(method, "api/test/x", nil, &out)
+			if err == nil {
+				t.Fatal("expected a timeout error")
+			}
+			if err.StatusCode != 0 || !strings.Contains(strings.ToLower(err.Message), "timeout") {
+				t.Errorf("expected status 0 and timeout error, got %#v", err)
+			}
+			if got := attempts.Load(); got != 1 {
+				t.Errorf("expected one send after timeout, got %d", got)
+			}
+		})
+	}
+}
+
 // TestRetryBackoffIncreases covers #127: repeated transport errors must wait increasing
 // intervals, not a constant 25ms.
 func TestRetryBackoffIncreases(t *testing.T) {
