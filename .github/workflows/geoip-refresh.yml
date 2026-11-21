@@ -34,6 +34,7 @@ jobs:
   # rebuild and republish :main on the previous month's files, which costs a
   # pointless image push and, worse, makes the refresh look like it worked.
   check:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     outputs:
       available: ${{ steps.probe.outputs.available }}
@@ -52,7 +53,7 @@ jobs:
           available=true
           for product in country asn; do
             url="https://download.db-ip.com/free/dbip-${product}-lite-${month}.mmdb.gz"
-            if curl -fsSI --max-time 60 -o /dev/null "$url"; then
+            if status="$(curl -sSLI --max-time 60 -o /dev/null -w '%{http_code}' "$url")" && [ "$status" = 200 ]; then
               echo "present: ${url}"
             else
               echo "::notice::${url} is not published yet — skipping this refresh"
@@ -76,3 +77,78 @@ jobs:
     uses: ./.github/workflows/publish.yml
     with:
       release_tag: ""
+
+  verify:
+    needs: [check, rebuild]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - name: Verify the published attribution edition
+        env:
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_MONTH: ${{ needs.check.outputs.month }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${REPOSITORY,,}"
+          scratch="$(mktemp -d)"
+          export DOCKER_CONFIG="$scratch/docker"
+          container=""
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ -n "$container" ]; then docker rm -f "$container" >/dev/null || status=1; fi
+            rm -rf "$scratch" || status=1
+            exit "$status"
+          }
+          trap cleanup EXIT
+          mkdir "$DOCKER_CONFIG"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin >/dev/null
+          resolve_main() {
+            docker buildx imagetools inspect "$image:main" --format '{{json .Manifest}}' |
+              jq -er '.digest | strings | select(test("^sha256:[0-9a-f]{64}$"))'
+          }
+          digest="$(resolve_main)"
+          invocation="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+          gh attestation verify "oci://${image}@${digest}" --repo "$REPOSITORY" \
+            --signer-workflow rknightion/.github/.github/workflows/container-publish.yml \
+            --signer-digest ac54996b4cf19e6ef58b02754903610c77f0383f \
+            --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" --format json > "$scratch/verified.json"
+          jq -e --arg invocation "$invocation" --arg digest "${digest#sha256:}" --arg image "$image" '
+            any(.[].verificationResult.statement;
+              .predicate.runDetails.metadata.invocationId == $invocation and
+              any(.subject[]; (.name | ascii_downcase) == $image and .digest.sha256 == $digest))
+          ' "$scratch/verified.json" >/dev/null
+          # Hash the raw response before parsing: Buildx does not check it against
+          # the requested digest. Never normalize whitespace in an OCI manifest.
+          docker buildx imagetools inspect "$image@$digest" --raw > "$scratch/index.json"
+          printf '%s  %s\n' "${digest#sha256:}" "$scratch/index.json" | sha256sum --check --status || {
+            echo '::error::Index bytes do not match the attested digest'
+            exit 1
+          }
+          for arch in amd64 arm64; do
+            child="$(jq -er --arg arch "$arch" '
+              [.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch)] |
+              if length == 1 then .[0].digest | strings | select(test("^sha256:[0-9a-f]{64}$"))
+              else error("expected exactly one Linux image for " + $arch) end
+            ' "$scratch/index.json")"
+            docker pull --platform "linux/$arch" "$image@$child"
+            container="$(docker create --platform "linux/$arch" "$image@$child")"
+            docker cp "$container:/licenses/GEOIP-DB-IP-ATTRIBUTION.txt" "$scratch/attribution"
+            edition="$(grep '^  Edition: ' "$scratch/attribution")"
+            if [ "$edition" != "  Edition: $EXPECTED_MONTH" ]; then
+              echo "::error::Published $arch attribution edition does not match $EXPECTED_MONTH"
+              exit 1
+            fi
+            docker rm -f "$container" >/dev/null
+            container=""
+          done
+          [ "$(resolve_main)" = "$digest" ] || { echo '::error::main moved during verification'; exit 1; }
+          echo "Published attribution matches $EXPECTED_MONTH for $digest"

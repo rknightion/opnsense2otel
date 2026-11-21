@@ -18,6 +18,7 @@ jobs:
     outputs:
       version: ${{ steps.pin.outputs.version }}
       module: ${{ steps.pin.outputs.module }}
+      geoip_month: ${{ steps.geoip.outputs.month }}
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
@@ -36,6 +37,32 @@ jobs:
         run: |
           echo "version=$(just print-go-licenses-version)" >> "$GITHUB_OUTPUT"
           echo "module=$(just print-go-licenses-module)" >> "$GITHUB_OUTPUT"
+      - name: Probe DB-IP for the served month
+        id: geoip
+        run: |
+          set -euo pipefail
+          current="$(date -u +%Y-%m)"
+          month="$current"
+          missing=false
+          error=false
+          for product in country asn; do
+            url="https://download.db-ip.com/free/dbip-${product}-lite-${current}.mmdb.gz"
+            if status="$(curl -sSLI --max-time 60 -o /dev/null -w '%{http_code}' "$url")"; then
+              case "$status" in
+                200) ;;
+                404) missing=true ;;
+                *) error=true ;;
+              esac
+            else
+              error=true
+            fi
+          done
+          if [ "$error" = true ]; then
+            echo "::notice::DB-IP probe failed; using current month as cache key"
+          elif [ "$missing" = true ]; then
+            month="$(date -u -d "${current}-01 -1 month" +%Y-%m)"
+          fi
+          echo "month=${month}" >> "$GITHUB_OUTPUT"
   image:
     needs: go-licenses-pin
     permissions:
@@ -51,6 +78,7 @@ jobs:
       build-args: |
         GO_LICENSES_VERSION=${{ needs.go-licenses-pin.outputs.version }}
         GO_LICENSES_MODULE=${{ needs.go-licenses-pin.outputs.module }}
+        GEOIP_REFRESH=${{ needs.go-licenses-pin.outputs.geoip_month }}
       # Publish charts only for real releases. The pinned shared reusable gives
       # edge charts a 12-character appVersion while its edge image SHA tag is
       # seven characters, so an edge chart would point at a nonexistent image.

@@ -74,8 +74,11 @@ RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 # Empty = "the current UTC year-month, falling back to the previous one". Set it
 # (e.g. --build-arg DBIP_MONTH=2026-07) to pin a reproducible build to a known file.
 ARG DBIP_MONTH=""
+# Cache key only; DBIP_MONTH still controls the downloader's selection and fallback.
+ARG GEOIP_REFRESH=""
 
 RUN set -eu; \
+  : "$GEOIP_REFRESH"; \
   apk add --no-cache curl >/dev/null; \
   mkdir -p /geoip; \
   # DB-IP publishes on the 1st, and their publish can lag UTC midnight — so a
