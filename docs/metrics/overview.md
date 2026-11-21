@@ -43,18 +43,18 @@ Collectors add labels relevant to their subsystem:
 
 | Subsystem | Common labels |
 |-----------|--------------|
-| Gateways | `gateway`, `address`, `interface`, `default_gateway` |
+| Gateways | `name`, `address`, `default_gateway` (status) |
 | Interfaces | `interface`, `device` |
 | Firewall | `interface` |
 | Firewall rules | `uuid`, `description`, `action`, `interface`, `direction` |
-| WireGuard | `device`, `name`, `public_key` |
-| IPsec | `name`, `phase1_id`, `phase2_id` |
+| WireGuard | `device`, `device_type`, `device_name`, `peer_name` (peer status) |
+| IPsec | `description`, `name`, `phase1_name` (phase 2) |
 | Unbound DNS | Various (query type, protocol, rcode) |
 | Temperature | `device`, `type`, `device_seq` |
-| DHCP (Dnsmasq/Kea) | `interface`, `address`, `hostname`, `mac` |
-| Certificates | `description`, `common_name`, `cert_type`, `in_use` |
-| NTP | `peer`, `refid`, `status` |
-| CARP/VIP | `interface`, `vhid`, `status` |
+| DHCP (Dnsmasq) | `address`, `hostname`, `hwaddr`, `interface`, `device`, `vendor` (lease details) |
+| Certificates | `description`, `commonname`, `cert_type`, `in_use` |
+| NTP | `server`, `refid`, `type`, `status` (peer info) |
+| CARP/VIP | `interface`, `vhid`, `vip` |
 
 ## Metric types
 

@@ -47,10 +47,13 @@ var fileSecretEnvVars = []string{
 	"OPN2OTEL_GEOIP_DOWNLOAD_LICENSE_KEY_FILE",
 }
 
-type knownSet struct{ flags, envs map[string]bool }
+var metricTokenRe = regexp.MustCompile(`\bopnsense_[a-z0-9_]+\b`)
+var generatedBeginRe = regexp.MustCompile(`<!-- docgen:begin:([^ ]+) -->`)
+
+type knownSet struct{ flags, envs, metrics map[string]bool }
 
 func knownTokens(flags []FlagDoc) knownSet {
-	k := knownSet{flags: map[string]bool{}, envs: map[string]bool{}}
+	k := knownSet{flags: map[string]bool{}, envs: map[string]bool{}, metrics: map[string]bool{}}
 	for _, f := range flags {
 		k.flags[f.Name] = true
 		if f.Envar != "" {
@@ -87,7 +90,47 @@ func lintText(file, text string, known knownSet, allow map[string]bool) []string
 			problems = append(problems, fmt.Sprintf("%s: unknown env var %s", file, e))
 		}
 	}
+	generated := map[string]bool{
+		"docs/metrics/metrics.md":      true,
+		"docs/metrics/self-metrics.md": true,
+		"docs/collectors/reference.md": true,
+		"docs/deployment/reference.md": true,
+	}
+	path := filepath.ToSlash(filepath.Clean(file))
+	if strings.HasSuffix(path, ".md") && !generated[path] {
+		for _, m := range metricTokenRe.FindAllString(stripGeneratedRegions(text), -1) {
+			if !known.metrics[m] && !allow[m] {
+				problems = append(problems, fmt.Sprintf("%s: unknown metric %s", file, m))
+			}
+		}
+	}
 	return problems
+}
+
+// stripGeneratedRegions removes only paired regions, leaving a space so tokens cannot join.
+func stripGeneratedRegions(text string) string {
+	var out strings.Builder
+	for {
+		loc := generatedBeginRe.FindStringSubmatchIndex(text)
+		if loc == nil {
+			break
+		}
+		name := text[loc[2]:loc[3]]
+		end := "<!-- docgen:end:" + name + " -->"
+		i := strings.Index(text[loc[1]:], end)
+		next := generatedBeginRe.FindStringIndex(text[loc[1]:])
+		if i < 0 || (next != nil && next[0] < i) {
+			// Preserve an unmatched opener and continue at the next possible pair.
+			out.WriteString(text[:loc[1]])
+			text = text[loc[1]:]
+			continue
+		}
+		out.WriteString(text[:loc[0]])
+		out.WriteByte(' ')
+		text = text[loc[1]+i+len(end):]
+	}
+	out.WriteString(text)
+	return out.String()
 }
 
 func loadAllowlist(repoRoot string) map[string]bool {
@@ -168,8 +211,19 @@ func lintTargets(repoRoot string) []string {
 	return targets
 }
 
-func runDoclint(repoRoot string, flags []FlagDoc) []string {
+func runDoclint(repoRoot string, flags []FlagDoc, top []MetricInfo, collectors []CollectorInfo, self []SelfMetric) []string {
 	known := knownTokens(flags)
+	for _, m := range top {
+		known.metrics[m.FullName] = true
+	}
+	for _, c := range collectors {
+		for _, m := range c.Metrics {
+			known.metrics[m.FullName] = true
+		}
+	}
+	for _, m := range self {
+		known.metrics[m.FullName] = true
+	}
 	allow := loadAllowlist(repoRoot)
 	var problems []string
 	for _, rel := range lintTargets(repoRoot) {
