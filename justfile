@@ -291,11 +291,12 @@ live-delivery-proof exporter verifier:
 fieldaudit args="":
     go run ./cmd/fieldaudit {{ args }}
 
-# install the docs-staleness pre-commit hook into .git/hooks/
+# install the docs-staleness pre-commit hook into the git hooks directory
 [group('dev')]
 install-hooks:
-    cp scripts/hooks/pre-commit .git/hooks/pre-commit
-    chmod +x .git/hooks/pre-commit
+    mkdir -p "$(git rev-parse --git-path hooks)"
+    cp scripts/hooks/pre-commit "$(git rev-parse --git-path hooks)/pre-commit"
+    chmod +x "$(git rev-parse --git-path hooks)/pre-commit"
     @echo "pre-commit hook installed"
 
 # ── release ─────────────────────────────────────────────────────────────────
@@ -308,7 +309,7 @@ notices: _tool-go-licenses
 # build a static binary and emit SPDX + CycloneDX SBOMs for it
 [group('release')]
 sbom target="bin/opnsense2otel" out_dir="dist/sbom" name="opnsense2otel": _tool-syft
-    CGO_ENABLED=0 go build -mod=vendor -tags osusergo,netgo -trimpath -ldflags "-s -w -X main.version={{ version }}" -o bin/opnsense2otel .
+    CGO_ENABLED=0 go build -mod=vendor -tags osusergo,netgo -trimpath -ldflags "-s -w -X main.version={{ version }}" -o '{{ target }}' .
     mkdir -p '{{ out_dir }}'
     {{ tools_dir }}/syft '{{ target }}' -q -o "spdx-json={{ out_dir }}/{{ name }}.spdx.json" -o "cyclonedx-json={{ out_dir }}/{{ name }}.cdx.json"
     @echo "sbom: wrote {{ out_dir }}/{{ name }}.spdx.json + {{ out_dir }}/{{ name }}.cdx.json"
