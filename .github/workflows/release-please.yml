@@ -70,7 +70,7 @@ jobs:
       id-token: write
       packages: write
       attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
-    uses: rknightion/.github/.github/workflows/binaries.yml@ce131b215475bf6e6200de028e31d3e3f2be20a5 # v1.30.30
+    uses: rknightion/.github/.github/workflows/binaries.yml@4df830592a902bd9c1222cdea4337a04e2bcfc8d # v1.30.31
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       go-version: "1.27.4"
