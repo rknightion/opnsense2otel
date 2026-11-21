@@ -1,5 +1,75 @@
 # Changelog
 
+## [5.3.6](https://github.com/rknightion/opnsense2otel/compare/v5.3.5...v5.3.6) (2026-11-21)
+
+
+### Bug Fixes
+
+* align documentation and guard console snapshot usage ([#1182](https://github.com/rknightion/opnsense2otel/issues/1182)) ([08b7825](https://github.com/rknightion/opnsense2otel/commit/08b78251be19ffb6f8dc7c3b0c8e090359643bbf))
+* bound polling load and preserve valid snapshots ([#1179](https://github.com/rknightion/opnsense2otel/issues/1179)) ([79cf2c4](https://github.com/rknightion/opnsense2otel/commit/79cf2c480815a26d1805ec7e6acb3c12ed691b4d))
+* **deps:** update module github.com/grafana/pyroscope-go to v1.5.0 ([#1158](https://github.com/rknightion/opnsense2otel/issues/1158)) ([43d41ed](https://github.com/rknightion/opnsense2otel/commit/43d41edf1ca02d1ec75e3c1c216b3350e31def47))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.9.1 ([#1148](https://github.com/rknightion/opnsense2otel/issues/1148)) ([84e58af](https://github.com/rknightion/opnsense2otel/commit/84e58af046c4da8916c88b2c468e09e00e940f0f))
+* distinguish flow drops and tighten exporter contracts ([#1174](https://github.com/rknightion/opnsense2otel/issues/1174)) ([e5b9ca5](https://github.com/rknightion/opnsense2otel/commit/e5b9ca51c28d126b0be6114dca56f667f741eeec))
+* harden flow ingest, syslog time and collector recovery ([78e09b9](https://github.com/rknightion/opnsense2otel/commit/78e09b9b4f75ba2c38508ab0d9a1700d8ada9f6a)), closes [#1084](https://github.com/rknightion/opnsense2otel/issues/1084) [#1078](https://github.com/rknightion/opnsense2otel/issues/1078) [#1080](https://github.com/rknightion/opnsense2otel/issues/1080) [#1092](https://github.com/rknightion/opnsense2otel/issues/1092) [#1097](https://github.com/rknightion/opnsense2otel/issues/1097) [#1088](https://github.com/rknightion/opnsense2otel/issues/1088)
+* keep outage snapshots fresh and count NAT-suppressed records ([a66f351](https://github.com/rknightion/opnsense2otel/commit/a66f3510b477a92a3b0d9fbba76e497f193c0097)), closes [#1087](https://github.com/rknightion/opnsense2otel/issues/1087) [#1076](https://github.com/rknightion/opnsense2otel/issues/1076)
+* preserve syslog framing and bound polling noise ([eed9811](https://github.com/rknightion/opnsense2otel/commit/eed98117875e3eb52add4ad0164bb89e8dfd6fb2)), closes [#1075](https://github.com/rknightion/opnsense2otel/issues/1075) [#1081](https://github.com/rknightion/opnsense2otel/issues/1081) [#1095](https://github.com/rknightion/opnsense2otel/issues/1095) [#1096](https://github.com/rknightion/opnsense2otel/issues/1096)
+* retry connection refusals in systemd health contract ([#1186](https://github.com/rknightion/opnsense2otel/issues/1186)) ([1086c9f](https://github.com/rknightion/opnsense2otel/commit/1086c9f92184fbe14b45c5f154b2d477288c920c))
+* support telemetry file secrets and redact display URLs ([#1185](https://github.com/rknightion/opnsense2otel/issues/1185)) ([8ce96c6](https://github.com/rknightion/opnsense2otel/commit/8ce96c6c56b98bb41c65056aaaa073bf14829847))
+* tighten build inputs and honor recipe targets ([#1184](https://github.com/rknightion/opnsense2otel/issues/1184)) ([92c89b8](https://github.com/rknightion/opnsense2otel/commit/92c89b8c26067c990b74685761bcaffd4e0c419d))
+
+
+### Miscellaneous
+
+* add Cursor Cloud environment ([43f0274](https://github.com/rknightion/opnsense2otel/commit/43f02746bf2cf39cee8d2cc1b398f9c9bf02fcc8))
+* **cursor:** tailor review for exporter changes ([f2390c6](https://github.com/rknightion/opnsense2otel/commit/f2390c67f78a52bfc9aaa3f75de045336bdd41a0))
+* **deps:** update actions/setup-go action to v7.1.0 ([#1149](https://github.com/rknightion/opnsense2otel/issues/1149)) ([12ef5d0](https://github.com/rknightion/opnsense2otel/commit/12ef5d092f9df46816f010ed5c67736aaa74cb9f))
+* **deps:** update anthropics/claude-code-action action to v1.0.284 ([#1145](https://github.com/rknightion/opnsense2otel/issues/1145)) ([5b1c6d6](https://github.com/rknightion/opnsense2otel/commit/5b1c6d6b316d4f1a6999360555e10e2263dd060c))
+* **deps:** update anthropics/claude-code-action action to v1.0.286 ([#1187](https://github.com/rknightion/opnsense2otel/issues/1187)) ([b189b91](https://github.com/rknightion/opnsense2otel/commit/b189b91ef24a7a95691799ed425a72944a440fe3))
+* **deps:** update azure/setup-helm action to v5.1.0 ([#1150](https://github.com/rknightion/opnsense2otel/issues/1150)) ([fed0ae7](https://github.com/rknightion/opnsense2otel/commit/fed0ae7f3529a80b8222024806e0aba4b74bbb65))
+* **deps:** update dependency pydantic to v2.14.4 ([#1147](https://github.com/rknightion/opnsense2otel/issues/1147)) ([c84768a](https://github.com/rknightion/opnsense2otel/commit/c84768a570b36009758e9118b027b5e3a6a71432))
+* **deps:** update gcr.io/distroless/static-debian13:nonroot docker digest to aafe993 ([#1142](https://github.com/rknightion/opnsense2otel/issues/1142)) ([bb0496e](https://github.com/rknightion/opnsense2otel/commit/bb0496eaf5dbd72351ae629aaf5b4d7bb4684304))
+* **deps:** update mirror.gcr.io/library/golang:1.27.4-alpine docker digest to 70bd7dd ([#1143](https://github.com/rknightion/opnsense2otel/issues/1143)) ([da155c8](https://github.com/rknightion/opnsense2otel/commit/da155c887fa9f08b7b12046c17d83eec8a243143))
+* **deps:** update module github.com/anchore/syft to v1.57.2 ([#1151](https://github.com/rknightion/opnsense2otel/issues/1151)) ([bea2b28](https://github.com/rknightion/opnsense2otel/commit/bea2b28e8085f163be1477fb83a94339641268af))
+* **deps:** update module github.com/anchore/syft/cmd/syft to v1.57.2 ([#1152](https://github.com/rknightion/opnsense2otel/issues/1152)) ([162cef4](https://github.com/rknightion/opnsense2otel/commit/162cef494a3e1334ed0b57292ff1981b89a98f8f))
+* **deps:** update module github.com/goreleaser/goreleaser/v2 to v2.20.3 ([#1153](https://github.com/rknightion/opnsense2otel/issues/1153)) ([dabca4e](https://github.com/rknightion/opnsense2otel/commit/dabca4eb7df137bc1afe7eb49248a3981219c816))
+* **deps:** update module go.opentelemetry.io/otel/trace to v1.47.0 [security] ([#1141](https://github.com/rknightion/opnsense2otel/issues/1141)) ([8bc2437](https://github.com/rknightion/opnsense2otel/commit/8bc24371adcb8472b0a6542e0564731414abfdb2))
+* **deps:** update module golang.org/x/vuln to v1.10.0 ([#1154](https://github.com/rknightion/opnsense2otel/issues/1154)) ([7713a26](https://github.com/rknightion/opnsense2otel/commit/7713a26ca9eebbf3332ce7adccf851eee945f8f7))
+* **deps:** update opnsense-docs digest to 10c01b9 ([#1155](https://github.com/rknightion/opnsense2otel/issues/1155)) ([d39d29f](https://github.com/rknightion/opnsense2otel/commit/d39d29f461a0c8b4cd7cfb6968dbb06f58dd4340))
+* **deps:** update opnsense-docs digest to 4325038 ([#1144](https://github.com/rknightion/opnsense2otel/issues/1144)) ([9f5122c](https://github.com/rknightion/opnsense2otel/commit/9f5122c39725907ab201a78f7d80ab675150387a))
+* **deps:** update opnsense-docs digest to 953dd3d ([#1172](https://github.com/rknightion/opnsense2otel/issues/1172)) ([6331548](https://github.com/rknightion/opnsense2otel/commit/63315488503172cc725329b497f19808705698e6))
+* **deps:** update rknightion/.github action to v1.30.11 ([#1156](https://github.com/rknightion/opnsense2otel/issues/1156)) ([8f8d3d4](https://github.com/rknightion/opnsense2otel/commit/8f8d3d4fb3219091781a337f6cc5170184edfcb6))
+* **deps:** update rknightion/.github action to v1.30.14 ([#1160](https://github.com/rknightion/opnsense2otel/issues/1160)) ([46e5f53](https://github.com/rknightion/opnsense2otel/commit/46e5f534a54ccbfb277b895aa8f25bf287a5f6a2))
+* **deps:** update rknightion/.github action to v1.30.15 ([#1161](https://github.com/rknightion/opnsense2otel/issues/1161)) ([4d345e3](https://github.com/rknightion/opnsense2otel/commit/4d345e360a96dcf2237bc704f4694a773a7f39cc))
+* **deps:** update rknightion/.github action to v1.30.16 ([#1164](https://github.com/rknightion/opnsense2otel/issues/1164)) ([f0fb49f](https://github.com/rknightion/opnsense2otel/commit/f0fb49f6640568769acdba6427f61f68f7cac09b))
+* **deps:** update rknightion/.github action to v1.30.17 ([#1167](https://github.com/rknightion/opnsense2otel/issues/1167)) ([da961a7](https://github.com/rknightion/opnsense2otel/commit/da961a7c5bd802f76906d7155197967192bfe5c0))
+* **deps:** update rknightion/.github action to v1.30.19 ([#1175](https://github.com/rknightion/opnsense2otel/issues/1175)) ([bc67b8e](https://github.com/rknightion/opnsense2otel/commit/bc67b8ee76641f9e11676ab8ba6f3e555b501ae0))
+* **deps:** update rknightion/.github action to v1.30.20 ([#1180](https://github.com/rknightion/opnsense2otel/issues/1180)) ([47e41ad](https://github.com/rknightion/opnsense2otel/commit/47e41ad13007630ebaf0505efb8830dd9430c8b9))
+* **deps:** update rknightion/.github action to v1.30.21 ([#1181](https://github.com/rknightion/opnsense2otel/issues/1181)) ([25b6dd2](https://github.com/rknightion/opnsense2otel/commit/25b6dd2ed8d1bc82277d1cf7a224c7675464a342))
+* **deps:** update rknightion/.github action to v1.30.22 ([#1183](https://github.com/rknightion/opnsense2otel/issues/1183)) ([37ac60d](https://github.com/rknightion/opnsense2otel/commit/37ac60dfa5e1cb07b575484eaf0fd690e48002ee))
+* **deps:** update rknightion/.github action to v1.30.23 ([#1188](https://github.com/rknightion/opnsense2otel/issues/1188)) ([b8c3d64](https://github.com/rknightion/opnsense2otel/commit/b8c3d64ba6ac37af052d479bbf34e609ca7414e7))
+* **deps:** update rknightion/.github action to v1.30.24 ([#1189](https://github.com/rknightion/opnsense2otel/issues/1189)) ([bfc63ab](https://github.com/rknightion/opnsense2otel/commit/bfc63ab452a2d2f20c233607bc978017ee9fcd3f))
+* **deps:** update rknightion/.github action to v1.30.25 ([#1190](https://github.com/rknightion/opnsense2otel/issues/1190)) ([61efb31](https://github.com/rknightion/opnsense2otel/commit/61efb31aea314c5fbb73ff50d18a3426a0749b4f))
+* **deps:** update rknightion/.github action to v1.30.26 ([#1191](https://github.com/rknightion/opnsense2otel/issues/1191)) ([70e73b7](https://github.com/rknightion/opnsense2otel/commit/70e73b71337ed21123760fb793cd5eac4457e2c0))
+* **deps:** update rknightion/.github action to v1.30.27 ([#1192](https://github.com/rknightion/opnsense2otel/issues/1192)) ([47d6f73](https://github.com/rknightion/opnsense2otel/commit/47d6f739f265a3f47863d2d0c2b77fab8b50df56))
+* **deps:** update rknightion/.github action to v1.30.28 ([#1193](https://github.com/rknightion/opnsense2otel/issues/1193)) ([7c2f0a4](https://github.com/rknightion/opnsense2otel/commit/7c2f0a4ab5a37619050d12c2568f93bed049ad77))
+* **deps:** update rknightion/.github action to v1.30.29 ([#1194](https://github.com/rknightion/opnsense2otel/issues/1194)) ([36d9f36](https://github.com/rknightion/opnsense2otel/commit/36d9f3646bf0195cd957bd911c5ecd51c75055a7))
+* **deps:** update rknightion/.github action to v1.30.30 ([#1195](https://github.com/rknightion/opnsense2otel/issues/1195)) ([2081971](https://github.com/rknightion/opnsense2otel/commit/2081971a001db33283c3d84eb1cf1fd9570cb6a4))
+* **deps:** update rknightion/.github action to v1.30.31 ([#1196](https://github.com/rknightion/opnsense2otel/issues/1196)) ([e44fc07](https://github.com/rknightion/opnsense2otel/commit/e44fc074a2448f939ccc3e08da2f49d0c0356cbd))
+* **deps:** update step-security/harden-runner action to v2.23.0 ([#1157](https://github.com/rknightion/opnsense2otel/issues/1157)) ([fcc4e25](https://github.com/rknightion/opnsense2otel/commit/fcc4e25b9fc8714e15cc8dc551a8c66c5657f5a9))
+* **vended:** sync from rknightion/.github main ([#1163](https://github.com/rknightion/opnsense2otel/issues/1163)) ([92705b0](https://github.com/rknightion/opnsense2otel/commit/92705b0d875332c27e82f647f8d84a5cd3ca5c6d))
+* **vended:** sync from rknightion/.github main ([#1173](https://github.com/rknightion/opnsense2otel/issues/1173)) ([ff1922b](https://github.com/rknightion/opnsense2otel/commit/ff1922b39ad68fce12c4cb58c393b11de2964b03))
+
+
+### Documentation
+
+* pull requests are reviewed by Cursor Bugbot ([#1140](https://github.com/rknightion/opnsense2otel/issues/1140)) ([3959f8a](https://github.com/rknightion/opnsense2otel/commit/3959f8a69c08cfe772d14e5d5d51fe9453df1b5d))
+
+
+### CI/CD
+
+* run missing check legs in required jobs ([8c69bd7](https://github.com/rknightion/opnsense2otel/commit/8c69bd7e22d44b11528b047822c2510fed1690e3)), closes [#1103](https://github.com/rknightion/opnsense2otel/issues/1103)
+* summarize activity command labels without values ([da0f8c3](https://github.com/rknightion/opnsense2otel/commit/da0f8c36ca3ced655d00542afd27165ed6f77e94)), closes [#1129](https://github.com/rknightion/opnsense2otel/issues/1129)
+
 ## [5.3.5](https://github.com/rknightion/opnsense2otel/compare/v5.3.4...v5.3.5) (2026-11-13)
 
 
