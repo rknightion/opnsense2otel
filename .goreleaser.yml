@@ -29,6 +29,8 @@ builds:
     tags:
       - osusergo
       - netgo
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X main.version={{ .Version }}

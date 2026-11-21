@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -167,6 +168,21 @@ after
 	err := validateDocumentedReleaseAssets(doc, []string{"checksums.txt"})
 	if err == nil || !strings.Contains(err.Error(), "opnsense2otel_Linux_386.tar.gz") {
 		t.Fatalf("validateDocumentedReleaseAssets error = %v, want unknown filename rejection", err)
+	}
+}
+
+func TestGoreleaserBuildFlags(t *testing.T) {
+	config, err := os.ReadFile(filepath.Join(findRepoRoot(), ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []struct{ key, value string }{
+		{"flags", "-trimpath"},
+		{"env", "CGO_ENABLED=0"},
+	} {
+		if !slices.Contains(yamlList(string(config), required.key), required.value) {
+			t.Errorf(".goreleaser.yml %s must contain %q", required.key, required.value)
+		}
 	}
 }
 

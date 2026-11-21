@@ -3,10 +3,38 @@ package repotest_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rknightion/opnsense2otel/v5/internal/repotest"
 )
+
+func TestDockerignoreCoversLocalCredentialFiles(t *testing.T) {
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("Root: %v", err)
+	}
+	patterns := []string{".env", ".env.*", "key", "secret", "local.docker-compose.yml"}
+	for _, name := range []string{".gitignore", ".dockerignore"} {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, pattern := range patterns {
+			found := false
+			for _, line := range lines {
+				if line == pattern {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s missing whole line %q", name, pattern)
+			}
+		}
+	}
+}
 
 func TestRootFindsTheModuleRoot(t *testing.T) {
 	root, err := repotest.Root()
