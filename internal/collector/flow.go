@@ -248,6 +248,7 @@ type flowCollector struct {
 	subsystem string
 	instance  string
 	store     *FlowStore
+	now       func() time.Time
 
 	bytes               *prometheus.Desc
 	packets             *prometheus.Desc
@@ -1184,7 +1185,11 @@ func (c *flowCollector) Update(_ context.Context, _ *opnsense.Client, ch chan<- 
 // series rather than a misleading zero. The DNS cache stats are the exception: once
 // wired they publish from zero, because an empty cache is a state worth seeing.
 func (c *flowCollector) collectExtras(ch chan<- prometheus.Metric) {
-	c.store.uniqueDests.Rotate(time.Now())
+	now := time.Now
+	if c.now != nil {
+		now = c.now
+	}
+	c.store.uniqueDests.Rotate(now())
 	for iface, n := range c.store.uniqueDests.Snapshot() {
 		ch <- prometheus.MustNewConstMetric(c.uniqueDests, prometheus.GaugeValue, float64(n), iface, c.instance)
 	}

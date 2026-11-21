@@ -54,11 +54,12 @@ def build(b: Builder):
           f'/ clamp_min(sum {grp(BY_SOURCE)} (rate({all_bytes}[{RATE}])), 1)',
           "{{source}}")],
         unit="percentunit",
-        desc="How much of the traffic is landing in the folded remainder rather than in a named "
-             "series. Small is normal and healthy — it is the long tail of tiny categories. Large "
-             "and rising means --flow.top-n is too small to describe this network, and the "
-             "dimensions an operator actually wants are being folded away. The family total stays "
-             "exact either way; only the breakdown is lost.",
+        desc="An estimate of the share landing in the folded remainder rather than a named "
+             "series. A sustained large share can indicate that --flow.top-n is too small or "
+             "--flow.max-keys is saturated; check key usage before tuning. Retirement transfers "
+             "historical bytes into the remainder, causing a rate spike even without new traffic; "
+             "cross-check the retired-key rate below before diagnosing saturation. Cumulative "
+             "family totals remain exact, but rates across these transitions are not conserved.",
     )
 
     keys = b.ts(

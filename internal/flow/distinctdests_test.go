@@ -15,6 +15,7 @@ func destRec(iface, dst string) Record {
 func TestDistinctDestsRotates(t *testing.T) {
 	window := NewDistinctDests()
 	startWindow := time.Unix(10000, 0)
+	window.now = func() time.Time { return startWindow }
 	window.Rotate(startWindow)
 	for i := range 100 {
 		window.Observe(destRec("lan", netip.AddrFrom4([4]byte{192, 0, 2, byte(i + 1)}).String()))
@@ -30,20 +31,25 @@ func TestDistinctDestsRotates(t *testing.T) {
 
 	d := NewDistinctDests()
 	start := time.Unix(10000, 0)
+	now := start
+	d.now = func() time.Time { return now }
 	d.Observe(destRec("lan", "192.0.2.1"))
 	d.Observe(destRec("lan", "192.0.2.4"))
 	d.Rotate(start)
-	d.Rotate(start.Add(time.Hour))
+	now = start.Add(time.Hour)
+	d.Rotate(now)
 	d.Observe(destRec("lan", "192.0.2.1"))
 	d.Observe(destRec("lan", "192.0.2.2"))
 	if got := d.Snapshot()["lan"]; got != 3 {
 		t.Fatalf("union = %d, want 3", got)
 	}
-	d.Rotate(start.Add(2 * time.Hour))
+	now = start.Add(2 * time.Hour)
+	d.Rotate(now)
 	if got := d.Snapshot()["lan"]; got != 2 {
 		t.Fatalf("previous generation = %d, want 2", got)
 	}
-	d.Rotate(start.Add(3 * time.Hour))
+	now = start.Add(3 * time.Hour)
+	d.Rotate(now)
 	if got, ok := d.Snapshot()["lan"]; !ok || got != 0 {
 		t.Fatalf("expired interface = %d, present %v; want zero and present", got, ok)
 	}
@@ -54,7 +60,8 @@ func TestDistinctDestsRotates(t *testing.T) {
 	if got := d.Snapshot()["lan"]; got != distinctDestsPerIfaceCap {
 		t.Errorf("single window over cap = %d, want %d", got, distinctDestsPerIfaceCap)
 	}
-	d.Rotate(start.Add(4 * time.Hour))
+	now = start.Add(4 * time.Hour)
+	d.Rotate(now)
 	d.Observe(destRec("lan", "192.0.2.3"))
 	if got := d.Snapshot()["lan"]; got != distinctDestsPerIfaceCap {
 		t.Fatalf("union over cap = %d, want %d", got, distinctDestsPerIfaceCap)
@@ -62,6 +69,29 @@ func TestDistinctDestsRotates(t *testing.T) {
 	d.Rotate(start.Add(6 * time.Hour))
 	if got := d.Snapshot()["lan"]; got != 0 {
 		t.Fatalf("two-hour jump = %d, want 0", got)
+	}
+}
+
+func TestDistinctDestsDelayedPoll(t *testing.T) {
+	start := time.Unix(10000, 0)
+	for _, gap := range []time.Duration{time.Hour, 4 * time.Hour} {
+		t.Run(gap.String(), func(t *testing.T) {
+			d := NewDistinctDests()
+			now := start
+			d.now = func() time.Time { return now }
+			d.Rotate(now)
+			d.Observe(destRec("old", "192.0.2.1"))
+			now = start.Add(gap + time.Minute)
+			fresh := destRec("fresh", "192.0.2.2")
+			fresh.Observed = start.Add(-100 * time.Hour)
+			d.Observe(fresh)
+			d.Rotate(now)
+			d.Rotate(start.Add(gap + time.Hour))
+			got := d.Snapshot()
+			if got["fresh"] != 1 || got["old"] != 0 {
+				t.Errorf("after delayed poll: %v, want fresh=1 old=0", got)
+			}
+		})
 	}
 }
 

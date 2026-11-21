@@ -47,12 +47,13 @@ type DistinctDests struct {
 	cells    map[string]map[netip.Addr]struct{}
 	previous map[string]map[netip.Addr]struct{}
 	rotated  time.Time
+	now      func() time.Time
 	capped   uint64 // observations folded into OtherLabel because a novel interface arrived at the ceiling
 }
 
 // NewDistinctDests returns an empty counter.
 func NewDistinctDests() *DistinctDests {
-	return &DistinctDests{cells: make(map[string]map[netip.Addr]struct{})}
+	return &DistinctDests{cells: make(map[string]map[netip.Addr]struct{}), now: time.Now}
 }
 
 // Observe records this record's destination against its interface. At the per-
@@ -77,6 +78,7 @@ func (d *DistinctDests) Observe(r Record) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.rotateLocked(d.now())
 
 	set, ok := d.cells[iface]
 	if !ok {
@@ -103,6 +105,10 @@ func (d *DistinctDests) Observe(r Record) {
 func (d *DistinctDests) Rotate(now time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.rotateLocked(now)
+}
+
+func (d *DistinctDests) rotateLocked(now time.Time) {
 	if d.rotated.IsZero() {
 		d.rotated = now
 		return

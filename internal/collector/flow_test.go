@@ -222,6 +222,22 @@ func TestFlowCollector_EmitsUniqueDestinationsAndTopTalkers(t *testing.T) {
 	}
 }
 
+func TestFlowCollector_UniqueDestinationsExpireWhenIdle(t *testing.T) {
+	store := newFlowStore(10, 100)
+	store.Observe(talkerFlowRec("LAN", "192.0.2.1", "198.51.100.1", 100))
+	c := newFlowTestCollector(t, store)
+	key := "opnsense_flow_unique_destinations|interface=LAN"
+	if got := collect(t, c)[key]; got != 1 {
+		t.Fatalf("initial gauge = %v, want 1", got)
+	}
+	later := time.Now().Add(3 * time.Hour)
+	c.now = func() time.Time { return later }
+	got, ok := collect(t, c)[key]
+	if !ok || got != 0 {
+		t.Fatalf("idle gauge = %v, present %v; want zero and present", got, ok)
+	}
+}
+
 func TestFlowCollector_DNSCacheMetricsPublishedFromZeroWhenWired(t *testing.T) {
 	store := newFlowStore(10, 100)
 	cache := flow.NewDNSCache(50, 0)

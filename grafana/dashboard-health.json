@@ -3039,7 +3039,7 @@
         "spec": {
           "id": 26,
           "title": "__other__ Share of Total Bytes",
-          "description": "How much of the traffic is landing in the folded remainder rather than in a named series. Small is normal and healthy \u2014 it is the long tail of tiny categories. Large and rising means --flow.top-n is too small to describe this network, and the dimensions an operator actually wants are being folded away. The family total stays exact either way; only the breakdown is lost.",
+          "description": "An estimate of the share landing in the folded remainder rather than a named series. A sustained large share can indicate that --flow.top-n is too small or --flow.max-keys is saturated; check key usage before tuning. Retirement transfers historical bytes into the remainder, causing a rate spike even without new traffic; cross-check the retired-key rate below before diagnosing saturation. Cumulative family totals remain exact, but rates across these transitions are not conserved.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
