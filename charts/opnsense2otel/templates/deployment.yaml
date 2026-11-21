@@ -50,6 +50,10 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:{{ include "opnsense2otel.args" . | nindent 12 }}
           env:
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
             {{- include "opnsense2otel.env" . | nindent 12 }}
           ports:
             - name: metrics-http

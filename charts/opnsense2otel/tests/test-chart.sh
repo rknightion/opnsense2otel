@@ -44,6 +44,35 @@ helm lint "$chart_dir" --strict -f "$fixture_dir/minimal.yaml"
 render minimal "$fixture_dir/minimal.yaml"
 minimal="$render_dir/minimal.yaml"
 
+# Check the binding in the main container, not the config-check init container.
+assert_memory_limit_binding() {
+  local file="$1" expected_limit="$2" main init binding limits
+  init="$(awk '/^      initContainers:/{p=1;next} /^      containers:/{p=0} p' "$file")"
+  main="$(awk '/^      containers:/{containers=1;next} /^      volumes:/{containers=0} containers && /^        - name: opnsense2otel$/{p=1;next} p && /^        - name:/{exit} p && !containers {exit} p {print}' "$file")"
+  [[ -n "$main" ]] || fail 'main container missing'
+  [[ "$init" != *'name: GOMEMLIMIT'* ]] || fail 'GOMEMLIMIT must not be set in the init container'
+  [[ "$(grep -Fc 'name: GOMEMLIMIT' "$file" || true)" == 1 ]] || fail 'expected one GOMEMLIMIT binding'
+  # The consecutive indentation-scoped lines identify this env item and its
+  # resourceFieldRef, not an unrelated reference elsewhere in the container.
+  binding="$(printf '%s\n' "$main" | awk '
+    /^            - name: GOMEMLIMIT$/ {p=1; next}
+    p && /^            - name:/ {exit}
+    p && /^          [^ ]/ {exit}
+    p {print}
+  ')"
+  case "$binding" in
+    $'              valueFrom:\n                resourceFieldRef:\n                  resource: limits.memory'|\
+    $'              valueFrom:\n                resourceFieldRef:\n                  resource: limits.memory\n                  divisor: "1"'|\
+    $'              valueFrom:\n                resourceFieldRef:\n                  resource: limits.memory\n                  divisor: 1') ;;
+    *) fail 'GOMEMLIMIT must reference limits.memory with a byte divisor' ;;
+  esac
+  limits="$(printf '%s\n' "$main" | awk '/^            limits:/{p=1;next} p && /^            [^ ]/{exit} p {print}')"
+  [[ "$limits" == *"memory: $expected_limit"* ]] || fail "expected main container memory limit $expected_limit"
+}
+assert_memory_limit_binding "$minimal" 128Mi
+render memory-override "$fixture_dir/minimal.yaml" --set resources.limits.memory=384Mi
+assert_memory_limit_binding "$render_dir/memory-override.yaml" 384Mi
+
 assert_contains "$minimal" 'kind: Deployment'
 assert_contains "$minimal" 'kind: Service'
 assert_not_contains "$minimal" 'kind: ServiceAccount'

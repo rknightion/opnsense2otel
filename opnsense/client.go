@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -691,7 +692,7 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 
 	// Retry the request up to MaxRetries times. lastErr records the real underlying
 	// cause (transport error text or retryable HTTP status) so an exhausted-retries
-	// failure surfaces WHY (DNS / refused / timeout / 503) instead of a generic string.
+	// failure surfaces WHY (DNS / refused / 503) instead of a generic string.
 	lastErr := "unknown error"
 	for attempt := 1; attempt <= c.maxRetries; attempt++ {
 		if attempt > 1 {
@@ -755,14 +756,20 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 					StatusCode: 0,
 				}
 			}
-			lastErr = err.Error()
-			// Warn (not Error): a single unreachable firewall would otherwise emit an
-			// Error line per endpoint per attempt (a log storm); opnsense_up=0 is the
-			// real signal. The exhausted-retries APICallError below carries the cause.
-			c.log.Warn("failed to send request; will retry",
+			// Warn without promising a retry: timeout errors and the final attempt stop here.
+			c.log.Warn("failed to send request",
 				"component", "opnsense-client",
 				"attempt", attempt,
 				"err", err.Error())
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				return &APICallError{
+					Endpoint:   string(path),
+					Message:    err.Error(),
+					StatusCode: 0,
+				}
+			}
+			lastErr = err.Error()
 			continue
 		}
 

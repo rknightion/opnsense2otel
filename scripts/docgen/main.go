@@ -207,7 +207,7 @@ func main() {
 	}
 
 	// Step 11: Lint every flag/env-var token in prose docs against the model.
-	if problems := runDoclint(repoRoot, allFlags); len(problems) > 0 {
+	if problems := runDoclint(repoRoot, allFlags, topLevelMetrics, collectors, selfMetrics); len(problems) > 0 {
 		fatal("doclint found %d problems:\n  %s", len(problems), strings.Join(problems, "\n  "))
 	}
 	fmt.Fprintf(os.Stderr, "docgen: doclint passed\n")

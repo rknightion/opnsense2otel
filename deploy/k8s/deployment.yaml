@@ -122,6 +122,10 @@ spec:
             - "--log.level=info"
             - "--log.format=json"
           env:
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
             - name: OPN2OTEL_INSTANCE_LABEL
               value: "opnsense"
             - name: OPN2OTEL_OPS_API

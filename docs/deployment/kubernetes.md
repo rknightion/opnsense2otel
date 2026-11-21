@@ -195,6 +195,10 @@ spec:
             - "--log.level=info"
             - "--log.format=json"
           env:
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
             - name: OPN2OTEL_INSTANCE_LABEL
               value: "opnsense"
             - name: OPN2OTEL_OPS_API
@@ -283,6 +287,40 @@ Apply the manifest:
 ```bash
 kubectl apply -f deployment.yaml
 ```
+
+## Memory sizing
+
+The chart and manifest set the main container's `GOMEMLIMIT` from its own
+`limits.memory` using the downward API. Changing that limit changes the value on
+pod creation. If no container memory limit is set, Kubernetes can supply node
+allocatable memory instead; set a limit for a container-specific target. The init
+container is unchanged.
+`GOMEMLIMIT` is a soft Go runtime target, not a hard container memory cap: it
+excludes some memory, and the runtime may exceed it to make progress. Kubernetes
+can still terminate the container for exceeding its limit. Leave headroom and
+measure peak container memory under representative traffic, including sink outages.
+
+Size for the enabled workload, not just the example limit. These are component
+estimates and configured ceilings, **not measured peak container memory**; actual
+usage depends on traffic, payloads and the firewall inventory.
+
+| Component | Sizing guidance |
+| --- | --- |
+| Baseline polling | The example requests 64 MiB and limits memory to 128 MiB, not a measured requirement. Account for the runtime, API responses and collector snapshots; GeoIP Country and ASN editions add roughly 9 MB and 12 MB respectively when loaded. |
+| Syslog queue case | `--logs.buffer-size` defaults to 65,536 records and `--logs.buffer-max-bytes` to 128 MiB. At an estimated 1,356 B per example syslog record, the count cap is about 89 MB. |
+| Zenarmor queue case | The same queue, at an estimated 4,034 B per example Zenarmor record, reaches its 128 MiB byte budget at about 33,000 records, before the count cap. |
+| Zenarmor concurrent ingest | Each request is limited to 64 MiB; `--logs.zenarmor.max-concurrent-requests` defaults to 8, so bodies alone can total 512 MiB, before decoding and response overhead. |
+| Flow correlator | `--flow.correlate.max-entries` defaults to 50,000; at roughly 2.2 to 3.2 KB per entry, allow about 110 to 160 MB at capacity when correlation is active. |
+| Flow rollup | `--flow.max-keys` defaults to 100,000, roughly 25 to 35 MB at capacity. |
+
+The queue rows are alternative record-shape examples for **one shared queue**,
+not additive budgets; mixed traffic competes for the same count and byte limits.
+See [log shipping](../log-shipping.md) and [flow metrics](../flow.md) for the
+bounds and monitoring signals.
+
+Raise the container limit or reduce the relevant bounds when measurements show
+insufficient headroom; neither the soft target nor queue limits guarantee that a
+container cannot be OOM-killed.
 
 ## Step 3: Configure Prometheus scraping
 

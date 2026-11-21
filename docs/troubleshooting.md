@@ -118,15 +118,13 @@ to isolate stale data or a background collector missing its schedule:
   scheduled poll duration. The `scrape_` prefix is retained for compatibility.
 - Check `opnsense_exporter_endpoint_errors_total` and per-endpoint request latency
   to identify the slow or failing OPNsense call.
-- `--exporter.max-scrape-duration` is now the outer deadline for one background
-  collector poll. The HTTP request-timeout budget for an endpoint attempt sequence is
-  `--opnsense.timeout` × `--opnsense.max-retries`, except firmware info
-  (`core/firmware/info`) uses a request-local 60s floor: its budget is
-  `max(--opnsense.timeout, 60s)` × `--opnsense.max-retries`. Longer configured
-  timeouts are preserved; other endpoints and the global default are unchanged.
-  This budget excludes retry backoff and concurrency-slot queue waits; it is not
-  an elapsed-time bound. Allow room for both below the poll deadline. Caller
-  deadlines, including the poll deadline, bound elapsed time and can end the
+- `--exporter.max-scrape-duration` is the outer deadline for one background
+  collector poll. A transport timeout ends the request without a retry; other
+  connection errors and GET gateway errors may be retried up to
+  `--opnsense.max-retries` attempts. Firmware info (`core/firmware/info`) uses a
+  request-local 60s timeout floor, preserving longer configured timeouts without
+  changing other endpoints. Retry backoff and concurrency-slot queue waits add
+  to elapsed time. Caller deadlines, including the poll deadline, can end the
   sequence sooner, even when shorter than the firmware info floor.
 - Lower `--opnsense.max-concurrent-requests` to protect a low-power appliance, or
   raise it when independent polls are queuing behind the concurrency cap.
