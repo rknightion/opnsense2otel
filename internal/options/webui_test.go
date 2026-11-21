@@ -1,6 +1,9 @@
 package options
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,20 +22,143 @@ func TestWebUIIsOptInByDefault(t *testing.T) {
 	t.Fatal("web.ui-enabled flag not registered")
 }
 
-// TestBuildEffectiveConfig_SecretsRedacted exercises the pure builder directly —
-// it must never call Init()/kingpin.Parse(), which would os.Exit on the required
-// opnsense.protocol/opnsense.address flags (ops.go:14-21). configInputs carries no
-// secret string fields, only *Set presence booleans, so a leak is structurally
-// impossible; this test is a belt-and-braces assertion on top of that.
+// isolateEffectiveConfigFiles keeps local secret configuration out of fixtures.
+func isolateEffectiveConfigFiles(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"OPN2OTEL_OPS_API_KEY_FILE", "OPS_API_KEY_FILE",
+		"OPN2OTEL_OPS_API_SECRET_FILE", "OPS_API_SECRET_FILE",
+		"OPN2OTEL_PYROSCOPE_AUTH_USER_FILE", "PYROSCOPE_AUTH_USER_FILE",
+		"OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE", "PYROSCOPE_AUTH_PASSWORD_FILE",
+		"OPN2OTEL_ANNOTATIONS_TOKEN_FILE", "OPN2OTEL_GEOIP_DOWNLOAD_LICENSE_KEY_FILE",
+		"OPN2OTEL_OTLP_HEADERS_FILE", "OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE",
+	} {
+		t.Setenv(key, "")
+	}
+}
+
+// TestBuildEffectiveConfig_SecretsRedacted checks presence-only fields in the
+// builder and URL sanitization on the full EffectiveConfig path.
 func TestBuildEffectiveConfig_SecretsRedacted(t *testing.T) {
-	in := configInputs{host: "fw.example", apiKeySet: true, apiSecretSet: true, otlpHeadersSet: true}
+	isolateEffectiveConfigFiles(t)
+	in := configInputs{host: "fw.example", apiKeySet: true, apiSecretSet: true, otlpHeadersSet: true, zenarmorAuthSet: true}
+	found := false
 	for _, sec := range buildEffectiveConfig(in) {
 		for _, it := range sec.Items {
 			if it.Secret && it.Value != redacted && it.Value != "—" {
 				t.Fatalf("secret %q not redacted: %q", it.Key, it.Value)
 			}
+			if it.Key == "Zenarmor Auth" {
+				found = true
+				if !it.Secret || it.Value != redacted {
+					t.Errorf("Zenarmor Auth not redacted: %+v", it)
+				}
+			}
 		}
 	}
+	if !found {
+		t.Fatal("Zenarmor Auth row missing")
+	}
+	credentialURL := url.URL{
+		Scheme: "https", Host: "service.example", Path: "/path",
+		User: url.UserPassword("sampleuser", "samplepass"), RawQuery: "token=sampletoken&x=1",
+	}
+	flags := []*string{otlpEndpoint, pyroscopeServerAddress, annotationsGrafanaURL}
+	for _, flag := range flags {
+		old := *flag
+		t.Cleanup(func() { *flag = old })
+		*flag = credentialURL.String()
+	}
+	wantRows := map[string]string{"Telemetry (OTLP)": "Endpoint", "Pyroscope": "Server", "Annotations": "Grafana URL"}
+	seen := 0
+	for _, sec := range EffectiveConfig() {
+		for _, item := range sec.Items {
+			for _, secret := range []string{"sampleuser", "samplepass", "sampletoken"} {
+				if strings.Contains(item.Value, secret) {
+					t.Errorf("%s/%s exposes synthetic credential %s", sec.Title, item.Key, secret)
+				}
+			}
+			if wantRows[sec.Title] == item.Key {
+				seen++
+				if !strings.Contains(item.Value, "service.example") {
+					t.Errorf("%s/%s lost host: %q", sec.Title, item.Key, item.Value)
+				}
+			}
+		}
+	}
+	if seen != len(wantRows) {
+		t.Errorf("found %d URL rows, want %d", seen, len(wantRows))
+	}
+	plain := "https://service.example/a%2Fb?z=1&x=hello%20world"
+	for _, flag := range flags {
+		*flag = plain
+	}
+	for _, sec := range EffectiveConfig() {
+		for _, item := range sec.Items {
+			if wantRows[sec.Title] == item.Key && item.Value != plain {
+				t.Errorf("%s/%s = %q, want unchanged %q", sec.Title, item.Key, item.Value, plain)
+			}
+		}
+	}
+}
+
+func TestEffectiveConfig_FileSecrets(t *testing.T) {
+	isolateEffectiveConfigFiles(t)
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(path, []byte("placeholder\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", path)
+	t.Setenv("OPN2OTEL_OTLP_HEADERS_FILE", path)
+	oldUser, oldPassword, oldHeaders := *logsZenarmorAuthUser, *logsZenarmorAuthPassword, *otlpHeaders
+	t.Cleanup(func() {
+		*logsZenarmorAuthUser, *logsZenarmorAuthPassword, *otlpHeaders = oldUser, oldPassword, oldHeaders
+	})
+	*logsZenarmorAuthUser, *logsZenarmorAuthPassword, *otlpHeaders = "user", "", ""
+	check := func(want string) {
+		t.Helper()
+		found := map[string]bool{}
+		for _, section := range EffectiveConfig() {
+			for _, item := range section.Items {
+				if item.Key == "Zenarmor Auth" || (section.Title == "Telemetry (OTLP)" && item.Key == "Headers") {
+					found[item.Key] = true
+					if !item.Secret || item.Value != want {
+						t.Errorf("%s = %+v, want %s", item.Key, item, want)
+					}
+				}
+			}
+		}
+		if !found["Zenarmor Auth"] || !found["Headers"] {
+			t.Errorf("missing secret rows: %v", found)
+		}
+	}
+	check(redacted)
+	t.Setenv("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("OPN2OTEL_OTLP_HEADERS_FILE", filepath.Join(t.TempDir(), "missing"))
+	check(unset)
+}
+
+func TestEffectiveConfig_ZenarmorWhitespacePassword(t *testing.T) {
+	isolateEffectiveConfigFiles(t)
+	withZenarmorFlags(t, func() {
+		*logsZenarmorEnabled, *logsZenarmorListenHTTP = true, ":9200"
+		*logsZenarmorAuthUser, *logsZenarmorAuthPassword = "user", " \t "
+		cfg, enabled, err := LogsZenarmor()
+		if err != nil || !enabled || cfg.AuthPassword == "" {
+			t.Fatalf("expected startup to configure authentication: enabled=%v err=%v", enabled, err)
+		}
+		for _, section := range EffectiveConfig() {
+			for _, item := range section.Items {
+				if item.Key == "Zenarmor Auth" {
+					if !item.Secret || item.Value != redacted {
+						t.Errorf("Zenarmor Auth should show redacted presence, got %+v", item)
+					}
+					return
+				}
+			}
+		}
+		t.Error("Zenarmor Auth row missing")
+	})
 }
 
 // TestBuildEffectiveConfig_PresenceFalseRendersDash confirms an unset secret

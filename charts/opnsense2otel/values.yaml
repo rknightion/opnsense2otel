@@ -694,7 +694,8 @@ settings:
   #
   # OTLP headers as comma-separated key=value pairs (e.g.
   # X-Scope-OrgID=1,Authorization=Bearer x). When set, replaces OTEL_EXPORTER_OTLP_HEADERS
-  # entirely; when empty, that env var is used.
+  # entirely; when empty, that env var is used. This flag/ENV or OPN2OTEL_OTLP_HEADERS_FILE
+  # may be set.
   # otlp.headers: ""
   #
   # Disable TLS for the OTLP connection (plaintext).
@@ -921,7 +922,8 @@ settings:
   # set, so set this on a shared network.
   # logs.zenarmor.allowed-peers: ""
   #
-  # Password for --logs.zenarmor.auth-user.
+  # Password for --logs.zenarmor.auth-user. This flag/ENV or
+  # OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE may be set.
   # logs.zenarmor.auth-password: ""
   #
   # Require HTTP basic auth on the Zenarmor receiver, with this username. Set the same

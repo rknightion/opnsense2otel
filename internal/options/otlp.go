@@ -32,7 +32,8 @@ var (
 	otlpHeaders = kingpin.Flag(
 		"otlp.headers",
 		"OTLP headers as comma-separated key=value pairs (e.g. X-Scope-OrgID=1,Authorization=Bearer x). "+
-			"When set, replaces OTEL_EXPORTER_OTLP_HEADERS entirely; when empty, that env var is used.",
+			"When set, replaces OTEL_EXPORTER_OTLP_HEADERS entirely; when empty, that env var is used. "+
+			"This flag/ENV or OPN2OTEL_OTLP_HEADERS_FILE may be set.",
 	).Envar("OPN2OTEL_OTLP_HEADERS").Default("").String()
 	otlpExportInterval = kingpin.Flag(
 		"otlp.export-interval",
@@ -307,12 +308,17 @@ func resolveOTLPTransport() (*OTLPConfig, bool, error) {
 		return nil, false, err
 	}
 
+	headers, err := resolveSecret("OPN2OTEL_OTLP_HEADERS_FILE", *otlpHeaders)
+	if err != nil {
+		return nil, false, err
+	}
+
 	return assembleOTLP(otlpRawInputs{
 		enabled:      true,
 		endpoint:     *otlpEndpoint,
 		protocol:     *otlpProtocol,
 		insecure:     *otlpInsecure,
-		headers:      *otlpHeaders,
+		headers:      headers,
 		interval:     *otlpExportInterval,
 		fastInterval: *otlpFastExportInterval,
 		tlsCAFile:    *otlpTLSCAFile,

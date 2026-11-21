@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/rknightion/opnsense2otel/v5/internal/redact"
 )
 
 // Web UI operator-console flags. Opt-in by default because the console includes
@@ -107,6 +108,7 @@ type configInputs struct {
 	zenarmorEnabled        bool
 	zenarmorListen         string
 	zenarmorTLS            bool
+	zenarmorAuthSet        bool
 	zenarmorAllowlistCount int
 	zenarmorDebugCapture   bool
 
@@ -259,6 +261,7 @@ func buildEffectiveConfig(in configInputs) []ConfigSection {
 				plainItem("Zenarmor Listen", in.zenarmorListen),
 				allowlistItem("Zenarmor Allowed Peers", in.zenarmorAllowlistCount),
 				plainItem("Zenarmor TLS", boolStr(in.zenarmorTLS)),
+				secretItem("Zenarmor Auth", in.zenarmorAuthSet),
 				plainItem("Zenarmor Debug Capture", boolStr(in.zenarmorDebugCapture)),
 
 				plainItem("Debug Capture Dir", in.logsDebugCaptureDir),
@@ -325,6 +328,8 @@ func gatherConfigInputs() configInputs {
 	pyroAddr := strings.TrimSpace(*pyroscopeServerAddress)
 
 	annToken, _ := resolveSecret("OPN2OTEL_ANNOTATIONS_TOKEN_FILE", *annotationsToken)
+	headers, _ := resolveSecret("OPN2OTEL_OTLP_HEADERS_FILE", *otlpHeaders)
+	zenarmorPassword, _ := resolveSecret("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", *logsZenarmorAuthPassword)
 
 	return configInputs{
 		host:         strings.TrimSpace(*opnsenseAPI),
@@ -336,11 +341,11 @@ func gatherConfigInputs() configInputs {
 		apiKeySet:    apiKey != "",
 		apiSecretSet: apiSecret != "",
 
-		otlpEndpoint:   *otlpEndpoint,
+		otlpEndpoint:   redact.URL(*otlpEndpoint),
 		otlpEnabled:    *otlpEnabled,
-		otlpHeadersSet: strings.TrimSpace(*otlpHeaders) != "",
+		otlpHeadersSet: strings.TrimSpace(headers) != "",
 
-		pyroServer:      pyroAddr,
+		pyroServer:      redact.URL(pyroAddr),
 		pyroEnabled:     pyroAddr != "",
 		pyroAuthUserSet: strings.TrimSpace(pyroUser) != "",
 		pyroAuthPassSet: strings.TrimSpace(pyroPass) != "",
@@ -348,7 +353,7 @@ func gatherConfigInputs() configInputs {
 		collectors: collectorConfigItems(),
 
 		annotationsEnabled:     *annotationsEnabled,
-		annotationsURL:         strings.TrimSpace(*annotationsGrafanaURL),
+		annotationsURL:         redact.URL(strings.TrimSpace(*annotationsGrafanaURL)),
 		annotationsTokenSet:    strings.TrimSpace(annToken) != "",
 		annotationsLookback:    annotationsLookback.String(),
 		annotationsInterval:    annotationsInterval.String(),
@@ -370,6 +375,7 @@ func gatherConfigInputs() configInputs {
 		zenarmorEnabled:        *logsZenarmorEnabled,
 		zenarmorListen:         strings.TrimSpace(*logsZenarmorListenHTTP),
 		zenarmorTLS:            strings.TrimSpace(*logsZenarmorTLSCertFile) != "" && strings.TrimSpace(*logsZenarmorTLSKeyFile) != "",
+		zenarmorAuthSet:        strings.TrimSpace(*logsZenarmorAuthUser) != "" && zenarmorPassword != "",
 		zenarmorAllowlistCount: len(splitList(*logsZenarmorAllowedPeers)),
 		zenarmorDebugCapture:   *logsZenarmorDebugCapture,
 

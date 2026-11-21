@@ -1,9 +1,38 @@
 package options
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestFileSecret_ZenarmorAuthPassword(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "password")
+	if err := os.WriteFile(path, []byte("  file-placeholder  \nignored\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", path)
+	withZenarmorFlags(t, func() {
+		*logsZenarmorEnabled, *logsZenarmorListenHTTP = true, ":9200"
+		*logsZenarmorAuthUser, *logsZenarmorAuthPassword = "user", "flag-placeholder"
+		cfg, _, err := LogsZenarmor()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.AuthPassword != "file-placeholder" {
+			t.Errorf("file password did not replace flag: %q", cfg.AuthPassword)
+		}
+		*logsZenarmorAuthUser, *logsZenarmorAuthPassword = "", ""
+		if _, _, err := LogsZenarmor(); err == nil {
+			t.Error("file password without user must fail")
+		}
+		t.Setenv("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", filepath.Join(t.TempDir(), "missing"))
+		if _, _, err := LogsZenarmor(); err == nil {
+			t.Error("missing file must fail")
+		}
+	})
+}
 
 // withZenarmorFlags sets flag values for one test and restores them after.
 func withZenarmorFlags(t *testing.T, fn func()) {

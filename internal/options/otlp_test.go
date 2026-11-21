@@ -9,6 +9,29 @@ import (
 	"time"
 )
 
+func TestFileSecret_OTLPHeaders(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "headers")
+	if err := os.WriteFile(path, []byte("  Authorization=file-value,X-Test=one  \nignored=two\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPN2OTEL_OTLP_HEADERS_FILE", path)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Environment=placeholder")
+	oldHeaders, oldProtocol, oldInterval := *otlpHeaders, *otlpProtocol, *otlpExportInterval
+	t.Cleanup(func() { *otlpHeaders, *otlpProtocol, *otlpExportInterval = oldHeaders, oldProtocol, oldInterval })
+	*otlpHeaders, *otlpProtocol, *otlpExportInterval = "Flag=placeholder", "http/protobuf", time.Minute
+	cfg, err := OTLPTransport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Headers) != 2 || cfg.Headers["Authorization"] != "file-value" || cfg.Headers["X-Test"] != "one" {
+		t.Errorf("file headers did not replace flag and environment: %v", cfg.Headers)
+	}
+	t.Setenv("OPN2OTEL_OTLP_HEADERS_FILE", filepath.Join(t.TempDir(), "missing"))
+	if _, err := OTLPTransport(); err == nil {
+		t.Error("missing file must fail")
+	}
+}
+
 func validRaw() otlpRawInputs {
 	return otlpRawInputs{
 		enabled:     true,

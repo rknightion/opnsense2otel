@@ -104,7 +104,7 @@ var (
 
 	logsZenarmorAuthPassword = kingpin.Flag(
 		"logs.zenarmor.auth-password",
-		"Password for --logs.zenarmor.auth-user.",
+		"Password for --logs.zenarmor.auth-user. This flag/ENV or OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE may be set.",
 	).Envar("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD").Default("").String()
 
 	logsZenarmorMaxConcurrentRequests = kingpin.Flag(
@@ -218,11 +218,16 @@ func LogsZenarmor() (*ZenarmorConfig, bool, error) {
 				"(the shared syslog listener is what receives Zenarmor's syslog stream)")
 	}
 
+	password, err := resolveSecret("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", *logsZenarmorAuthPassword)
+	if err != nil {
+		return nil, false, err
+	}
+
 	cfg := &ZenarmorConfig{
 		Addr:            strings.TrimSpace(*logsZenarmorListenHTTP),
 		Enrich:          *logsZenarmorEnrich,
 		AuthUser:        strings.TrimSpace(*logsZenarmorAuthUser),
-		AuthPassword:    *logsZenarmorAuthPassword,
+		AuthPassword:    password,
 		DropSelfTraffic: *logsZenarmorDropSelfTraffic,
 		Excludes:        *logsZenarmorExclude,
 		DebugCapture:    *logsZenarmorDebugCapture,
