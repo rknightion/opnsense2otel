@@ -86,7 +86,7 @@ func TestRetainedCaptureDispositions(t *testing.T) {
 			if rec.Body != tc.message {
 				t.Error("shipping body changed")
 			}
-			if observeDerived(&fakeSink{}, tc.program, rec.Attributes) {
+			if observeDerived(&fakeSink{}, tc.program, rec.Attributes, freshDerivation()) {
 				t.Error("diagnostic derived a metric")
 			}
 			wrong, _ := buildRecord(Envelope{Program: "unfamiliar-program", Message: tc.message}, nil, nil)

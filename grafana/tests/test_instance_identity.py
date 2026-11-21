@@ -398,7 +398,7 @@ class InstanceIdentityTest(unittest.TestCase):
         #   They are floors, not equalities, so a rule landing never touches this file.
         #
         # The EXACT counts are pinned deliberately in tests/test_runbooks.py
-        # (test_exact_alert_count_is_64 / test_exact_recording_count_is_14), which owns
+        # (test_exact_alert_count_is_65 / test_exact_recording_count_is_14), which owns
         # that number and carries its changelog, and test_build_rules.py checks the
         # emitted manifests against the same lists. A second copy here only ever meant
         # two files to bump for one change.

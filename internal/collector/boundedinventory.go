@@ -136,6 +136,15 @@ func (b *boundedInventory[K, V]) live(now time.Time) []inventoryEntry[K, V] {
 	return out
 }
 
+// remove drops k at once, returning its budget slot, for an entity whose state ended
+// explicitly rather than by going quiet. An untracked key is a no-op.
+func (b *boundedInventory[K, V]) remove(k K) {
+	if rec, ok := b.m[k]; ok {
+		b.bytes -= rec.cost
+		delete(b.m, k)
+	}
+}
+
 // refused reports the running count of novel keys the budget turned away.
 func (b *boundedInventory[K, V]) refused() float64 { return b.refusals }
 

@@ -125,6 +125,11 @@ type source struct {
 	// is guaranteed visible here). Nil when nothing is registered.
 	proc ProgramProcessor
 
+	// dhcp6 remembers DHCPv6 transactions across lines so a retransmission is not counted
+	// as a new failure and a client stuck in SOLICIT can be told from a slow one (#1202).
+	// Nil on a hand-built test source, which then keeps no memory.
+	dhcp6 *dhcp6Tracker
+
 	// emit is set by Run before the listener's read goroutines exist. Goroutine
 	// creation is a happens-before edge, so a plain field is safe here: no reader
 	// can observe it before Run has written it.
@@ -174,6 +179,7 @@ func newSource(cfg *options.SyslogConfig, d logship.Deps) *source {
 		sink:           sink,
 		sample:         cfg.Sample,
 		sampledAttr:    cfg.SampledAttr,
+		dhcp6:          newDHCP6Tracker(),
 	}
 	s.unparsed = func(subsystem string) { observeUnparsed(s.m, subsystem) }
 	// The shared sink arrives via Deps; it is used only when this receiver opted in.
@@ -334,7 +340,7 @@ func (s *source) handle(line []byte, peer netip.Addr) {
 	// Derive Prometheus counters from the parsed record (#258). counted reports
 	// whether we actually incremented a counter for this line — it gates sampling so a
 	// line we did not count is never dropped.
-	counted := observeDerived(s.sink, env.Program, rec.Attributes)
+	counted := observeDerived(s.sink, env.Program, rec.Attributes, derivation{dhcp6: s.dhcp6, at: env.Timestamp})
 
 	if s.sample {
 		if !sampleKeep(env.Program, rec, counted) {

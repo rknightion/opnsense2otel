@@ -127,7 +127,7 @@ func TestKeaDHCP6AllocFailBurstCountsExactlyOnce(t *testing.T) {
 		if !ok {
 			t.Fatalf("parseDHCP(%q) ok = false - every line of the burst must still ship structured", msg)
 		}
-		observeDerived(sink, "kea-dhcp6", rec.Attributes)
+		observeDerived(sink, "kea-dhcp6", rec.Attributes, freshDerivation())
 	}
 
 	assertCalls(t, sink.calls, []fakeCall{
@@ -144,7 +144,7 @@ func TestKeaDHCP6AllocFailIdentifiersAreNeverLabels(t *testing.T) {
 		t.Fatal("parseDHCP() ok = false")
 	}
 	sink := &fakeSink{}
-	observeDerived(sink, "kea-dhcp6", rec.Attributes)
+	observeDerived(sink, "kea-dhcp6", rec.Attributes, freshDerivation())
 
 	for _, call := range sink.calls {
 		for _, arg := range call.args {
@@ -182,7 +182,7 @@ func TestKeaDHCP6LFCLinesDoNotCountAsAllocFail(t *testing.T) {
 				t.Errorf("an LFC line set dhcp.alloc_fail_reason = %q", rec.Attributes["dhcp.alloc_fail_reason"])
 			}
 			sink := &fakeSink{}
-			if observeDerived(sink, "kea-dhcp6", rec.Attributes) {
+			if observeDerived(sink, "kea-dhcp6", rec.Attributes, freshDerivation()) {
 				t.Errorf("observeDerived() counted an LFC line: %q", msg)
 			}
 		})
@@ -203,7 +203,7 @@ func TestKeaDHCP4AllocFailIsNotCountedAsV6(t *testing.T) {
 		}
 	}
 	sink := &fakeSink{}
-	observeDerived(sink, "kea-dhcp4", rec.Attributes)
+	observeDerived(sink, "kea-dhcp4", rec.Attributes, freshDerivation())
 	for _, call := range sink.calls {
 		if call.method == "dhcp6_alloc_fail" {
 			t.Error("a kea-dhcp4 line reached the DHCPv6 allocation-failure counter")
@@ -220,8 +220,13 @@ func TestKeaDHCP6LeaseEventStillCountsAfterAllocFail(t *testing.T) {
 		t.Fatal("parseDHCP() ok = false")
 	}
 	sink := &fakeSink{}
-	if !observeDerived(sink, "kea-dhcp6", rec.Attributes) {
+	if !observeDerived(sink, "kea-dhcp6", rec.Attributes, freshDerivation()) {
 		t.Fatal("observeDerived() counted = false")
 	}
-	assertCalls(t, sink.calls, []fakeCall{{"dhcp", []string{"alloc", "", ""}}})
+	// The dhcp event is unchanged. The ALLOC also tells the stuck-in-SOLICIT detector
+	// (#1202) that this DUID was served, which is a no-op for a client that was never stuck.
+	assertCalls(t, sink.calls, []fakeCall{
+		{"dhcp", []string{"alloc", "", ""}},
+		{"dhcp6_solicit_stuck_clear", []string{keaCapturedDUID}},
+	})
 }

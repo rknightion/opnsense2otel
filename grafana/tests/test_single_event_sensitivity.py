@@ -215,6 +215,18 @@ class DHCP6AllocationFailuresTest(unittest.TestCase):
     (`homepod-bedroom`), each an IA_PD-only SOLICIT answered `NoPrefixAvail` because
     both subnets carry `"pd-pools": []`. The client's IA_NA lease renewed cleanly
     throughout, so no address was ever denied.
+
+    #1202 changed what the counter underneath counts. `dhcp6_alloc_fail_total` is one
+    increment per FAILED TRANSACTION (one DUID and transaction id, remembered by the
+    exporter for 2h after its last sighting), not one per Kea log line. A refused client
+    retransmits the same transaction id with RFC 8415 backoff (capped at 3600s) for as
+    long as it runs, and Kea logs a cause line each time, so before #1202 five IA_PD-only
+    Thread border routers kept this rule flapping between Pending and Normal all day.
+    Now a border router that is refused on purpose (no pd-pools) is one count when it
+    first asks and one more per device restart, cosmetic when the absence is deliberate.
+    The tests below model that stream as the query's per-evaluation value; the Go replay
+    `TestDHCP6AllocFailReplayBorderRoutersDoNotHoldThePendingState` proves the counter
+    really produces it from captured-shape lines.
     """
 
     TITLE = "OPNsenseDHCP6AllocationFailures"
@@ -247,14 +259,100 @@ class DHCP6AllocationFailuresTest(unittest.TestCase):
             "the observed prod pattern - one refused IA_PD solicit per hour from one "
             "Thread border router - still pages someone")
 
+    def test_border_routers_restarting_once_each_do_not_fire(self):
+        """The #1202 case: five IA_PD-only border routers, one restart burst.
+
+        Per-transaction counting gives one increment per router for its first ask and one
+        for the restart. They land in one window and then nothing follows however long
+        the routers keep retransmitting, so the condition holds for one window and
+        returns to Normal, far short of the pending period.
+        """
+        rule, window = WINDOWED[self.TITLE]
+        positive_ticks = max(1, window // rule.interval_seconds)
+        pending_ticks = rule.for_seconds // rule.interval_seconds
+        self.assertLess(
+            positive_ticks, pending_ticks,
+            "one window of breach must not reach the pending period")
+        # All five routers plus the restart inside one window, then 16 hours of the same
+        # transactions retransmitting, which the counter no longer sees.
+        timeline = ([{"fw1": 6} for _ in range(positive_ticks)]
+                    + [{"fw1": 0} for _ in range(16 * 3600 // rule.interval_seconds)])
+        states = ruleeval.evaluate(rule, timeline)
+        self.assertNotIn(
+            ALERTING, [s.states.get("fw1") for s in states],
+            "five border routers and one restart still page someone")
+
     def test_a_real_refusal_storm_fires(self):
         """Pool exhaustion or a genuinely missing address pool refuses every request,
-        not one an hour."""
+        not one an hour. Each client is a different transaction, so each is counted."""
         rule, _ = WINDOWED[self.TITLE]
         storm = rule.params[0] + 60
         ticks = rule.for_seconds // rule.interval_seconds + 2
         states = ruleeval.evaluate(rule, [{"fw1": storm} for _ in range(ticks)])
         self.assertEqual(states[-1].states.get("fw1"), ALERTING)
+
+
+def _manifest_rule(title: str):
+    """The committed rule titled `title`, loaded from its generated manifest."""
+    for path in sorted(glob.glob(os.path.join(MANIFEST_DIR, "*.json"))):
+        with open(path) as f:
+            doc = json.load(f)
+        if doc.get("kind") == "AlertRule" and doc["spec"]["title"] == title:
+            return ruleeval.rule_from_manifest(doc), doc["spec"]["expressions"]["A"]["model"]["expr"]
+    raise AssertionError(f"no committed alert rule titled {title!r} in {MANIFEST_DIR}")
+
+
+class DHCP6ClientsStuckInSolicitTest(unittest.TestCase):
+    """The failure #1202 found that no counter saw.
+
+    A client advertised an address whose unicast ADVERTISE never reaches it retransmits
+    the same SOLICIT for hours with no IPv6 address, and nothing fails. The gauge
+    `opnsense_log_events_dhcp6_solicit_stuck_clients` counts those clients; the rule
+    pages on it above 0 for 30m. It is a gauge, not a rate, so the windowed sweep above
+    does not classify it. The same property is stated here directly: one scrape that sees
+    a stuck client, or a client that recovers inside the pending period, never pages, and
+    a client that stays stuck does.
+    """
+
+    TITLE = "OPNsenseDHCP6ClientsStuckInSolicit"
+
+    def setUp(self):
+        self.rule, self.expr = _manifest_rule(self.TITLE)
+
+    def test_the_rule_reads_the_gauge_and_is_not_a_windowed_rate(self):
+        self.assertIn("opnsense_log_events_dhcp6_solicit_stuck_clients", self.expr)
+        self.assertIsNone(
+            _WINDOWED_FN.search(self.expr),
+            "a rate window under the pending period would reintroduce the single-event trap")
+        self.assertNotIn(self.TITLE, WINDOWED)
+
+    def test_one_scrape_with_a_stuck_client_never_pages(self):
+        timeline = [{"fw1": 1}] + [{"fw1": 0} for _ in range(5)]
+        states = ruleeval.evaluate(self.rule, timeline)
+        self.assertNotIn(ALERTING, [s.states.get("fw1") for s in states])
+
+    def test_a_client_that_recovers_inside_the_pending_period_never_pages(self):
+        pending_ticks = self.rule.for_seconds // self.rule.interval_seconds
+        timeline = ([{"fw1": 1} for _ in range(pending_ticks - 1)]
+                    + [{"fw1": 0} for _ in range(5)])
+        states = ruleeval.evaluate(self.rule, timeline)
+        self.assertNotIn(ALERTING, [s.states.get("fw1") for s in states])
+
+    def test_a_gauge_that_flaps_never_pages(self):
+        timeline = [{"fw1": 1 if i % 2 == 0 else 0}
+                    for i in range(4 * self.rule.for_seconds // self.rule.interval_seconds)]
+        states = ruleeval.evaluate(self.rule, timeline)
+        self.assertNotIn(ALERTING, [s.states.get("fw1") for s in states])
+
+    def test_a_client_that_stays_stuck_fires(self):
+        ticks = self.rule.for_seconds // self.rule.interval_seconds + 2
+        states = ruleeval.evaluate(self.rule, [{"fw1": 1} for _ in range(ticks)])
+        self.assertEqual(states[-1].states.get("fw1"), ALERTING)
+
+    def test_a_healthy_zero_never_pages(self):
+        ticks = 4 * self.rule.for_seconds // self.rule.interval_seconds
+        states = ruleeval.evaluate(self.rule, [{"fw1": 0} for _ in range(ticks)])
+        self.assertNotIn(ALERTING, [s.states.get("fw1") for s in states])
 
 
 class NetmapRingFullTest(unittest.TestCase):
