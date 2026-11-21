@@ -3,6 +3,8 @@ package collector
 import (
 	"context"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
@@ -18,6 +20,11 @@ var captivePortalVoucherStates = []string{"valid", "unused", "expired"}
 
 type captivePortalCollector struct {
 	log *slog.Logger
+
+	voucherMu       sync.Mutex
+	voucherCache    opnsense.CaptivePortalVouchers
+	voucherCachedAt time.Time
+	voucherNow      func() time.Time
 
 	serviceRunning    *prometheus.Desc
 	zonesTotal        *prometheus.Desc
@@ -39,6 +46,12 @@ func init() {
 func (c *captivePortalCollector) Name() string { return c.subsystem }
 
 func (c *captivePortalCollector) Register(namespace, instanceLabel string, log *slog.Logger) {
+	// Registry entries are reused by New; a new binding must not inherit the
+	// previous firewall's voucher inventory.
+	c.voucherMu.Lock()
+	c.voucherCache = opnsense.CaptivePortalVouchers{}
+	c.voucherCachedAt = time.Time{}
+	c.voucherMu.Unlock()
 	c.log = log
 	c.instance = instanceLabel
 	c.log.Debug("Registering collector", "collector", c.Name())
@@ -67,6 +80,26 @@ func (c *captivePortalCollector) Describe(ch chan<- *prometheus.Desc) {
 	} {
 		ch <- d
 	}
+}
+
+func (c *captivePortalCollector) fetchVouchers(client *opnsense.Client) (opnsense.CaptivePortalVouchers, *opnsense.APICallError) {
+	c.voucherMu.Lock()
+	defer c.voucherMu.Unlock()
+	now := time.Now
+	if c.voucherNow != nil {
+		now = c.voucherNow
+	}
+	if !c.voucherCachedAt.IsZero() && now().Sub(c.voucherCachedAt) < 5*time.Minute {
+		return c.voucherCache, nil
+	}
+	data, err := client.FetchCaptivePortalVouchers()
+	if err == nil && data.Complete {
+		c.voucherCache = data
+		c.voucherCachedAt = now()
+	} else {
+		c.voucherCachedAt = time.Time{}
+	}
+	return data, err
 }
 
 func (c *captivePortalCollector) Update(_ context.Context, client *opnsense.Client, ch chan<- prometheus.Metric) *opnsense.APICallError {
@@ -111,7 +144,7 @@ func (c *captivePortalCollector) Update(_ context.Context, client *opnsense.Clie
 			running, c.instance)
 	}
 
-	vouchers, vErr := client.FetchCaptivePortalVouchers()
+	vouchers, vErr := c.fetchVouchers(client)
 	if vErr != nil {
 		c.log.Warn("failed to fetch captive portal vouchers", "err", vErr)
 	} else if vouchers.Present {
