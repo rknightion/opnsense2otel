@@ -146,14 +146,19 @@ def build(b: Builder):
          (f'sum {grp("reason")} (rate({sel("opnsense_flow_netflow_records_dropped_total")}[{RATE}]))',
           "dropped: {{reason}}")],
         unit="ops",
-        desc="decoded = emitted + dropped. reason=\"vlan_duplicate\" is the parent-interface copy of a "
+        desc="Decoded records are emitted, dropped after decoding, or in-flight held records awaiting "
+             "repair. Over a period, the change in held records accounts for the gap between decoded "
+             "and emitted plus decoded-record drops; the rates need not match while the hold changes. "
+             "See 'Flow Repairs & De-duplication' for the held-record gauge. The no_template series "
+             "counts pre-decode flowsets, not decoded records: exclude it from decoded-record accounting. "
+             "reason=\"vlan_duplicate\" is the parent-interface copy of a "
              "VLAN flow being suppressed — ng_netflow captures both the trunk and the child, so this "
              "SHOULD be non-zero on a VLAN'd box (~4% of bytes on the reference capture) and a flat "
              "zero there means the de-dup is not firing and volume is double-counted. "
              "reason=\"nat_duplicate\" counts suppressed post-NAT copies and conversation duplicates, "
              "separately from VLAN duplicates. "
              "reason=\"no_template\" is normal for ~2 minutes after either end restarts; sustained, it "
-             "means template datagrams are being lost and records are being discarded wholesale.",
+             "means template datagrams are being lost and data flowsets cannot be decoded.",
     )
 
     decoder = b.ts(
