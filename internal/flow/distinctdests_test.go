@@ -4,11 +4,65 @@ import (
 	"fmt"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 // destRec builds a record on interface iface (via In device) to a destination IP.
 func destRec(iface, dst string) Record {
 	return Record{In: Iface{Device: iface}, DstAddr: netip.MustParseAddr(dst)}
+}
+
+func TestDistinctDestsRotates(t *testing.T) {
+	window := NewDistinctDests()
+	startWindow := time.Unix(10000, 0)
+	window.Rotate(startWindow)
+	for i := range 100 {
+		window.Observe(destRec("lan", netip.AddrFrom4([4]byte{192, 0, 2, byte(i + 1)}).String()))
+	}
+	if got := window.Snapshot()["lan"]; got != 100 {
+		t.Errorf("100 destinations = %d, want 100", got)
+	}
+	window.Rotate(startWindow.Add(time.Hour))
+	window.Rotate(startWindow.Add(2 * time.Hour))
+	if got := window.Snapshot()["lan"]; got != 0 {
+		t.Errorf("after two empty rotations = %d, want 0", got)
+	}
+
+	d := NewDistinctDests()
+	start := time.Unix(10000, 0)
+	d.Observe(destRec("lan", "192.0.2.1"))
+	d.Observe(destRec("lan", "192.0.2.4"))
+	d.Rotate(start)
+	d.Rotate(start.Add(time.Hour))
+	d.Observe(destRec("lan", "192.0.2.1"))
+	d.Observe(destRec("lan", "192.0.2.2"))
+	if got := d.Snapshot()["lan"]; got != 3 {
+		t.Fatalf("union = %d, want 3", got)
+	}
+	d.Rotate(start.Add(2 * time.Hour))
+	if got := d.Snapshot()["lan"]; got != 2 {
+		t.Fatalf("previous generation = %d, want 2", got)
+	}
+	d.Rotate(start.Add(3 * time.Hour))
+	if got, ok := d.Snapshot()["lan"]; !ok || got != 0 {
+		t.Fatalf("expired interface = %d, present %v; want zero and present", got, ok)
+	}
+	for i := range distinctDestsPerIfaceCap {
+		d.Observe(destRec("lan", netip.AddrFrom4([4]byte{10, byte(i >> 16), byte(i >> 8), byte(i)}).String()))
+	}
+	d.Observe(destRec("lan", "192.0.2.3"))
+	if got := d.Snapshot()["lan"]; got != distinctDestsPerIfaceCap {
+		t.Errorf("single window over cap = %d, want %d", got, distinctDestsPerIfaceCap)
+	}
+	d.Rotate(start.Add(4 * time.Hour))
+	d.Observe(destRec("lan", "192.0.2.3"))
+	if got := d.Snapshot()["lan"]; got != distinctDestsPerIfaceCap {
+		t.Fatalf("union over cap = %d, want %d", got, distinctDestsPerIfaceCap)
+	}
+	d.Rotate(start.Add(6 * time.Hour))
+	if got := d.Snapshot()["lan"]; got != 0 {
+		t.Fatalf("two-hour jump = %d, want 0", got)
+	}
 }
 
 func TestDistinctDestsCountsUnique(t *testing.T) {
