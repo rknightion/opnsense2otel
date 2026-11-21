@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -221,6 +222,22 @@ func TestFlowCollector_EmitsUniqueDestinationsAndTopTalkers(t *testing.T) {
 	}
 }
 
+func TestFlowCollector_UniqueDestinationsExpireWhenIdle(t *testing.T) {
+	store := newFlowStore(10, 100)
+	store.Observe(talkerFlowRec("LAN", "192.0.2.1", "198.51.100.1", 100))
+	c := newFlowTestCollector(t, store)
+	key := "opnsense_flow_unique_destinations|interface=LAN"
+	if got := collect(t, c)[key]; got != 1 {
+		t.Fatalf("initial gauge = %v, want 1", got)
+	}
+	later := time.Now().Add(3 * time.Hour)
+	c.now = func() time.Time { return later }
+	got, ok := collect(t, c)[key]
+	if !ok || got != 0 {
+		t.Fatalf("idle gauge = %v, present %v; want zero and present", got, ok)
+	}
+}
+
 func TestFlowCollector_DNSCacheMetricsPublishedFromZeroWhenWired(t *testing.T) {
 	store := newFlowStore(10, 100)
 	cache := flow.NewDNSCache(50, 0)
@@ -274,6 +291,7 @@ func TestFlowCollector_PublishesSaturationSelfMetricsFromZero(t *testing.T) {
 		"opnsense_flow_rollup_keys_max":             9,
 		"opnsense_flow_rollup_top_n":                7,
 		"opnsense_flow_rollup_capped_total":         0,
+		"opnsense_flow_rollup_retired_total":        0,
 		"opnsense_flow_payload_byte_fallback_total": 0,
 	} {
 		v, ok := got[name]
@@ -283,6 +301,17 @@ func TestFlowCollector_PublishesSaturationSelfMetricsFromZero(t *testing.T) {
 		if v != want {
 			t.Errorf("%s = %v, want %v", name, v, want)
 		}
+	}
+}
+
+func TestFlowCollector_EmitsRetiredRollupKeys(t *testing.T) {
+	store := newFlowStore(10, 100)
+	r := flowRec("LAN", "old", 100, 2)
+	r.Observed = time.Now().Add(-25 * time.Hour)
+	store.Observe(r)
+	got := collect(t, newFlowTestCollector(t, store))
+	if v, ok := got["opnsense_flow_rollup_retired_total"]; !ok || v != 1 {
+		t.Fatalf("retired total = %v, present %v; want 1", v, ok)
 	}
 }
 

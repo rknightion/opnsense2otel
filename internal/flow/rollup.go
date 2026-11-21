@@ -3,6 +3,7 @@ package flow
 import (
 	"sort"
 	"sync"
+	"time"
 )
 
 // OtherLabel is the bucket every dimension beyond the bounds folds into. Folding
@@ -82,6 +83,7 @@ type RollupStats struct {
 	TopN       int    // configured emit cap; 0 = unbounded
 	FoldedKeys int    // keys outside top-N as of the last Snapshot
 	Capped     uint64 // observations folded because the map was already at MaxKeys
+	Retired    uint64 // keys retired after more than 24 hours idle
 }
 
 // rollupCell is one key's running state.
@@ -98,8 +100,9 @@ type RollupStats struct {
 // interval, which Prometheus reads as a counter reset. Folding DELTAS against this
 // watermark keeps all three monotone.
 type rollupCell struct {
-	cum    RollupEntry
-	folded RollupEntry
+	cum      RollupEntry
+	folded   RollupEntry
+	observed time.Time
 }
 
 // Rollup accumulates flow volume against a bounded key set.
@@ -125,6 +128,7 @@ type Rollup struct {
 	topN       int
 	maxKeys    int
 	capped     uint64
+	retired    uint64
 	foldedKeys int
 }
 
@@ -176,6 +180,9 @@ func (r *Rollup) Observe(rec Record) {
 		r.cells[k] = c
 	}
 	c.cum.add(b, p, 1)
+	if rec.Observed.After(c.observed) {
+		c.observed = rec.Observed
+	}
 }
 
 // Snapshot returns the top-N entries by bytes plus one folded remainder per source.
@@ -185,14 +192,24 @@ func (r *Rollup) Observe(rec Record) {
 // has its delta since the last fold moved into the remainder; a key inside emits
 // what has not already been attributed there.
 //
-// Calling this twice with no intervening Observe returns identical values: the
-// second pass folds a zero delta.
+// Calling this twice with no intervening Observe and no idle cutoff crossing returns
+// identical values: the second pass folds a zero delta.
 func (r *Rollup) Snapshot() []RollupEntry {
+	return r.snapshotAt(time.Now())
+}
+
+func (r *Rollup) snapshotAt(now time.Time) []RollupEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	ranked := make([]*rollupCell, 0, len(r.cells))
-	for _, c := range r.cells {
+	for k, c := range r.cells {
+		if !c.observed.IsZero() && now.Sub(c.observed) > 24*time.Hour {
+			r.otherFor(k.Source).add(c.cum.Bytes-c.folded.Bytes, c.cum.Packets-c.folded.Packets, c.cum.Flows-c.folded.Flows)
+			delete(r.cells, k)
+			r.retired++
+			continue
+		}
 		ranked = append(ranked, c)
 	}
 
@@ -255,6 +272,7 @@ func (r *Rollup) Stats() RollupStats {
 		TopN:       r.topN,
 		FoldedKeys: r.foldedKeys,
 		Capped:     r.capped,
+		Retired:    r.retired,
 	}
 }
 

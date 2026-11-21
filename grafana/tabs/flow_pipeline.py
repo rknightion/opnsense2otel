@@ -54,11 +54,12 @@ def build(b: Builder):
           f'/ clamp_min(sum {grp(BY_SOURCE)} (rate({all_bytes}[{RATE}])), 1)',
           "{{source}}")],
         unit="percentunit",
-        desc="How much of the traffic is landing in the folded remainder rather than in a named "
-             "series. Small is normal and healthy — it is the long tail of tiny categories. Large "
-             "and rising means --flow.top-n is too small to describe this network, and the "
-             "dimensions an operator actually wants are being folded away. The family total stays "
-             "exact either way; only the breakdown is lost.",
+        desc="An estimate of the share landing in the folded remainder rather than a named "
+             "series. A sustained large share can indicate that --flow.top-n is too small or "
+             "--flow.max-keys is saturated; check key usage before tuning. Retirement transfers "
+             "historical bytes into the remainder, causing a rate spike even without new traffic; "
+             "cross-check the retired-key rate below before diagnosing saturation. Cumulative "
+             "family totals remain exact, but rates across these transitions are not conserved.",
     )
 
     keys = b.ts(
@@ -70,9 +71,8 @@ def build(b: Builder):
         unit="short",
         desc="The accumulator's two INDEPENDENT bounds and how close it is to each. tracked "
              "approaching the max-keys ceiling is the one to watch: at the ceiling every NEW label "
-             "combination folds into __other__ indefinitely, so an operator otherwise cannot tell "
-             "'a few small categories folded' from 'the map saturated weeks ago and everything new "
-             "since is invisible'. folded is the ordinary top-N overflow and is expected to be "
+             "combination folds into __other__ until idle keys retire and free space. "
+             "folded is the ordinary top-N overflow and is expected to be "
              "non-zero.",
     )
 
@@ -80,12 +80,15 @@ def build(b: Builder):
         "Rollup Saturation & Byte-field Repairs (rate)",
         [(f'sum {grp(BY_SOURCE)} (rate({sel("opnsense_flow_rollup_capped_total")}[{RATE}]))',
           "records lost to the max-keys cap"),
+         (f'rate({sel("opnsense_flow_rollup_retired_total")}[{RATE}])',
+          "idle keys retired"),
          (f'rate({sel("opnsense_flow_payload_byte_fallback_total")}[{RATE}])',
           "records using the payload-byte fallback"),
          (f'rate({sel("opnsense_flow_interface_unresolved_total")}[{RATE}])',
           "records labelled interface=unresolved")],
         unit="ops",
-        desc="Two counters that must never be silent. capped_total rising means new label "
+        desc="Rates are records per second except retired_total, which counts keys per second. "
+             "capped_total rising means new label "
              "combinations are hitting the memory cap, not merely the top-N — raise --flow.max-keys "
              "or narrow what is being rolled up. payload_byte_fallback_total counts records whose "
              "byte figure came from Zenarmor's payload counter because its wire counter read zero, "

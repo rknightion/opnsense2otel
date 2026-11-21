@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"sync"
 	"testing"
+	"time"
 )
 
 func rec(iface string, dir Direction, cat string, bytes, packets uint64) Record {
@@ -12,6 +13,69 @@ func rec(iface string, dir Direction, cat string, bytes, packets uint64) Record 
 		SrcAddr: netip.MustParseAddr("192.0.2.1"), DstAddr: netip.MustParseAddr("198.51.100.1"),
 		In: Iface{Name: iface}, Direction: dir, L7: L7{AppCategory: cat},
 		Zen: Counters{TxBytes: bytes, TxPackets: packets, Present: true},
+	}
+}
+
+func TestRollupRetiresIdleKeys(t *testing.T) {
+	pair := NewRollup(10, 10)
+	nowPair := time.Now()
+	a := rec("LAN", DirectionOutbound, "A", 2, 1)
+	a.Observed = nowPair.Add(-25 * time.Hour)
+	b := rec("LAN", DirectionOutbound, "B", 3, 1)
+	b.Observed = nowPair
+	pair.Observe(a)
+	pair.Observe(b)
+	pair.Snapshot()
+	if st := pair.Stats(); st.Keys != 1 || st.Retired != 1 {
+		t.Errorf("idle A and live B: %+v, want one live and one retired", st)
+	}
+
+	r := NewRollup(1, 10)
+	now := time.Now()
+	observe := func(cat string, source Source, at time.Time, b, p uint64) {
+		x := rec("LAN", DirectionOutbound, cat, b, p)
+		x.Source, x.Observed = source, at
+		r.Observe(x)
+	}
+	observe("old", SourceZenarmor, now.Add(-25*time.Hour), 10, 2)
+	observe("tail", SourceNetflow, now.Add(-25*time.Hour), 7, 3)
+	observe("live", SourceZenarmor, now, 100, 4)
+	observe("live", SourceZenarmor, now.Add(-26*time.Hour), 5, 1)
+	observe("unknown", SourceZenarmor, time.Time{}, 1, 1)
+	// Fold the tail first; retirement must not fold its watermark again.
+	_ = r.snapshotAt(now.Add(-2 * time.Hour))
+	observe("tail", SourceNetflow, now.Add(-25*time.Hour), 3, 2)
+	es := r.Snapshot()
+	if st := r.Stats(); st.Keys != 2 || st.Retired != 2 {
+		t.Fatalf("stats = %+v, want 2 live and 2 retired", st)
+	}
+	if b, p, f := totals(es); b != 126 || p != 13 || f != 6 {
+		t.Fatalf("totals = %d/%d/%d, want 126/13/6", b, p, f)
+	}
+	var nf RollupEntry
+	for _, e := range es {
+		if e.Key.Category == OtherLabel && e.Key.Source == SourceNetflow.String() {
+			nf = e
+		}
+	}
+	if nf.Bytes != 10 || nf.Packets != 5 || nf.Flows != 2 {
+		t.Fatalf("netflow remainder = %+v, want 10/5/2", nf)
+	}
+	if b, p, f := totals(r.Snapshot()); b != 126 || p != 13 || f != 6 {
+		t.Fatalf("repeated snapshot totals = %d/%d/%d", b, p, f)
+	}
+
+	boundary := NewRollup(0, 0)
+	v := rec("LAN", DirectionOutbound, "boundary", 1, 1)
+	v.Observed = now
+	boundary.Observe(v)
+	boundary.snapshotAt(now.Add(24 * time.Hour))
+	if st := boundary.Stats(); st.Keys != 1 || st.Retired != 0 {
+		t.Fatalf("at 24 hours: %+v", st)
+	}
+	boundary.snapshotAt(now.Add(24*time.Hour + time.Nanosecond))
+	if st := boundary.Stats(); st.Keys != 0 || st.Retired != 1 {
+		t.Fatalf("after 24 hours: %+v", st)
 	}
 }
 

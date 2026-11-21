@@ -3,6 +3,7 @@ package flow
 import (
 	"net/netip"
 	"sync"
+	"time"
 )
 
 // distinctDestsPerIfaceCap bounds the distinct-destination set PER interface. A LAN
@@ -42,14 +43,17 @@ const distinctDestsMaxInterfaces = 512
 // counters carry: the same destination reported by both the NetFlow and Zenarmor
 // lanes collapses to one set entry, where summing its bytes would count it twice.
 type DistinctDests struct {
-	mu     sync.Mutex
-	cells  map[string]map[netip.Addr]struct{}
-	capped uint64 // observations folded into OtherLabel because a novel interface arrived at the ceiling
+	mu       sync.Mutex
+	cells    map[string]map[netip.Addr]struct{}
+	previous map[string]map[netip.Addr]struct{}
+	rotated  time.Time
+	now      func() time.Time
+	capped   uint64 // observations folded into OtherLabel because a novel interface arrived at the ceiling
 }
 
 // NewDistinctDests returns an empty counter.
 func NewDistinctDests() *DistinctDests {
-	return &DistinctDests{cells: make(map[string]map[netip.Addr]struct{})}
+	return &DistinctDests{cells: make(map[string]map[netip.Addr]struct{}), now: time.Now}
 }
 
 // Observe records this record's destination against its interface. At the per-
@@ -74,6 +78,7 @@ func (d *DistinctDests) Observe(r Record) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.rotateLocked(d.now())
 
 	set, ok := d.cells[iface]
 	if !ok {
@@ -96,6 +101,35 @@ func (d *DistinctDests) Observe(r Record) {
 	set[dst] = struct{}{}
 }
 
+// Rotate advances the hourly generations, anchoring on the first call.
+func (d *DistinctDests) Rotate(now time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.rotateLocked(now)
+}
+
+func (d *DistinctDests) rotateLocked(now time.Time) {
+	if d.rotated.IsZero() {
+		d.rotated = now
+		return
+	}
+	elapsed := now.Sub(d.rotated) / time.Hour
+	if elapsed <= 0 {
+		return
+	}
+	old := d.cells
+	if elapsed == 1 {
+		d.previous = old
+	} else {
+		d.previous = nil
+	}
+	d.cells = make(map[string]map[netip.Addr]struct{}, len(old))
+	for iface := range old {
+		d.cells[iface] = make(map[netip.Addr]struct{})
+	}
+	d.rotated = d.rotated.Add(elapsed * time.Hour)
+}
+
 // Snapshot returns the current distinct-destination count per interface. Beyond the
 // interface budget, everything folds into the OtherLabel key rather than growing the
 // map further.
@@ -105,7 +139,13 @@ func (d *DistinctDests) Snapshot() map[string]int {
 
 	out := make(map[string]int, len(d.cells))
 	for iface, set := range d.cells {
-		out[iface] = len(set)
+		n := len(set)
+		for addr := range d.previous[iface] {
+			if _, ok := set[addr]; !ok {
+				n++
+			}
+		}
+		out[iface] = min(n, distinctDestsPerIfaceCap)
 	}
 	return out
 }

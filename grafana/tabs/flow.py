@@ -191,7 +191,8 @@ def build(b: Builder):
          (f'sum {grp()} (rate({sel("opnsense_flow_unique_destinations_capped_total")}[{RATE}]))',
           "folded — interface budget reached")],
         unit="short",
-        desc="opnsense_flow_unique_destinations: distinct destination addresses seen per interface — a "
+        desc="opnsense_flow_unique_destinations: distinct destination addresses seen per interface in the "
+             "current and previous hourly generations — a "
              "bounded stand-in for per-destination series (one gauge per interface, never one per "
              "destination). A set, not a sum, so a destination reported by both lanes counts once. A "
              "value pinned at the internal per-interface cap means the true count is at least that "

@@ -31,7 +31,7 @@ This page provides a summary of all collectors in opnsense2otel.
 | Firewall Migration Debt | firewall_migration | 2 | Enabled | --exporter.disable-firewall-migration | OPN2OTEL_DISABLE_FIREWALL_MIGRATION |
 | Firewall Rules | firewall_rule | 7 | Enabled | --exporter.disable-firewall-rules | OPN2OTEL_DISABLE_FIREWALL_RULES |
 | Firmware | firmware | 20 | Enabled | --exporter.disable-firmware | OPN2OTEL_DISABLE_FIRMWARE |
-| Flow Volume | flow | 67 | Enabled | --exporter.disable-flow | OPN2OTEL_DISABLE_FLOW |
+| Flow Volume | flow | 68 | Enabled | --exporter.disable-flow | OPN2OTEL_DISABLE_FLOW |
 | Gateway Groups | gateway_groups | 1 | Enabled | --exporter.disable-gateway-groups | OPN2OTEL_DISABLE_GATEWAY_GROUPS |
 | Gateways | gateways | 20 | Enabled | --exporter.disable-gateways | OPN2OTEL_DISABLE_GATEWAYS |
 | HA Sync Status | hasync | 5 | Disabled | --exporter.enable-hasync | OPN2OTEL_ENABLE_HASYNC |
