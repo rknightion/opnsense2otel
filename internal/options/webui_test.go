@@ -69,6 +69,7 @@ func TestBuildEffectiveConfig_SecretsRedacted(t *testing.T) {
 		t.Cleanup(func() { *flag = old })
 		*flag = credentialURL.String()
 	}
+	*otlpEndpoint = "\t " + credentialURL.String() + " \t"
 	wantRows := map[string]string{"Telemetry (OTLP)": "Endpoint", "Pyroscope": "Server", "Annotations": "Grafana URL"}
 	seen := 0
 	for _, sec := range EffectiveConfig() {
@@ -93,10 +94,15 @@ func TestBuildEffectiveConfig_SecretsRedacted(t *testing.T) {
 	for _, flag := range flags {
 		*flag = plain
 	}
+	*otlpEndpoint = "\t " + plain + " \t"
 	for _, sec := range EffectiveConfig() {
 		for _, item := range sec.Items {
-			if wantRows[sec.Title] == item.Key && item.Value != plain {
-				t.Errorf("%s/%s = %q, want unchanged %q", sec.Title, item.Key, item.Value, plain)
+			want := plain
+			if sec.Title == "Telemetry (OTLP)" {
+				want = *otlpEndpoint
+			}
+			if wantRows[sec.Title] == item.Key && item.Value != want {
+				t.Errorf("%s/%s = %q, want unchanged %q", sec.Title, item.Key, item.Value, want)
 			}
 		}
 	}

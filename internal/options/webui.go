@@ -331,6 +331,14 @@ func gatherConfigInputs() configInputs {
 	headers, _ := resolveSecret("OPN2OTEL_OTLP_HEADERS_FILE", *otlpHeaders)
 	zenarmorPassword, _ := resolveSecret("OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE", *logsZenarmorAuthPassword)
 
+	// OTLP trims the endpoint at startup. Redact that same URL, but retain
+	// the original display bytes when there is nothing to redact.
+	otlpDisplay := *otlpEndpoint
+	trimmedEndpoint := strings.TrimSpace(otlpDisplay)
+	if sanitized := redact.URL(trimmedEndpoint); sanitized != trimmedEndpoint {
+		otlpDisplay = sanitized
+	}
+
 	return configInputs{
 		host:         strings.TrimSpace(*opnsenseAPI),
 		metricsPath:  *MetricsPath,
@@ -341,7 +349,7 @@ func gatherConfigInputs() configInputs {
 		apiKeySet:    apiKey != "",
 		apiSecretSet: apiSecret != "",
 
-		otlpEndpoint:   redact.URL(*otlpEndpoint),
+		otlpEndpoint:   otlpDisplay,
 		otlpEnabled:    *otlpEnabled,
 		otlpHeadersSet: strings.TrimSpace(headers) != "",
 
