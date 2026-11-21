@@ -196,44 +196,9 @@ func (c *Client) FetchCaptivePortalSessions() (CaptivePortalSessions, *APICallEr
 // long a voucher is valid for, its hard expiry cutoff (0 = none), and the
 // state OPNsense itself derives (valid/unused/expired).
 type captivePortalVoucherRow struct {
-	Validity   flexInt                   `json:"validity"`
-	Expirytime flexInt                   `json:"expirytime"`
-	State      captivePortalVoucherState `json:"state"`
-}
-
-// Voucher states are scalar; unlike flexString generally, object and array
-// values are malformed inventory and must not become metric labels.
-type captivePortalVoucherState flexString
-
-func (s *captivePortalVoucherState) UnmarshalJSON(data []byte) error {
-	data = bytes.TrimSpace(data)
-	if len(data) > 0 && (data[0] == '{' || data[0] == '[') {
-		return fmt.Errorf("voucher state must be scalar")
-	}
-	var value flexString
-	if err := value.UnmarshalJSON(data); err != nil {
-		return err
-	}
-	*s = captivePortalVoucherState(value)
-	return nil
-}
-
-func (s captivePortalVoucherState) String() string { return string(s) }
-
-// Decode each element independently so malformed rows do not discard valid
-// siblings. Never retain the raw row, which can contain a voucher credential.
-type captivePortalVoucherElement struct {
-	row   captivePortalVoucherRow
-	valid bool
-}
-
-func (e *captivePortalVoucherElement) UnmarshalJSON(data []byte) error {
-	var row *captivePortalVoucherRow
-	if err := json.Unmarshal(data, &row); err == nil && row != nil && row.State.String() != "" {
-		e.row = *row
-		e.valid = true
-	}
-	return nil
+	Validity   flexInt    `json:"validity"`
+	Expirytime flexInt    `json:"expirytime"`
+	State      flexString `json:"state"`
 }
 
 // CaptivePortalVoucherGroup is the aggregated, per-(provider,group) voucher
@@ -261,10 +226,6 @@ type CaptivePortalVoucherGroup struct {
 
 // CaptivePortalVouchers holds the aggregated result of FetchCaptivePortalVouchers.
 type CaptivePortalVouchers struct {
-	// Complete is true only when every inventory request succeeded, or the
-	// provider endpoint is absent. Partial inventories must not be cached.
-	Complete bool
-
 	// Present is false when the list_providers call itself fails with 404
 	// (defensive: this is a core action, not a plugin, so a live box should
 	// never actually 404 it — but a stripped/custom build might lack the
@@ -315,19 +276,14 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 		}
 	}
 
-	var providers []json.RawMessage
+	var providers []string
 	if err := c.do("GET", providersURL, nil, &providers); err != nil {
 		if err.StatusCode == http.StatusNotFound {
-			data.Complete = true
 			return data, nil // feature absent
 		}
 		return data, err
 	}
-	if providers == nil {
-		return data, &APICallError{Endpoint: string(providersURL), Message: "voucher provider inventory is null"}
-	}
 	data.Present = true
-	data.Complete = true
 
 	groupsClient, vouchersClient := *c, *c
 	if c.observer != nil {
@@ -335,62 +291,35 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 		vouchersClient.observer = requestObserverAtPath{observer: c.observer, path: string(vouchersBase)}
 	}
 
-	for _, rawProvider := range providers {
-		var provider *string
-		if err := json.Unmarshal(rawProvider, &provider); err != nil || provider == nil || *provider == "" {
-			data.Complete = false
-			continue
-		}
-		groupsPath := EndpointPath(string(groupsBase) + "/" + url.PathEscape(*provider))
-		var groups []json.RawMessage
+	for _, provider := range providers {
+		groupsPath := EndpointPath(string(groupsBase) + "/" + url.PathEscape(provider))
+		var groups []string
 		if err := groupsClient.do("GET", groupsPath, nil, &groups); err != nil {
-			data.Complete = false
 			c.log.Debug("captiveportal voucher groups call failed for provider; skipping",
 				"component", "opnsense-client",
-				"provider", *provider,
+				"provider", provider,
 				"err", err.Error())
 			continue
 		}
 
-		if groups == nil {
-			data.Complete = false
-			continue
-		}
-
-		for _, rawGroup := range groups {
-			var group *string
-			if err := json.Unmarshal(rawGroup, &group); err != nil || group == nil || *group == "" {
-				data.Complete = false
-				continue
-			}
-			vouchersPath := EndpointPath(string(vouchersBase) + "/" + url.PathEscape(*provider) + "/" + url.PathEscape(*group))
-			var rows []captivePortalVoucherElement
+		for _, group := range groups {
+			vouchersPath := EndpointPath(string(vouchersBase) + "/" + url.PathEscape(provider) + "/" + url.PathEscape(group))
+			var rows []captivePortalVoucherRow
 			if err := vouchersClient.do("GET", vouchersPath, nil, &rows); err != nil {
-				data.Complete = false
 				c.log.Debug("captiveportal list_vouchers call failed for group; skipping",
 					"component", "opnsense-client",
-					"provider", *provider,
-					"group", *group,
+					"provider", provider,
+					"group", group,
 					"err", err.Error())
 				continue
 			}
 
-			if rows == nil {
-				data.Complete = false
-				continue
-			}
-
 			vg := CaptivePortalVoucherGroup{
-				Provider: *provider,
-				Group:    *group,
+				Provider: provider,
+				Group:    group,
 				Counts:   make(map[string]float64),
 			}
-			for _, element := range rows {
-				if !element.valid {
-					data.Complete = false
-					continue
-				}
-				row := element.row
+			for _, row := range rows {
 				state := row.State.String()
 				vg.Counts[state]++
 
