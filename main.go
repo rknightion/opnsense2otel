@@ -938,8 +938,14 @@ func main() {
 					}
 				}
 			}()
-			logger.Info("flow log emission enabled",
-				"mode", flowCfg.LogMode, "correlate", flowCfg.Correlate, "window", flowCfg.CorrelateWindow)
+			if flowCfg.CorrelationActive() {
+				logger.Info("flow log emission enabled",
+					"mode", flowCfg.LogMode, "correlate", true, "window", flowCfg.CorrelateWindow)
+			} else {
+				logger.Info("flow log emission enabled",
+					"mode", flowCfg.LogMode, "correlate", false, "correlate_requested", flowCfg.Correlate,
+					"window", flowCfg.CorrelateWindow)
+			}
 		}
 	}
 	if !collectorsSwitches.Firewall {
