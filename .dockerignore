@@ -17,3 +17,16 @@ deploy/
 docs/
 renovate.json
 release-please-config.json
+
+# Mirror local-only entries from .gitignore.
+.env
+.env.*
+key
+secret
+local.docker-compose.yml
+codex/
+opnsense2otel-security-findings/
+opnsense/testdata/captures/
+.tools/
+bin/
+dist/
