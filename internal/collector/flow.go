@@ -260,6 +260,7 @@ type flowCollector struct {
 	rollupTopN    *prometheus.Desc
 	rollupFolded  *prometheus.Desc
 	rollupCapped  *prometheus.Desc
+	rollupRetired *prometheus.Desc
 
 	nfDatagrams  *prometheus.Desc
 	nfBytes      *prometheus.Desc
@@ -405,7 +406,7 @@ func (c *flowCollector) Register(namespace, instanceLabel string, log *slog.Logg
 		"Distinct label combinations currently tracked by the flow rollup accumulator.", nil)
 	c.rollupKeysMax = buildPrometheusDesc(c.subsystem, "rollup_keys_max",
 		"Configured ceiling on tracked label combinations (--flow.max-keys); 0 means unbounded. "+
-			"At the ceiling every NEW combination folds into __other__ indefinitely, so compare "+
+			"At the ceiling every NEW combination folds into __other__ until space becomes available, so compare "+
 			"against opnsense_flow_rollup_keys to see saturation coming.", nil)
 	c.rollupTopN = buildPrometheusDesc(c.subsystem, "rollup_top_n",
 		"Configured ceiling on emitted series (--flow.top-n); 0 means unbounded.", nil)
@@ -414,6 +415,8 @@ func (c *flowCollector) Register(namespace, instanceLabel string, log *slog.Logg
 			"__other__ rather than emitted individually.", nil)
 	c.registerNetflow()
 
+	c.rollupRetired = buildPrometheusDesc(c.subsystem, "rollup_retired_total",
+		"Rollup keys retired after more than 24 hours without an observation.", nil)
 	c.rollupCapped = buildPrometheusDesc(c.subsystem, "rollup_capped_total",
 		"Flow records folded into __other__ because the accumulator was already at "+
 			"--flow.max-keys when their label combination first appeared. A rising value means new "+
@@ -431,7 +434,7 @@ func (c *flowCollector) registerExtras() {
 	hostDirLabel := []string{"host", "direction"}
 
 	c.uniqueDests = buildPrometheusDesc(c.subsystem, "unique_destinations",
-		"Distinct destination addresses seen per interface - a bounded stand-in for a per-destination "+
+		"Distinct destination addresses seen per interface in the current and previous hourly generations - a bounded stand-in for a per-destination "+
 			"series (one gauge per interface, never one per destination). A set, not a sum, so a "+
 			"destination reported by both the NetFlow and Zenarmor lanes counts once. Saturates at an "+
 			"internal per-interface cap; a value pinned at the cap means the true count is at least "+
@@ -1081,6 +1084,7 @@ func (c *flowCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.rollupTopN
 	ch <- c.rollupFolded
 	ch <- c.rollupCapped
+	ch <- c.rollupRetired
 	ch <- c.nfDatagrams
 	ch <- c.nfBytes
 	ch <- c.nfDecoded
@@ -1165,6 +1169,7 @@ func (c *flowCollector) Update(_ context.Context, _ *opnsense.Client, ch chan<- 
 	ch <- prometheus.MustNewConstMetric(c.rollupTopN, prometheus.GaugeValue, float64(st.TopN), c.instance)
 	ch <- prometheus.MustNewConstMetric(c.rollupFolded, prometheus.GaugeValue, float64(st.FoldedKeys), c.instance)
 	ch <- prometheus.MustNewConstMetric(c.rollupCapped, prometheus.CounterValue, float64(st.Capped), c.instance)
+	ch <- prometheus.MustNewConstMetric(c.rollupRetired, prometheus.CounterValue, float64(st.Retired), c.instance)
 
 	c.collectNetflow(ch)
 	c.collectCorrelator(ch)
@@ -1179,6 +1184,7 @@ func (c *flowCollector) Update(_ context.Context, _ *opnsense.Client, ch chan<- 
 // series rather than a misleading zero. The DNS cache stats are the exception: once
 // wired they publish from zero, because an empty cache is a state worth seeing.
 func (c *flowCollector) collectExtras(ch chan<- prometheus.Metric) {
+	c.store.uniqueDests.Rotate(time.Now())
 	for iface, n := range c.store.uniqueDests.Snapshot() {
 		ch <- prometheus.MustNewConstMetric(c.uniqueDests, prometheus.GaugeValue, float64(n), iface, c.instance)
 	}

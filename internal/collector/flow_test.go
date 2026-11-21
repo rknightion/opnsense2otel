@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -274,6 +275,7 @@ func TestFlowCollector_PublishesSaturationSelfMetricsFromZero(t *testing.T) {
 		"opnsense_flow_rollup_keys_max":             9,
 		"opnsense_flow_rollup_top_n":                7,
 		"opnsense_flow_rollup_capped_total":         0,
+		"opnsense_flow_rollup_retired_total":        0,
 		"opnsense_flow_payload_byte_fallback_total": 0,
 	} {
 		v, ok := got[name]
@@ -283,6 +285,17 @@ func TestFlowCollector_PublishesSaturationSelfMetricsFromZero(t *testing.T) {
 		if v != want {
 			t.Errorf("%s = %v, want %v", name, v, want)
 		}
+	}
+}
+
+func TestFlowCollector_EmitsRetiredRollupKeys(t *testing.T) {
+	store := newFlowStore(10, 100)
+	r := flowRec("LAN", "old", 100, 2)
+	r.Observed = time.Now().Add(-25 * time.Hour)
+	store.Observe(r)
+	got := collect(t, newFlowTestCollector(t, store))
+	if v, ok := got["opnsense_flow_rollup_retired_total"]; !ok || v != 1 {
+		t.Fatalf("retired total = %v, present %v; want 1", v, ok)
 	}
 }
 

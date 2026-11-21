@@ -921,6 +921,11 @@ total since process start, not merely its recent rate.
 `top-n` caps what is emitted; `max-keys` caps what is held in memory between
 scrapes. A combination first seen when the accumulator is already at `max-keys`
 folds into `__other__` and is counted by `opnsense_flow_rollup_capped_total`.
+On collection, keys idle for more than 24 hours retire and free space; their residual
+volume moves into the source remainder. The cumulative family totals remain exact,
+but individual series disappear and can restart when observed again. Prometheus
+rates across these transitions are not guaranteed to conserve the family total.
+Keys with no observation timestamp cannot retire until a timestamp is known.
 
 ## Multi-WAN: what per-WAN attribution can and cannot tell you
 
@@ -1088,11 +1093,11 @@ rather than nothing:
 | `opnsense_flow_rollup_keys_max` | the `--flow.max-keys` ceiling |
 | `opnsense_flow_rollup_keys_folded` | combinations outside the top-N right now |
 | `opnsense_flow_rollup_capped_total` | records lost to the memory cap, not merely folded |
+| `opnsense_flow_rollup_retired_total` | idle keys retired on collection |
 
 `keys` approaching `keys_max` is the one to act on: at the ceiling, every **new**
-combination folds into `__other__` indefinitely, and without these an operator
-cannot distinguish "a few small categories folded" from "the map saturated weeks ago
-and everything new since has been invisible". `keys_folded` being non-zero is
+combination folds into `__other__` until idle keys retire and free space.
+`keys_folded` being non-zero is
 ordinary top-N overflow and is expected.
 
 ## Troubleshooting
