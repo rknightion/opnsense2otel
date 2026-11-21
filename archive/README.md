@@ -1,4 +1,9 @@
-# GitHub Issues archive
+# Archive
+
+- `todos-completed.txt` preserves the completed todo list.
+- `console-v2/` preserves the console v2 design assets; its implementation specification lives in `internal/webui/testdata/` for the console test.
+
+## GitHub Issues archive
 
 `github-issues-2026-08-14.json` is the complete contents of this repository's GitHub Issues tracker
 as of **2026-08-14**, captured immediately before most of those issues were deleted. The project
