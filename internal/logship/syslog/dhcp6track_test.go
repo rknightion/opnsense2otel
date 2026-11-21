@@ -43,6 +43,12 @@ func keaRenew(duid, tid string) string {
 	return keaV6Line("leases", "DHCP6_LEASE_RENEW", duid, tid, "lease for address 2001:db8::116d and iaid=0 has been allocated for 1800 seconds")
 }
 
+// keaReuse is the line Kea writes instead of RENEW or ALLOC when lease caching answers
+// a REQUEST or RENEW from the cached lease (captured shape).
+func keaReuse(duid, tid string) string {
+	return keaV6Line("leases", "DHCP6_LEASE_REUSE", duid, tid, "lease for address 2001:db8::116d and iaid=0 has been reused for 1800 seconds")
+}
+
 // feedDHCP6 parses one kea-dhcp6 line and derives it at `at`, through the given tracker.
 func feedDHCP6(t *testing.T, sink *fakeSink, tr *dhcp6Tracker, at time.Time, line string) {
 	t.Helper()
@@ -311,8 +317,8 @@ func TestDHCP6SolicitStuckDetection(t *testing.T) {
 		}
 	})
 
-	t.Run("ALLOC and RENEW clear the DUID", func(t *testing.T) {
-		for name, line := range map[string]string{"ALLOC": keaAlloc(stuckDUIDA, "0x453c5"), "RENEW": keaRenew(stuckDUIDA, "0xc95860")} {
+	t.Run("ALLOC, RENEW and REUSE clear the DUID", func(t *testing.T) {
+		for name, line := range map[string]string{"ALLOC": keaAlloc(stuckDUIDA, "0x453c5"), "RENEW": keaRenew(stuckDUIDA, "0xc95860"), "REUSE": keaReuse(stuckDUIDA, "0xea6321")} {
 			sink, tr := &fakeSink{}, newDHCP6Tracker()
 			feedDHCP6(t, sink, tr, dhcp6T0, keaAdvert(stuckDUIDA, "0x561478"))
 			feedDHCP6(t, sink, tr, dhcp6T0.Add(time.Hour), keaAdvert(stuckDUIDA, "0x561478"))

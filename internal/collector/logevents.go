@@ -1476,13 +1476,13 @@ func (c *logEventsCollector) Register(namespace, instanceLabel string, log *slog
 		"Number of distinct DHCPv6 clients (by DUID) this firewall's kea-dhcp6 SERVER sees stuck in "+
 			"SOLICIT: Kea advertised the client an address under one transaction id, advertised the "+
 			"same DUID and transaction id again at least 10 minutes after the first advertisement, "+
-			"and has logged no DHCP6_LEASE_ALLOC or DHCP6_LEASE_RENEW for that DUID since. That is a "+
+			"and has logged no DHCP6_LEASE_ALLOC, DHCP6_LEASE_RENEW or DHCP6_LEASE_REUSE for that DUID since. That is a "+
 			"client retransmitting one SOLICIT for as long as it runs and never sending the REQUEST "+
 			"that would take the address - usually because the unicast ADVERTISE never reaches it "+
 			"(the router cannot resolve the client's link-local address by neighbour discovery) - so "+
 			"it has no IPv6 address while NOTHING FAILED and opnsense_log_events_dhcp6_alloc_fail_total "+
 			"stays flat. A normal SOLICIT/ADVERTISE/REQUEST exchange (milliseconds) and a quick "+
-			"retransmission (seconds) never count. A DUID leaves the count on its next ALLOC or RENEW, "+
+			"retransmission (seconds) never count. A DUID leaves the count on its next ALLOC, RENEW or REUSE, "+
 			"or 2h after its last stuck sighting; the gauge is evaluated at scrape time, so a client "+
 			"that vanishes still ages out with no further log line. Always exported, 0 when no client "+
 			"is stuck. The DUID is held only as bounded inventory state (1024 clients at most; "+

@@ -213,7 +213,7 @@ def dhcp_row(b: Builder):
              "because the unicast ADVERTISE never reaches it (the router cannot resolve its new "
              "link-local by neighbour discovery). NOTHING FAILS, so the allocation-failure panel "
              "stays flat: this is the only place the problem shows. A client leaves the count on "
-             "its next ALLOC or RENEW or 2h after it was last seen stuck. The client identity is "
+             "its next ALLOC, RENEW or REUSE, or 2h after it was last seen stuck. The client identity is "
              "never a label: find the DUIDs by grouping the log stream on dhcp.duid.",
     )
     return b.row("Lease Events (log-derived)", [dhcp, stuck], present="has_log_events_dhcp")

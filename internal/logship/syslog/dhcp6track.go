@@ -204,10 +204,13 @@ type derivation struct {
 }
 
 // observeDHCP6Lease feeds the stuck-in-SOLICIT detector from one Kea v6 lease line
-// (#1202). Only ADVERT, ALLOC and RENEW matter, and only a line that named its client.
+// (#1202). Only ADVERT, ALLOC, RENEW and REUSE matter, and only a line that named its
+// client.
 //
 // RENEW is spelled dhcp.action=request by the parser (keaActions), the same word a v4
-// DHCPREQUEST gets; the DUID is what makes it a v6 line.
+// DHCPREQUEST gets; the DUID is what makes it a v6 line. REUSE is what Kea writes in
+// place of ALLOC or RENEW when lease caching answers from the cached lease, so it is
+// just as much a served client.
 func observeDHCP6Lease(sink logship.MetricSink, attrs map[string]string, d derivation) bool {
 	duid := attrs["dhcp.duid"]
 	if duid == "" {
@@ -218,7 +221,7 @@ func observeDHCP6Lease(sink logship.MetricSink, attrs map[string]string, d deriv
 		if d.dhcp6.advert(duid, attrs["dhcp.tid"], d.at) {
 			return sink.ObserveDHCP6SolicitStuck(duid)
 		}
-	case "alloc", "request":
+	case "alloc", "request", "reuse":
 		d.dhcp6.served(duid)
 		return sink.ClearDHCP6SolicitStuck(duid)
 	}
