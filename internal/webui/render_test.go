@@ -98,7 +98,7 @@ func TestConsoleFamilyTokenBlockMatchesSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("locate repository root: %v", err)
 	}
-	spec, err := os.ReadFile(filepath.Join(root, "design", "console-v2", "implementation-spec.md"))
+	spec, err := os.ReadFile(filepath.Join(root, "internal", "webui", "testdata", "implementation-spec.md"))
 	if err != nil {
 		t.Fatalf("read family implementation spec: %v", err)
 	}

@@ -41,7 +41,7 @@ var (
 	).Envar("OPN2OTEL_OPS_MAX_RETRIES").Default("3").Int()
 	opnsenseMaxConcurrentRequests = kingpin.Flag(
 		"opnsense.max-concurrent-requests",
-		"Maximum number of background OPNsense API requests in flight across all scheduled collector polls, including nested sub-requests. Bounds the simultaneous PHP/configd load on the firewall: lower it (e.g. 4-8) to protect a low-power appliance at the cost of queued or longer polls; raise it to let more independent polls progress concurrently on capable hardware. It does not affect /metrics replay. Must be >= 1.",
+		"Maximum number of background OPNsense API requests in flight across all scheduled collector polls, including nested sub-requests. Bounds the simultaneous PHP/configd load on the firewall: lower it (e.g. 4-8) to protect a low-power appliance at the cost of queued or longer polls; raise it to let more independent polls progress concurrently on capable hardware. At most 8 collector polls run at once regardless of this value. It does not affect /metrics replay. Must be >= 1.",
 	).Envar("OPN2OTEL_OPS_MAX_CONCURRENT_REQUESTS").Default("16").Int()
 )
 

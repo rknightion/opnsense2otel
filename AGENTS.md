@@ -201,13 +201,17 @@ script. Failed or bounded-out scans omit counts and publish collection health, n
 
 ## Maintainer code review
 
-Pull requests are reviewed by Cursor Bugbot, guided by `.cursor/BUGBOT.md`. Before merging, read
-its `Cursor Bugbot` check on the exact head. `success` clears the head. `neutral` means findings:
-fix each one the code shows to be a real defect, answer the rest on their threads with the code
-evidence, and resolve every thread. A missing, cancelled, errored or oversized review is no
-verdict, never clean. Maintainers' agents take rounds and waits from their centrally managed
-review rule. There is no local review tool to run before committing, and no review evidence to
-freeze.
+Before landing, obtain an independent local review of the exact candidate against its base,
+including new and generated paths. A missing or incomplete review is no verdict, not a pass.
+Critical and major findings block landing until fixed or resolved with evidence under the
+maintainer review rule.
+
+Then Cursor Bugbot reviews the exact landing pull request head, guided by `.cursor/BUGBOT.md`.
+Before merging, read its `Cursor Bugbot` check on that head. `success` clears the head. `neutral`
+means findings: fix each one the code shows to be a real defect, answer the rest on their threads
+with the code evidence, and resolve every thread. A missing, cancelled, errored or oversized review
+is no verdict, never clean. Maintainers' agents take rounds and waits from their centrally managed
+review rule.
 
 Public contributors need no maintainer configuration or review account; normal contribution and
 hosted-check requirements still apply. Hosted review never replaces required tests, deployment

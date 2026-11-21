@@ -201,7 +201,7 @@ sequenceDiagram
 
 ### Poll lifecycle
 
-`StartPolling` launches one goroutine per enabled collector plus a health goroutine, each on its own timer (its data-volatility tier, jittered at startup to spread the cold-start herd). A shared semaphore caps concurrent API calls at `min(GOMAXPROCS, 8)` so a box with many collectors is never dialled by dozens of pollers at once.
+`StartPolling` launches one goroutine per enabled collector plus a health goroutine, each on its own timer (its data-volatility tier, jittered at startup to spread the cold-start herd). A shared semaphore caps concurrent collector polls at 8, or the configured API request limit if lower, so a box with many collectors is never dialled by dozens of pollers at once. This network-bound limit does not depend on CPU capacity.
 
 1. A collector's timer fires. If the last health poll found the box unreachable, an API-dependent collector's poll is skipped and the previous snapshot entry is retained (#127). Collectors that make no API call are polled regardless of reachability.
 2. Otherwise the collector's `Update()` runs under the concurrency cap and the per-poll timeout (`--exporter.max-scrape-duration`, now a per-poll bound), emitting metrics into a buffer. API-dependent collectors invoke one or more `Fetch*()` methods.

@@ -938,8 +938,14 @@ func main() {
 					}
 				}
 			}()
-			logger.Info("flow log emission enabled",
-				"mode", flowCfg.LogMode, "correlate", flowCfg.Correlate, "window", flowCfg.CorrelateWindow)
+			if flowCfg.CorrelationActive() {
+				logger.Info("flow log emission enabled",
+					"mode", flowCfg.LogMode, "correlate", true, "window", flowCfg.CorrelateWindow)
+			} else {
+				logger.Info("flow log emission enabled",
+					"mode", flowCfg.LogMode, "correlate", false, "correlate_requested", flowCfg.Correlate,
+					"window", flowCfg.CorrelateWindow)
+			}
 		}
 	}
 	if !collectorsSwitches.Firewall {
@@ -1679,6 +1685,7 @@ func main() {
 		// (#258), unless the collector is disabled — in which case the receiver sees a
 		// nil sink and skips derivation entirely.
 		if collectorsSwitches.LogEvents {
+			collector.LogEvents.ActivateLogEventHandoff()
 			deps.MetricSink = collector.LogEvents
 		}
 		// Flow records are derived only when something consumes them: the collector is

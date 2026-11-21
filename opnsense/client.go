@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -440,6 +439,9 @@ func (c *Client) SetCacheObserver(o CacheObserver) {
 	c.cacheObserver = o
 }
 
+// MaxConcurrentRequests returns the shared request limit, or zero if unbounded.
+func (c *Client) MaxConcurrentRequests() int { return cap(c.sem) }
+
 // NewClient creates a new OPNsense API Client
 func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Logger) (Client, error) {
 	timeout := cfg.Timeout
@@ -455,6 +457,11 @@ func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Lo
 	var sem chan struct{}
 	if cfg.MaxConcurrentRequests > 0 {
 		sem = make(chan struct{}, cfg.MaxConcurrentRequests)
+	}
+
+	idlePerHost := 8
+	if cfg.MaxConcurrentRequests > 0 && cfg.MaxConcurrentRequests < idlePerHost {
+		idlePerHost = cfg.MaxConcurrentRequests
 	}
 
 	sslPool, err := x509.SystemCertPool()
@@ -516,7 +523,7 @@ func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Lo
 				TLSHandshakeTimeout:   3 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
 				ForceAttemptHTTP2:     true,
-				MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
+				MaxIdleConnsPerHost:   idlePerHost,
 				// A rebooted firewall silently drops packets on connections it no
 				// longer knows, so a pooled HTTP/2 connection never errors on its own
 				// and keeps absorbing requests until each times out. Pinging a
