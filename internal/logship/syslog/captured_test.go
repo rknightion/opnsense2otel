@@ -50,7 +50,7 @@ func TestCapturedOperationalEvents(t *testing.T) {
 				t.Fatalf("body changed: %q", rec.Body)
 			}
 			sink := &fakeSink{}
-			if observeDerived(sink, tc.program, rec.Attributes) {
+			if observeDerived(sink, tc.program, rec.Attributes, freshDerivation()) {
 				t.Fatal("log-only event unexpectedly derived a metric")
 			}
 		})

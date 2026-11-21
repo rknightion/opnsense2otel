@@ -89,7 +89,7 @@ func TestUpgradeBootDispositions(t *testing.T) {
 			if rec.Body != tc.message {
 				t.Fatal("body changed")
 			}
-			if observeDerived(&fakeSink{}, tc.program, rec.Attributes) {
+			if observeDerived(&fakeSink{}, tc.program, rec.Attributes, freshDerivation()) {
 				t.Fatal("boot record derived a metric")
 			}
 			// Nearby failures must not be silently classified known. Parsed diagnostic
@@ -153,7 +153,7 @@ func TestUpgradeDiagnosticsExtractMeaning(t *testing.T) {
 				t.Fatal("diagnostic not parsed")
 			}
 			assertAttrs(t, rec, tc.attrs)
-			if observeDerived(&fakeSink{}, "kernel", rec.Attributes) {
+			if observeDerived(&fakeSink{}, "kernel", rec.Attributes, freshDerivation()) {
 				t.Fatal("diagnostic derived a metric")
 			}
 		})

@@ -1,7 +1,9 @@
 package collector
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/promslog"
 )
@@ -342,4 +344,123 @@ func TestLogEventsCollector_NewDHCP6FamiliesReportSaturation(t *testing.T) {
 			t.Errorf("%s keys = %v, want 1", family, keys[family])
 		}
 	}
+}
+
+// stuckClients reads opnsense_log_events_dhcp6_solicit_stuck_clients off one scrape,
+// failing unless exactly one series is emitted and it carries only the instance label.
+func stuckClients(t *testing.T, c *logEventsCollector) float64 {
+	t.Helper()
+	var values []float64
+	for _, m := range collectMetrics(t, c, nil) {
+		if !hasFqName(m, "opnsense_log_events_dhcp6_solicit_stuck_clients") {
+			continue
+		}
+		labels := getMetricLabels(m)
+		if len(labels) != 1 {
+			t.Fatalf("dhcp6_solicit_stuck_clients labels = %v, want only opnsense_instance", labels)
+		}
+		values = append(values, getMetricValue(m))
+	}
+	if len(values) != 1 {
+		t.Fatalf("dhcp6_solicit_stuck_clients emitted %d series, want exactly 1: %v", len(values), values)
+	}
+	return values[0]
+}
+
+const (
+	stuckTestDUIDA = "00:01:00:01:aa:aa:aa:aa:02:00:00:00:00:01"
+	stuckTestDUIDB = "00:01:00:01:aa:aa:aa:aa:02:00:00:00:00:02"
+)
+
+// AC3 at the metric: the gauge is 0 with nothing stuck, counts DISTINCT DUIDs (a
+// repeat sighting is one), carries no client identity, drops a DUID on its ALLOC or
+// RENEW, and ages one out two hours after its last sighting with no further line.
+func TestLogEventsCollector_DHCP6SolicitStuckClientsGauge(t *testing.T) {
+	c := &logEventsCollector{store: newTestLogEventStore(t), subsystem: LogEventsSubsystem}
+	c.Register(namespace, "opnsense.example.com", promslog.NewNopLogger())
+	now := time.Unix(1_700_000_000, 0).UTC()
+	c.store.setClock(func() time.Time { return now })
+
+	if got := stuckClients(t, c); got != 0 {
+		t.Fatalf("gauge = %v with nothing stuck, want 0 (and the series present)", got)
+	}
+
+	c.store.ObserveDHCP6SolicitStuck(stuckTestDUIDA)
+	c.store.ObserveDHCP6SolicitStuck(stuckTestDUIDA) // the same client again: still one
+	if got := stuckClients(t, c); got != 1 {
+		t.Fatalf("gauge = %v after one client was reported stuck twice, want 1", got)
+	}
+	c.store.ObserveDHCP6SolicitStuck(stuckTestDUIDB)
+	if got := stuckClients(t, c); got != 2 {
+		t.Fatalf("gauge = %v with two distinct stuck clients, want 2", got)
+	}
+
+	// Its ALLOC or RENEW takes a client out; clearing one that was never stuck is a no-op.
+	c.store.ClearDHCP6SolicitStuck(stuckTestDUIDA)
+	c.store.ClearDHCP6SolicitStuck("00:01:00:01:aa:aa:aa:aa:02:00:00:00:00:99")
+	if got := stuckClients(t, c); got != 1 {
+		t.Fatalf("gauge = %v after one client was served, want 1", got)
+	}
+
+	// No further lines at all: the remaining client ages out at scrape time, and not
+	// before 2h after its last sighting. sync() first: the store goroutine reads the
+	// clock, so every queued observation must be done before the test moves it.
+	c.store.sync()
+	now = now.Add(dhcp6StuckClientTTL - time.Second)
+	if got := stuckClients(t, c); got != 1 {
+		t.Fatalf("gauge = %v just inside the TTL, want 1", got)
+	}
+	now = now.Add(time.Second)
+	if got := stuckClients(t, c); got != 0 {
+		t.Fatalf("gauge = %v two hours after the last sighting, want 0", got)
+	}
+}
+
+// Each further sighting of a stuck client restarts its two hours, which is what keeps a
+// client that retransmits hourly in the count for as long as it is stuck.
+func TestLogEventsCollector_DHCP6SolicitStuckSightingRefreshesTheTTL(t *testing.T) {
+	c := &logEventsCollector{store: newTestLogEventStore(t), subsystem: LogEventsSubsystem}
+	c.Register(namespace, "opnsense.example.com", promslog.NewNopLogger())
+	now := time.Unix(1_700_000_000, 0).UTC()
+	c.store.setClock(func() time.Time { return now })
+
+	for h := 0; h < 6; h++ {
+		c.store.ObserveDHCP6SolicitStuck(stuckTestDUIDA)
+		c.store.sync() // the store goroutine reads the clock; finish before moving it
+		now = now.Add(time.Hour)
+		if got := stuckClients(t, c); got != 1 {
+			t.Fatalf("hour %d: gauge = %v for a client sighted hourly, want 1", h, got)
+		}
+	}
+}
+
+// The DUID is inventory state only. An empty one is not a client, and the cap (1024)
+// bounds the inventory with refusals counted, never silent, under the family's own
+// saturation entry.
+func TestLogEventStore_DHCP6SolicitStuckIsBoundedAndIgnoresEmpty(t *testing.T) {
+	s := newTestLogEventStore(t)
+	if s.ObserveDHCP6SolicitStuck("") || s.ClearDHCP6SolicitStuck("") {
+		t.Error("an empty DUID was accepted")
+	}
+	for i := range maxDHCP6StuckClients + 7 {
+		s.ObserveDHCP6SolicitStuck("00:01:00:01:dd:dd:dd:dd:" + strconv.Itoa(i))
+	}
+	s.sync()
+	snap, ok := s.snapshot()
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if snap.dhcp6SolicitStuck != maxDHCP6StuckClients {
+		t.Fatalf("stuck inventory holds %d clients, want the cap of %d", snap.dhcp6SolicitStuck, maxDHCP6StuckClients)
+	}
+	for _, sat := range snap.sat {
+		if sat.family != logFamilyDHCP6SolicitStuck {
+			continue
+		}
+		if sat.capped != 7 || sat.keys != float64(maxDHCP6StuckClients) {
+			t.Errorf("saturation = capped %v keys %v, want 7 and %d", sat.capped, sat.keys, maxDHCP6StuckClients)
+		}
+		return
+	}
+	t.Fatalf("no saturation entry for family %q", logFamilyDHCP6SolicitStuck)
 }

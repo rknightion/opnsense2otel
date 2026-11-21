@@ -156,7 +156,7 @@ func TestNetmapRateLimitedPairCountsTwice(t *testing.T) {
 		if !ok {
 			t.Fatalf("parseKernel(%q) ok = false, want true", line)
 		}
-		if !observeDerived(sink, "kernel", rec.Attributes) {
+		if !observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 			t.Fatalf("observeDerived(%q) counted = false, want true", line)
 		}
 	}
@@ -185,7 +185,7 @@ func TestNetmapRingIndicesAreNeverLabels(t *testing.T) {
 	}
 
 	sink := &fakeSink{}
-	if !observeDerived(sink, "kernel", rec.Attributes) {
+	if !observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 		t.Fatal("observeDerived() counted = false, want true")
 	}
 	if len(sink.calls) != 1 || sink.calls[0].method != "netmap" {
@@ -270,7 +270,7 @@ func TestARPAddressesAreNeverLabels(t *testing.T) {
 	}
 
 	sink := &fakeSink{}
-	if !observeDerived(sink, "kernel", rec.Attributes) {
+	if !observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 		t.Fatal("observeDerived() counted = false, want true")
 	}
 	if len(sink.calls) != 1 || sink.calls[0].method != "arp" {
@@ -334,7 +334,7 @@ func TestKernelConsoleOutputIsNotClaimed(t *testing.T) {
 			// observeDerived through familyKernel, and only the event attributes gate it.
 			rec := genericRecord(kernelEnv(t, line))
 			sink := &fakeSink{}
-			if observeDerived(sink, "kernel", rec.Attributes) {
+			if observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 				t.Errorf("observeDerived() counted an unmodelled kernel line: %q", line)
 			}
 			if len(sink.calls) != 0 {

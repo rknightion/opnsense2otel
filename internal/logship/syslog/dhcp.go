@@ -98,7 +98,11 @@ var (
 	keaLevelRE  = regexp.MustCompile(`^(?:INFO|WARN|WARNING|ERROR|FATAL|DEBUG)\s+`)
 	keaLoggerRE = regexp.MustCompile(`^\[[^\]]*\]\s+`)
 
-	keaMsgIDRE = regexp.MustCompile(`^DHCP[46]_LEASE_([A-Z]+)$`)
+	// keaMsgIDRE captures the protocol digit and the lease verb of a DHCP{4,6}_LEASE_*
+	// message id. The digit matters: only a v6 line carries a DUID, and a v4 line's
+	// tid belongs to a different identity space (a v4 client is named by hardware
+	// address or client id), so the DUID/tid read below is gated on "6".
+	keaMsgIDRE = regexp.MustCompile(`^DHCP([46])_LEASE_([A-Z]+)$`)
 	// keaPacketRE matches the DHCPv{4,6} packet-lifecycle message ids. Unlike a LEASE
 	// event they carry no assigned address (that comes later) — the signal is the
 	// client identity (DUID), the transaction id, and, on a received packet, the DHCP
@@ -440,7 +444,8 @@ func parseDnsmasqDHCP(msg string) (dhcpFields, bool) {
 // level word and a "[logger.0xPTR]" prefix; both are stripped before the message
 // id is read.
 //
-// Three shapes are structured: DHCP{4,6}_LEASE_* lease events (address/mac/lease),
+// Three shapes are structured: DHCP{4,6}_LEASE_* lease events (address/mac/lease, plus
+// DUID and tid on a v6 line),
 // DHCP{4,6}_PACKET_RECEIVED handshake packets (DUID + message type, no address yet),
 // and COMMAND_RECEIVED control-plane calls (the command name). Any other Kea id —
 // PACKET_SEND, QUERY_LABEL, and the rest — returns ok=false and ships generic.
@@ -453,11 +458,26 @@ func parseKeaDHCP(msg string) (dhcpFields, bool) {
 	id, rest, _ := strings.Cut(s, " ")
 
 	if m := keaMsgIDRE.FindStringSubmatch(id); m != nil {
-		action, ok := keaActions[m[1]]
+		action, ok := keaActions[m[2]]
 		if !ok {
 			return f, false
 		}
 		f.action = action
+
+		// A DHCPv6 lease line names its client by DUID and its exchange by tid, exactly
+		// as the packet and alloc-fail lines do (#1202). The stuck-in-SOLICIT detection
+		// needs them on ADVERT/ALLOC/RENEW: a client that was advertised an address under
+		// one tid over and over, and never got as far as an ALLOC, is only visible by
+		// joining those lines on (DUID, tid). Like every other DUID/tid they ship as
+		// record attributes and are never a metric label.
+		if m[1] == "6" {
+			if d := keaDUIDRE.FindStringSubmatch(rest); d != nil {
+				f.duid = d[1]
+			}
+			if t := keaTIDRE.FindStringSubmatch(rest); t != nil {
+				f.tid = t[1]
+			}
+		}
 
 		if hw := keaHWRE.FindStringSubmatch(rest); hw != nil {
 			f.mac = hw[1]

@@ -302,7 +302,7 @@ func TestPPPDiagnosticsDoNotBecomeSessionEvents(t *testing.T) {
 				t.Fatal("primary PPP parser claimed a diagnostic as a session event")
 			}
 			rec, _ := buildRecord(env, nil, func(string) {})
-			if observeDerived(&fakeSink{}, "ppp", rec.Attributes) {
+			if observeDerived(&fakeSink{}, "ppp", rec.Attributes, freshDerivation()) {
 				t.Fatal("PPP diagnostic derived a metric")
 			}
 			if rec.Body != msg {

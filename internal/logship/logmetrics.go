@@ -236,22 +236,43 @@ type MetricSink interface {
 	// as a healthy lease that simply stopped being renewed, which is a worse failure
 	// mode than the series going absent when the exporter is told the lease is gone.
 	ClearDHCP6CAddress(iface string) bool
-	// ObserveDHCP6AllocFail counts ONE failed DHCPv6 lease allocation by this
-	// firewall's kea-dhcp6 SERVER (#546) — a v6 client that was refused a lease.
+	// ObserveDHCP6AllocFail counts ONE failed DHCPv6 transaction at this firewall's
+	// kea-dhcp6 SERVER (#546) — a v6 client that was refused a lease.
 	// reason is a CLOSED code-defined vocabulary of exactly two values: no_pools (not
 	// one configured pool was usable for this client) and exhausted (pools were tried
 	// and every candidate was taken).
 	//
-	// EXACTLY ONE CALL PER FAILED ALLOCATION, and that is the whole design. Kea emits a
+	// EXACTLY ONE CALL PER FAILED TRANSACTION, and that is the whole design. Kea emits a
 	// BURST of up to three ALLOC_ENGINE_V6_ALLOC_FAIL_* lines for one failure, sharing
 	// one transaction id; counting all of them would triple-report. The deriver counts
 	// only the CAUSE line, which alloc_engine.cc guarantees fires exactly once per
-	// failure and which is the one that carries the reason.
+	// failure and which is the one that carries the reason. A refused client then
+	// RETRANSMITS the same transaction (RFC 8415 backoff, capped at 3600 s, forever) and
+	// Kea writes a fresh cause line each time; the deriver remembers (DUID, tid, reason)
+	// and calls here only for the first (#1202), so this counts failed transactions,
+	// never retransmissions. That memory is why the sink itself stays DUID-free.
 	//
 	// THE DUID, THE TRANSACTION ID AND THE SUBNET ARE NEVER PASSED HERE and must never
 	// be added: a DUID is unbounded and identifies a client, a tid is unique per
 	// exchange, and the subnet is an IPv6 prefix. All three stay on the shipped record.
 	ObserveDHCP6AllocFail(reason string) bool
+	// ObserveDHCP6SolicitStuck records that the DHCPv6 client duid is stuck in SOLICIT
+	// (#1202): Kea advertised it an address under one transaction id, advertised the
+	// same (DUID, tid) again at least ten minutes later, and the client has never sent
+	// the REQUEST that would turn the advertisement into a lease (typically because the
+	// unicast ADVERTISE never reaches it). The deriver decides that from its transaction
+	// memory and calls here on every further sighting of a stuck client.
+	//
+	// THE DUID IS INVENTORY STATE AND NEVER A LABEL. The implementation keeps it in a
+	// bounded, expiring inventory purely so that DISTINCT clients can be counted; the
+	// only metric it feeds, opnsense_log_events_dhcp6_solicit_stuck_clients, carries no
+	// client identity. An empty duid is not a client and must be ignored.
+	ObserveDHCP6SolicitStuck(duid string) bool
+	// ClearDHCP6SolicitStuck removes duid from the stuck set (#1202), called when Kea
+	// allocates or renews a lease for it: the client got its address after all. A DUID
+	// that was never stuck is a no-op. Stuck DUIDs that stop appearing leave the set on
+	// their own once their last sighting is old enough.
+	ClearDHCP6SolicitStuck(duid string) bool
 	// ObserveUPnP counts one miniupnpd mapping event (#409). All three values are
 	// CLOSED code-defined vocabularies resolved by the parser and deriver: event =
 	// expired|cleanup_failed|unauthorized|lease_file_error; result = ok (expired only)
@@ -344,6 +365,8 @@ func (NopMetricSink) ObserveDHCPClientLease(_ string, _, _ float64) bool { retur
 func (NopMetricSink) ObserveDHCP6CMessage(_, _, _ string) bool { return true }
 func (NopMetricSink) ObserveDHCP6CEvent(_, _, _ string) bool   { return true }
 func (NopMetricSink) ObserveDHCP6AllocFail(_ string) bool      { return true }
+func (NopMetricSink) ObserveDHCP6SolicitStuck(_ string) bool   { return true }
+func (NopMetricSink) ClearDHCP6SolicitStuck(_ string) bool     { return true }
 
 func (NopMetricSink) ObserveDHCP6CPrefix(_, _ string, _, _, _ float64) bool { return true }
 

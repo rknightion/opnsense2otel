@@ -551,7 +551,7 @@ func TestObserveDerived_DHCP6C(t *testing.T) {
 			}
 
 			sink := &fakeSink{}
-			if !observeDerived(sink, "dhcp6c", rec.Attributes) {
+			if !observeDerived(sink, "dhcp6c", rec.Attributes, freshDerivation()) {
 				t.Fatal("observeDerived() counted = false, want true")
 			}
 			assertCalls(t, sink.calls, tt.want)
@@ -588,7 +588,7 @@ func TestDHCP6CPrefixAndAddressesAreNeverLabels(t *testing.T) {
 				t.Fatalf("parseDHCP6C(%q) ok = false", msg)
 			}
 			sink := &fakeSink{}
-			observeDerived(sink, "dhcp6c", rec.Attributes)
+			observeDerived(sink, "dhcp6c", rec.Attributes, freshDerivation())
 			for _, call := range sink.calls {
 				for _, arg := range call.args {
 					for _, secret := range secrets {
@@ -636,7 +636,7 @@ func TestDHCP6CUnmodelledLinesAreNotClaimed(t *testing.T) {
 			}
 			rec := genericRecord(env)
 			sink := &fakeSink{}
-			if observeDerived(sink, "dhcp6c", rec.Attributes) {
+			if observeDerived(sink, "dhcp6c", rec.Attributes, freshDerivation()) {
 				t.Errorf("observeDerived() counted an unmodelled dhcp6c line: %q", msg)
 			}
 		})

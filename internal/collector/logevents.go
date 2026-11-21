@@ -201,6 +201,9 @@ const (
 	// same cardinality_capped/keys metrics as every counter family, so a truncated
 	// inventory is visible without a metric of its own.
 	logFamilyZenarmorDevice = "zenarmor_device"
+	// logFamilyDHCP6SolicitStuck reports the stuck-client inventory's saturation the same
+	// way (#1202).
+	logFamilyDHCP6SolicitStuck = "dhcp6_solicit_stuck"
 
 	// logEventObservationDropReasonHandoffFull is deliberately code-defined: it
 	// describes the only possible receiver-side refusal, never an unbounded value
@@ -238,6 +241,20 @@ const (
 	// worth offering this evening. Shorter and the dropdown empties overnight;
 	// unbounded and a device that visited once reads as present forever.
 	zenarmorDeviceTTL = 24 * time.Hour
+
+	// maxDHCP6StuckClients caps the set of DHCPv6 clients (by DUID) reported stuck in
+	// SOLICIT (#1202). A LAN has hundreds of DHCPv6 clients at the very most and the
+	// condition is a fault, so a set this size is already a wide-open outage; the cap
+	// exists so a spoofed syslog flood of random DUIDs cannot grow it without limit.
+	// Refusals are counted under logFamilyDHCP6SolicitStuck.
+	maxDHCP6StuckClients = 1024
+	// dhcp6StuckClientTTL retires a client 2h (2 x SOL_MAX_RT, RFC 8415) after its last
+	// stuck sighting. A client still stuck retransmits at least once per SOL_MAX_RT plus
+	// jitter, so it is always sighted again well inside this; one that stops being
+	// sighted has recovered by some route the log did not show, or left, and must not
+	// read as stuck forever. The inventory is pruned at scrape time, so a client that
+	// vanishes ages out with no further log line to trigger it.
+	dhcp6StuckClientTTL = 2 * time.Hour
 )
 
 // dhcpClientLeaseValue is the pair of absolute Unix timestamps one WAN interface's
@@ -370,6 +387,8 @@ const (
 	logEventObserveDHCP6CAddress
 	logEventClearDHCP6CAddress
 	logEventObserveDHCP6AllocFail
+	logEventObserveDHCP6SolicitStuck
+	logEventClearDHCP6SolicitStuck
 	logEventObserveZenarmor
 	logEventObserveZenarmorDevice
 	logEventObserveFilterlogDomain
@@ -424,9 +443,13 @@ type logEventSnapshot struct {
 	dhcp6AllocFail []keyed[dhcp6AllocFailKey]
 	zen            []keyed[zenKey]
 	zenDevs        []inventoryEntry[string, zenDeviceAttrs]
-	filterlogDom   []keyed[string]
-	sat            []familySaturation
-	dropped        uint64
+	// dhcp6SolicitStuck is the count of DISTINCT DHCPv6 clients currently stuck in
+	// SOLICIT (#1202), taken from the inventory at snapshot time. The DUIDs themselves
+	// never leave the store.
+	dhcp6SolicitStuck int
+	filterlogDom      []keyed[string]
+	sat               []familySaturation
+	dropped           uint64
 }
 
 // LogEventStore hands receiver observations to one goroutine that owns every map.
@@ -483,6 +506,9 @@ type LogEventStore struct {
 	dhcp6AllocFail   *cappedCounter[dhcp6AllocFailKey]
 	zen              *cappedCounter[zenKey]
 	zenDevs          *boundedInventory[string, zenDeviceAttrs]
+	// dhcp6Stuck holds the DUIDs of DHCPv6 clients stuck in SOLICIT (#1202): inventory
+	// STATE, never a label. The value is empty on purpose - presence is the whole fact.
+	dhcp6Stuck *boundedInventory[string, struct{}]
 	// filterlogDomains retains a bounded heavy-hitter candidate set. Evicted and
 	// reserved domains are folded into the `other` metric series at snapshot
 	// time, so a novel domain can never grow process memory without limit and no
@@ -529,6 +555,7 @@ func newLogEventStoreWithCapacity(capacity int, beforeSnapshot func()) *LogEvent
 		dhcp6AllocFail:   newCappedCounter[dhcp6AllocFailKey](defaultMaxLogEventKeys),
 		zen:              newCappedCounter[zenKey](defaultMaxLogEventKeys),
 		zenDevs:          newBoundedInventory[string, zenDeviceAttrs](maxZenarmorDevices, zenarmorDeviceTTL, compareZenDeviceName),
+		dhcp6Stuck:       newBoundedInventory[string, struct{}](maxDHCP6StuckClients, dhcp6StuckClientTTL, compareZenDeviceName),
 		filterlogDomains: newFilterlogDomainCounter(maxFilterlogDomainCandidates),
 	}
 	go s.run()
@@ -721,6 +748,23 @@ func (s *LogEventStore) ObserveDHCP6AllocFail(reason string) bool {
 	return s.observe(logEventCommand{kind: logEventObserveDHCP6AllocFail, values: [7]string{reason}})
 }
 
+// ObserveDHCP6SolicitStuck implements logship.MetricSink. The DUID goes into a bounded,
+// expiring inventory so distinct clients can be counted; it is never a label.
+func (s *LogEventStore) ObserveDHCP6SolicitStuck(duid string) bool {
+	if duid == "" {
+		return false
+	}
+	return s.observe(logEventCommand{kind: logEventObserveDHCP6SolicitStuck, values: [7]string{duid}})
+}
+
+// ClearDHCP6SolicitStuck implements logship.MetricSink.
+func (s *LogEventStore) ClearDHCP6SolicitStuck(duid string) bool {
+	if duid == "" {
+		return false
+	}
+	return s.observe(logEventCommand{kind: logEventClearDHCP6SolicitStuck, values: [7]string{duid}})
+}
+
 // ObserveZenarmor implements logship.MetricSink.
 func (s *LogEventStore) ObserveZenarmor(o logship.ZenarmorObservation) bool {
 	return s.observe(logEventCommand{kind: logEventObserveZenarmor, values: [7]string{o.Family, o.Action, o.Category, o.Interface, o.RCode, o.Severity, o.StatusClass}})
@@ -835,6 +879,10 @@ func (s *LogEventStore) apply(cmd logEventCommand) {
 		s.dhcp6cAddr.unset(dhcp6cAddressKey{v[0]})
 	case logEventObserveDHCP6AllocFail:
 		s.dhcp6AllocFail.inc(dhcp6AllocFailKey{v[0]})
+	case logEventObserveDHCP6SolicitStuck:
+		s.dhcp6Stuck.seen(v[0], struct{}{}, s.clock())
+	case logEventClearDHCP6SolicitStuck:
+		s.dhcp6Stuck.remove(v[0])
 	case logEventObserveZenarmor:
 		s.zen.inc(zenKey{v[0], v[1], v[2], v[3], v[4], v[5], v[6]})
 	case logEventObserveZenarmorDevice:
@@ -953,6 +1001,15 @@ func (s *LogEventStore) buildSnapshot() logEventSnapshot {
 		capped: s.zenDevs.refused(),
 		keys:   float64(len(snap.zenDevs)),
 	})
+	// The stuck-client count is evaluated HERE, at snapshot (scrape) time, against the
+	// clock: live() prunes whatever has aged out, so a client that stopped logging stops
+	// counting without any later line having to remove it (#1202).
+	snap.dhcp6SolicitStuck = len(s.dhcp6Stuck.live(s.clock()))
+	snap.sat = append(snap.sat, familySaturation{
+		family: logFamilyDHCP6SolicitStuck,
+		capped: s.dhcp6Stuck.refused(),
+		keys:   float64(snap.dhcp6SolicitStuck),
+	})
 	snap.dropped = s.observationDrops.Load()
 	return snap
 }
@@ -1046,6 +1103,7 @@ type logEventsCollector struct {
 	dhcp6cAddrPrefExp    *prometheus.Desc
 	dhcp6cAddrValidExp   *prometheus.Desc
 	dhcp6AllocFail       *prometheus.Desc
+	dhcp6SolicitStuck    *prometheus.Desc
 
 	capped  *prometheus.Desc
 	keys    *prometheus.Desc
@@ -1386,24 +1444,52 @@ func (c *logEventsCollector) Register(namespace, instanceLabel string, log *slog
 		[]string{"interface"},
 	)
 	c.dhcp6AllocFail = buildPrometheusDesc(c.subsystem, "dhcp6_alloc_fail_total",
-		"DHCPv6 lease allocations this firewall's kea-dhcp6 SERVER refused, by closed reason - a "+
-			"LAN client that asked for an IPv6 address or prefix and did not get one. reason is "+
-			"no_pools (not one configured pool was usable for that client, normally a client-class "+
-			"or configuration problem) or exhausted (pools were tried and every candidate was "+
-			"already taken). THIS IS EXACTLY ONE INCREMENT PER FAILED ALLOCATION, and that is the "+
-			"whole design: Kea emits a BURST of up to three ALLOC_ENGINE_V6_ALLOC_FAIL_* lines for "+
-			"one failure, all sharing one transaction id, so counting every line would report three "+
-			"failures for one. Only the CAUSE line is counted - alloc_engine.cc guarantees exactly "+
-			"one of ALLOC_ENGINE_V6_ALLOC_FAIL_NO_POOLS and the bare ALLOC_ENGINE_V6_ALLOC_FAIL "+
-			"fires per failure - while the scope line (SUBNET or SHARED_NETWORK) and the optional "+
-			"CLASSES line ship as log records and count nothing. The client's DUID, the transaction "+
-			"id and the subnet are NOT labels: a DUID is unbounded and identifies a client, a tid is "+
-			"unique per exchange and would mint a series per failure, and the subnet is an IPv6 "+
-			"prefix. All three ship as dhcp.duid / dhcp.tid / dhcp.alloc_fail_subnet on the log "+
-			"record, which is where to look to find out WHICH client. Distinct from "+
+		"DHCPv6 transactions this firewall's kea-dhcp6 SERVER failed to give a lease, by closed "+
+			"reason - a LAN client that asked for an IPv6 address or prefix and did not get one. "+
+			"reason is no_pools (not one configured pool was usable for that client, normally a "+
+			"client-class or configuration problem, or an IA_PD request when no pd-pools are "+
+			"configured) or exhausted (pools were tried and every candidate was already taken). "+
+			"THIS COUNTS FAILED TRANSACTIONS, ONE PER DUID AND TRANSACTION ID, NOT RETRANSMISSIONS, "+
+			"and that is the whole design. A refused client retransmits the same transaction id with "+
+			"exponential backoff capped at 3600s (RFC 8415 SOL_MAX_RT), indefinitely, and Kea writes "+
+			"a fresh cause line each time, so counting lines would make one refused device a steady "+
+			"drip of failures for as long as it is powered. The exporter remembers each (DUID, tid, "+
+			"reason) it has counted for 2h after its last sighting (4096 transactions at most, "+
+			"least recently seen evicted first) and does not count a later cause line for it; a "+
+			"device restart picks a new transaction id and counts once. Within one failure Kea also "+
+			"emits a BURST of up to three ALLOC_ENGINE_V6_ALLOC_FAIL_* lines sharing the transaction "+
+			"id, and only the CAUSE line is counted - alloc_engine.cc guarantees exactly one of "+
+			"ALLOC_ENGINE_V6_ALLOC_FAIL_NO_POOLS and the bare ALLOC_ENGINE_V6_ALLOC_FAIL fires per "+
+			"failure - while the scope line (SUBNET or SHARED_NETWORK) and the optional CLASSES line "+
+			"ship as log records and count nothing. The client's DUID, the transaction id and the "+
+			"subnet are NOT labels: a DUID is unbounded and identifies a client, a tid is unique per "+
+			"exchange and would mint a series per failure, and the subnet is an IPv6 prefix. All "+
+			"three ship as dhcp.duid / dhcp.tid / dhcp.alloc_fail_subnet on the log record, which is "+
+			"where to look to find out WHICH client. This does NOT see a client that was offered an "+
+			"address and never received the offer: nothing failed, so see "+
+			"opnsense_log_events_dhcp6_solicit_stuck_clients. Distinct from "+
 			"opnsense_log_events_dhcp6c_* above, which is this firewall's own WAN client rather than "+
 			"the server it runs for the LAN.",
 		[]string{"reason"},
+	)
+	c.dhcp6SolicitStuck = buildPrometheusDesc(c.subsystem, "dhcp6_solicit_stuck_clients",
+		"Number of distinct DHCPv6 clients (by DUID) this firewall's kea-dhcp6 SERVER sees stuck in "+
+			"SOLICIT: Kea advertised the client an address under one transaction id, advertised the "+
+			"same DUID and transaction id again at least 10 minutes after the first advertisement, "+
+			"and has logged no DHCP6_LEASE_ALLOC, DHCP6_LEASE_RENEW or DHCP6_LEASE_REUSE for that DUID since. That is a "+
+			"client retransmitting one SOLICIT for as long as it runs and never sending the REQUEST "+
+			"that would take the address - usually because the unicast ADVERTISE never reaches it "+
+			"(the router cannot resolve the client's link-local address by neighbour discovery) - so "+
+			"it has no IPv6 address while NOTHING FAILED and opnsense_log_events_dhcp6_alloc_fail_total "+
+			"stays flat. A normal SOLICIT/ADVERTISE/REQUEST exchange (milliseconds) and a quick "+
+			"retransmission (seconds) never count. A DUID leaves the count on its next ALLOC, RENEW or REUSE, "+
+			"or 2h after its last stuck sighting; the gauge is evaluated at scrape time, so a client "+
+			"that vanishes still ages out with no further log line. Always exported, 0 when no client "+
+			"is stuck. The DUID is held only as bounded inventory state (1024 clients at most; "+
+			"refusals surface as cardinality_capped_total{family=\"dhcp6_solicit_stuck\"}) and is "+
+			"NEVER a label: find the clients by grouping the log stream on the dhcp.duid structured "+
+			"metadata field.",
+		nil,
 	)
 
 	c.capped = buildPrometheusDesc(c.subsystem, "cardinality_capped_total",
@@ -1462,6 +1548,7 @@ func (c *logEventsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.dhcp6cAddrPrefExp
 	ch <- c.dhcp6cAddrValidExp
 	ch <- c.dhcp6AllocFail
+	ch <- c.dhcp6SolicitStuck
 	ch <- c.capped
 	ch <- c.keys
 	ch <- c.dropped
@@ -1690,6 +1777,11 @@ func (c *logEventsCollector) Update(_ context.Context, _ *opnsense.Client, ch ch
 		ch <- prometheus.MustNewConstMetric(c.dhcp6AllocFail, prometheus.CounterValue, p.v,
 			p.k.reason, c.instance)
 	}
+	// Always emitted, including as 0: the alert asks "is this above zero", and a gauge
+	// that vanished when the last stuck client aged out would be indistinguishable from
+	// an exporter that stopped reporting it.
+	ch <- prometheus.MustNewConstMetric(c.dhcp6SolicitStuck, prometheus.GaugeValue,
+		float64(snap.dhcp6SolicitStuck), c.instance)
 	for _, p := range snap.zen {
 		ch <- prometheus.MustNewConstMetric(c.zenarmor, prometheus.CounterValue, p.v,
 			p.k.family, p.k.action, p.k.category, p.k.iface, p.k.rcode, p.k.severity,

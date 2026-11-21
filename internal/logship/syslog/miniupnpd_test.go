@@ -263,7 +263,7 @@ func TestUPnPPortsAreNeverLabels(t *testing.T) {
 			}
 
 			sink := &fakeSink{}
-			if !observeDerived(sink, "miniupnpd", rec.Attributes) {
+			if !observeDerived(sink, "miniupnpd", rec.Attributes, freshDerivation()) {
 				t.Fatal("observeDerived did not count a captured miniupnpd record")
 			}
 			if len(sink.calls) != 1 || sink.calls[0].method != "upnp" {
@@ -322,7 +322,7 @@ func TestObserveDerived_UPnP(t *testing.T) {
 				t.Fatalf("parseMiniUPnPd(%q) returned ok=false", tc.msg)
 			}
 			sink := &fakeSink{}
-			if !observeDerived(sink, "miniupnpd", rec.Attributes) {
+			if !observeDerived(sink, "miniupnpd", rec.Attributes, freshDerivation()) {
 				t.Fatal("observeDerived did not count a captured miniupnpd record")
 			}
 			if len(sink.calls) != 1 || sink.calls[0].method != "upnp" {
@@ -423,7 +423,7 @@ func TestObserveDerived_UPnP_DoesNotCountUnparsedLines(t *testing.T) {
 	}
 
 	sink := &fakeSink{}
-	if observeDerived(sink, "miniupnpd", rec.Attributes) {
+	if observeDerived(sink, "miniupnpd", rec.Attributes, freshDerivation()) {
 		t.Error("observeDerived counted an excluded miniupnpd line")
 	}
 	if len(sink.calls) != 0 {
@@ -464,7 +464,7 @@ func TestUPnPDerivesNoMappingCount(t *testing.T) {
 			t.Fatalf("parseMiniUPnPd(%q) returned ok=false", msg)
 		}
 		sink := &fakeSink{}
-		if !observeDerived(sink, "miniupnpd", rec.Attributes) {
+		if !observeDerived(sink, "miniupnpd", rec.Attributes, freshDerivation()) {
 			t.Fatalf("observeDerived did not count %q", msg)
 		}
 		args := sink.calls[0].args

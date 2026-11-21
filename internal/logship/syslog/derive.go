@@ -586,7 +586,7 @@ func deriveFamily(program string) (family, bool) {
 // returns false rather than counting a blank label value, so the caller never
 // treats an uncounted line as handled — see sampleKeep, which never drops a
 // line observeDerived did not count.
-func observeDerived(sink logship.MetricSink, program string, attrs map[string]string) (counted bool) {
+func observeDerived(sink logship.MetricSink, program string, attrs map[string]string, d derivation) (counted bool) {
 	fam, ok := deriveFamily(program)
 	if !ok {
 		return false
@@ -646,7 +646,7 @@ func observeDerived(sink logship.MetricSink, program string, attrs map[string]st
 		return sink.ObserveSSHD(result, attrs["auth.method"], attrs["src.scope"])
 
 	case familyDHCP:
-		return observeDHCP(sink, attrs)
+		return observeDHCP(sink, attrs, d)
 
 	case familyAudit:
 		event := attrs["event"]
@@ -835,7 +835,7 @@ func observeDHCPClient(sink logship.MetricSink, attrs map[string]string) bool {
 // kea-dhcp{4,6} pair, dhcrelay). Like observeDHCPClient it can fire more than one
 // observation, because kea's allocation-failure lines are a different question from
 // its lease lines and arrive on the same program.
-func observeDHCP(sink logship.MetricSink, attrs map[string]string) bool {
+func observeDHCP(sink logship.MetricSink, attrs map[string]string, d derivation) bool {
 	counted := false
 
 	if action := attrs["dhcp.action"]; action != "" {
@@ -843,11 +843,23 @@ func observeDHCP(sink logship.MetricSink, attrs map[string]string) bool {
 		counted = sink.ObserveDHCP(action, iface, attrs["dhcp.server_ip"]) || counted
 	}
 
+	// A v6 client advertised an address over and over and never taking it up (#1202).
+	// The same lease line is also the ordinary dhcp event above; this is the question of
+	// whether the client is stuck, answered from the receiver's transaction memory.
+	counted = observeDHCP6Lease(sink, attrs, d) || counted
+
 	// The DHCPv6 allocation-failure counter. The gate is deliberately the REASON and
 	// not the more general dhcp.alloc_fail_line: only the two CAUSE lines set a reason,
 	// so the scope and classes lines of the same burst reach here, find nothing to
 	// count, and leave the failure counted exactly once. See the keaAllocFail* block.
-	if reason := attrs["dhcp.alloc_fail_reason"]; reason != "" {
+	//
+	// "Exactly once" is per TRANSACTION, not per line (#1202): a client whose SOLICIT is
+	// refused retransmits the same tid for as long as it runs, and Kea writes a fresh
+	// cause line for each. The memory that tells a retransmission from a new failure
+	// lives here, in the deriver, because it needs the DUID and tid and neither may ever
+	// reach the sink.
+	if reason := attrs["dhcp.alloc_fail_reason"]; reason != "" &&
+		d.dhcp6.countFailure(attrs["dhcp.duid"], attrs["dhcp.tid"], reason, d.at) {
 		counted = sink.ObserveDHCP6AllocFail(reason) || counted
 	}
 

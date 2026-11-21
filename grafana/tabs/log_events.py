@@ -200,7 +200,23 @@ def dhcp_row(b: Builder):
              "and interface, across the Kea / dnsmasq / ISC backends. Backend-independent, so it is "
              "the one DHCP panel that keeps working across a backend migration.",
     )
-    return b.row("Lease Events (log-derived)", [dhcp], present="has_log_events_dhcp")
+    stuck = b.ts(
+        "DHCPv6 Clients Stuck in SOLICIT",
+        [(f'sum {grp()} ({sel("opnsense_log_events_dhcp6_solicit_stuck_clients")})',
+          "stuck clients")],
+        unit="short",
+        decimals=0,
+        desc="opnsense_log_events_dhcp6_solicit_stuck_clients: distinct DHCPv6 clients kea-dhcp6 "
+             "advertised an address to, advertised the same transaction to again 10 minutes or more "
+             "later, and has not allocated or renewed a lease for since (#1202). Such a client "
+             "retransmits one SOLICIT for as long as it runs and has no IPv6 address, usually "
+             "because the unicast ADVERTISE never reaches it (the router cannot resolve its new "
+             "link-local by neighbour discovery). NOTHING FAILS, so the allocation-failure panel "
+             "stays flat: this is the only place the problem shows. A client leaves the count on "
+             "its next ALLOC, RENEW or REUSE, or 2h after it was last seen stuck. The client identity is "
+             "never a label: find the DUIDs by grouping the log stream on dhcp.duid.",
+    )
+    return b.row("Lease Events (log-derived)", [dhcp, stuck], present="has_log_events_dhcp")
 
 
 def dhcp_client_row(b: Builder):

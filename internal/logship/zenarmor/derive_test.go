@@ -51,6 +51,8 @@ func (s *captureSink) ObserveDHCPClientLease(_ string, _, _ float64) bool { retu
 func (s *captureSink) ObserveDHCP6CMessage(_, _, _ string) bool           { return true }
 func (s *captureSink) ObserveDHCP6CEvent(_, _, _ string) bool             { return true }
 func (s *captureSink) ObserveDHCP6AllocFail(_ string) bool                { return true }
+func (s *captureSink) ObserveDHCP6SolicitStuck(_ string) bool             { return true }
+func (s *captureSink) ClearDHCP6SolicitStuck(_ string) bool               { return true }
 
 func (s *captureSink) ObserveDHCP6CPrefix(_, _ string, _, _, _ float64) bool { return true }
 
