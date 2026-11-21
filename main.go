@@ -1525,6 +1525,7 @@ func main() {
 		// own lane key so the console still sees the UNION and its family/series and
 		// cardinality figures stay complete.
 		if otlpCfg.FastExportInterval > 0 {
+			metricsRecorder.ConfigureSplitLanes("otlp-base", "otlp-fast")
 			baseRegistry := prometheus.NewRegistry()
 			baseRegistry.MustRegister(collectorInstance.OTLPBaseView())
 			fastRegistry := prometheus.NewRegistry()

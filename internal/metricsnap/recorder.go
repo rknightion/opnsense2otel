@@ -1,10 +1,8 @@
-// Package metricsnap passively captures the metric families produced by real
-// Prometheus scrapes so other consumers (e.g. the web UI operator console)
-// can read a last-scrape snapshot without ever triggering a scrape of their
-// own.
+// Package metricsnap passively captures metrics produced by real gathers.
 package metricsnap
 
 import (
+	"encoding/binary"
 	"sort"
 	"sync"
 	"time"
@@ -13,174 +11,276 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// Capture is one recorded gather, plus the metadata that distinguishes a full
-// capture from a partial (error-accompanied) one.
+// Capture is the latest recorded view and its gather-error history.
 type Capture struct {
 	Families    []*dto.MetricFamily
-	At          time.Time // capture time; zero if never captured
-	Partial     bool      // these families arrived together with a gather error
-	LastErrorAt time.Time // last time a gather returned an error; zero if never
-	ErrorCount  uint64    // total gathers that returned an error
+	At          time.Time
+	Partial     bool
+	LastErrorAt time.Time
+	ErrorCount  uint64
 }
 
-// laneCapture is one lane's most recent families and when they arrived.
 type laneCapture struct {
 	families []*dto.MetricFamily
 	at       time.Time
+	version  uint64
 	partial  bool
 }
 
-// defaultLane is the lane key used by Tee, i.e. every caller that gathers the
-// complete metric set in one go (the /metrics handler, and OTLP when the
-// optional fast lane is disabled).
 const defaultLane = ""
 
-// Recorder holds the most recent set of metric families captured from wrapped
-// Gatherers, plus the time they were captured and metadata about gather errors
-// observed along the way.
-//
-// Captures are keyed by LANE because the metric set is not always produced by a
-// single gather: with the optional fast OTLP lane enabled (#390) the exporter's
-// series are split across two disjoint readers, and neither one alone is the
-// whole picture. Capture merges the lanes so the console keeps reporting the
-// union rather than silently under-counting families, series and cardinality by
-// whatever the fast tier happens to hold.
+// Recorder records complete views without initiating gathers of its own.
 type Recorder struct {
-	mu          sync.RWMutex
-	lanes       map[string]laneCapture
+	mu sync.RWMutex
+	// effects serializes publication and its budget effects, while allowing
+	// Capture and new gather starts to proceed during an Observed callback.
+	effects     sync.Mutex
+	next        uint64
+	started     bool
+	configured  bool
+	members     map[string]struct{}
+	attempts    map[string]uint64
+	staged      map[string]laneCapture
+	cutoff      uint64
+	view        laneCapture
+	mode        string // empty, full, or split; provisional views leave mode empty
 	lastErrorAt time.Time
 	errorCount  uint64
-
-	// budget and budgetState back the optional soft total-series budget check
-	// (#494); see ConfigureSeriesBudget and budget.go. budget is guarded by mu
-	// (set once at startup, read on every Gather); budgetState has its own lock
-	// since it is touched only after mu is released.
 	budget      SeriesBudget
 	budgetState budgetState
 }
 
-// New returns an empty Recorder. Snapshot returns (nil, zero-time) until the
-// first non-empty Gather passes through a Tee'd gatherer.
-func New() *Recorder { return &Recorder{lanes: make(map[string]laneCapture)} }
+// New returns an empty Recorder.
+func New() *Recorder {
+	return &Recorder{attempts: make(map[string]uint64), staged: make(map[string]laneCapture)}
+}
 
-// teed wraps an inner Gatherer, delegating Gather to it and recording the
-// result into the owning Recorder under lane.
+// ConfigureSplitLanes declares all active split readers once, before any
+// gather starts. Even an empty reader must be declared. No call means no split.
+// Duplicate, empty or late declarations are programming errors.
+func (r *Recorder) ConfigureSplitLanes(lanes ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.configured || r.started {
+		panic("metricsnap: split membership already fixed")
+	}
+	r.configured = true
+	r.members = make(map[string]struct{}, len(lanes))
+	for _, lane := range lanes {
+		if lane == defaultLane {
+			panic("metricsnap: empty split lane")
+		}
+		if _, exists := r.members[lane]; exists {
+			panic("metricsnap: duplicate split lane")
+		}
+		r.members[lane] = struct{}{}
+	}
+}
+
 type teed struct {
 	r     *Recorder
 	lane  string
+	split bool
 	inner prometheus.Gatherer
 }
 
-// Tee returns a Gatherer that delegates to inner and records the result as
-// the latest capture whenever inner returns non-empty families — regardless
-// of whether inner also returned an error, mirroring the continue-on-error
-// contract used by the real scrape and OTLP paths (promhttp.ContinueOnError
-// and the OTLP continue-on-error gatherer both serve partial families rather
-// than discard them). Used to wrap the real scrape gatherers so the console
-// reads captured families without gathering itself.
+// Tee wraps a full-view gatherer, preserving its result and error.
 func (r *Recorder) Tee(inner prometheus.Gatherer) prometheus.Gatherer {
-	return teed{r: r, lane: defaultLane, inner: inner}
+	return teed{r: r, inner: inner}
 }
 
-// TeeLane is Tee for a gatherer that produces only PART of the metric set, such
-// as one of the two disjoint OTLP export lanes (#390). Each lane's families are
-// held separately and merged by Capture, so a split export pipeline still gives
-// the console the complete picture. Lane names must be stable; a lane is only
-// ever replaced by a later gather of the same lane.
+// TeeLane wraps a declared split reader. Wrapping does not declare membership.
 func (r *Recorder) TeeLane(lane string, inner prometheus.Gatherer) prometheus.Gatherer {
-	return teed{r: r, lane: lane, inner: inner}
+	return teed{r: r, lane: lane, split: true, inner: inner}
 }
 
 func (t teed) Gather() ([]*dto.MetricFamily, error) {
+	r := t.r
+	r.mu.Lock()
+	r.started = true
+	r.next++
+	version, at := r.next, time.Now()
+	r.mu.Unlock()
 	mfs, err := t.inner.Gather()
 
-	t.r.mu.Lock()
+	r.effects.Lock()
+	defer r.effects.Unlock()
+	r.mu.Lock()
+	if t.split {
+		if _, ok := r.members[t.lane]; !ok {
+			r.mu.Unlock()
+			return mfs, err
+		}
+	}
 	if err != nil {
-		t.r.errorCount++
-		t.r.lastErrorAt = time.Now()
+		r.errorCount++
+		r.lastErrorAt = time.Now()
 	}
-	if len(mfs) > 0 {
-		t.r.lanes[t.lane] = laneCapture{families: mfs, at: time.Now(), partial: err != nil}
+	if version <= r.attempts[t.lane] {
+		r.mu.Unlock()
+		return mfs, err
 	}
-	// Compute the MERGED total (every lane, not just this one) under the same
-	// lock, since a split OTLP lane only ever sees part of the metric set —
-	// see merged()'s doc comment. cfg is copied out so the budget check itself
-	// runs unlocked.
-	merged, _, _ := t.r.merged()
-	total := totalSeriesOf(merged)
-	cfg := t.r.budget
-	t.r.mu.Unlock()
-
-	t.r.observeSeries(total, cfg)
-
+	r.attempts[t.lane] = version
+	capture := laneCapture{families: mfs, at: at, version: version, partial: err != nil}
+	var totals []int
+	if len(r.members) == 0 {
+		if len(mfs) != 0 {
+			r.view = capture
+		}
+		totals = append(totals, totalSeriesOf(r.view.families))
+	} else if err != nil {
+		if t.split && r.mode != "split" {
+			delete(r.staged, t.lane)
+		}
+		if r.mode == "" && len(mfs) != 0 && version > r.view.version {
+			r.view = capture
+		}
+	} else if !t.split {
+		if r.mode == "" || version > r.view.version {
+			capture.families = orderedFamilies(mfs)
+			r.view, r.mode, r.cutoff = capture, "full", version
+			for lane, stage := range r.staged {
+				if stage.version <= version {
+					delete(r.staged, lane)
+				}
+			}
+			totals = append(totals, totalSeriesOf(mfs))
+			if r.completeStages() {
+				r.publishSplit()
+				totals = append(totals, totalSeriesOf(r.view.families))
+			}
+		}
+	} else {
+		if r.mode == "split" || version > r.cutoff {
+			r.staged[t.lane] = capture
+			if r.mode == "split" || r.completeStages() {
+				r.publishSplit()
+				totals = append(totals, totalSeriesOf(r.view.families))
+			} else if r.mode == "" && version > r.view.version {
+				capture.partial = true
+				r.view = capture
+			}
+		}
+	}
+	cfg := r.budget
+	r.mu.Unlock()
+	for _, total := range totals {
+		r.observeSeries(total, cfg)
+	}
 	return mfs, err
 }
 
-// merged folds every lane into one family set. Callers hold the read lock.
-//
-// Lanes are disjoint by construction, so in practice this is a concatenation;
-// the family-name dedupe exists only to keep the result well-formed if a
-// complete-set lane (Tee) and partial lanes (TeeLane) are ever both active — the
-// most recently captured copy of a family wins, since all lanes read the same
-// underlying snapshot and the newest is the least stale.
-//
-// The reported time is the OLDEST contributing lane, not the newest: the merged
-// set is only as fresh as its stalest part, and overstating that is exactly the
-// kind of quiet lie #382 exists to remove.
-func (r *Recorder) merged() ([]*dto.MetricFamily, time.Time, bool) {
-	if len(r.lanes) == 1 {
-		for _, lc := range r.lanes {
-			return lc.families, lc.at, lc.partial
+func (r *Recorder) completeStages() bool {
+	for lane := range r.members {
+		if _, ok := r.staged[lane]; !ok {
+			return false
 		}
 	}
-	type owned struct {
-		mf *dto.MetricFamily
-		at time.Time
+	return len(r.members) != 0
+}
+
+// labelKey is a lossless canonical representation of all label pairs.
+func labelKey(m *dto.Metric) string {
+	labels := append([]*dto.LabelPair(nil), m.GetLabel()...)
+	sort.Slice(labels, func(i, j int) bool {
+		if labels[i].GetName() != labels[j].GetName() {
+			return labels[i].GetName() < labels[j].GetName()
+		}
+		return labels[i].GetValue() < labels[j].GetValue()
+	})
+	var key []byte
+	for _, label := range labels {
+		for _, part := range []string{label.GetName(), label.GetValue()} {
+			key = binary.AppendUvarint(key, uint64(len(part)))
+			key = append(key, part...)
+		}
 	}
-	byName := make(map[string]owned)
+	return string(key)
+}
+
+// orderedFamilies copies containers and slices, never the gatherer's DTOs.
+func orderedFamilies(in []*dto.MetricFamily) []*dto.MetricFamily {
+	out := make([]*dto.MetricFamily, 0, len(in))
+	for _, source := range in {
+		mf := &dto.MetricFamily{Name: source.Name, Help: source.Help, Type: source.Type, Unit: source.Unit, Metric: append([]*dto.Metric(nil), source.Metric...)}
+		sort.SliceStable(mf.Metric, func(i, j int) bool { return labelKey(mf.Metric[i]) < labelKey(mf.Metric[j]) })
+		out = append(out, mf)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
+	return out
+}
+
+func (r *Recorder) publishSplit() {
+	type sample struct {
+		metric  *dto.Metric
+		version uint64
+	}
+	type family struct {
+		source  *dto.MetricFamily
+		version uint64
+		samples map[string]sample
+	}
+	families := make(map[string]*family)
 	var oldest time.Time
-	partial := false
-	for _, lc := range r.lanes {
-		if lc.partial {
-			partial = true
+	var newest uint64
+	for _, lane := range r.staged {
+		if oldest.IsZero() || lane.at.Before(oldest) {
+			oldest = lane.at
 		}
-		if oldest.IsZero() || lc.at.Before(oldest) {
-			oldest = lc.at
+		if lane.version > newest {
+			newest = lane.version
 		}
-		for _, mf := range lc.families {
-			if prev, ok := byName[mf.GetName()]; ok && prev.at.After(lc.at) {
-				continue
+		for _, mf := range lane.families {
+			f := families[mf.GetName()]
+			if f == nil {
+				f = &family{samples: make(map[string]sample)}
+				families[mf.GetName()] = f
 			}
-			byName[mf.GetName()] = owned{mf: mf, at: lc.at}
+			if f.source == nil || lane.version > f.version {
+				f.source, f.version = mf, lane.version
+			}
+			for _, metric := range mf.GetMetric() {
+				key := labelKey(metric)
+				if prev, ok := f.samples[key]; !ok || lane.version > prev.version {
+					f.samples[key] = sample{metric, lane.version}
+				}
+			}
 		}
 	}
-	out := make([]*dto.MetricFamily, 0, len(byName))
-	for _, o := range byName {
-		out = append(out, o.mf)
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
-	return out, oldest, partial
+	sort.Strings(names)
+	out := make([]*dto.MetricFamily, 0, len(names))
+	for _, name := range names {
+		f := families[name]
+		// Construct a fresh container; source DTOs and their slices remain untouched.
+		mf := &dto.MetricFamily{Name: f.source.Name, Help: f.source.Help, Type: f.source.Type, Unit: f.source.Unit}
+		keys := make([]string, 0, len(f.samples))
+		for key := range f.samples {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			mf.Metric = append(mf.Metric, f.samples[key].metric)
+		}
+		out = append(out, mf)
+	}
+	r.view = laneCapture{families: out, at: oldest, version: newest}
+	r.mode = "split"
 }
 
-// Snapshot returns a copy of the last captured families and the time they
-// were captured. Returns (nil, zero-time) if no capture has happened yet.
+// Snapshot returns the recorded family slice and capture time.
 func (r *Recorder) Snapshot() ([]*dto.MetricFamily, time.Time) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	mfs, at, _ := r.merged()
-	return append([]*dto.MetricFamily(nil), mfs...), at
+	c := r.Capture()
+	return c.Families, c.At
 }
 
-// Capture returns a copy of the most recent recorded capture.
+// Capture returns the recorded view and cumulative error diagnostics.
 func (r *Recorder) Capture() Capture {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	mfs, at, partial := r.merged()
-	return Capture{
-		Families:    append([]*dto.MetricFamily(nil), mfs...),
-		At:          at,
-		Partial:     partial,
-		LastErrorAt: r.lastErrorAt,
-		ErrorCount:  r.errorCount,
-	}
+	return Capture{Families: append([]*dto.MetricFamily(nil), r.view.families...), At: r.view.at,
+		Partial: r.view.partial, LastErrorAt: r.lastErrorAt, ErrorCount: r.errorCount}
 }

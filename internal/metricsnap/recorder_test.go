@@ -2,6 +2,7 @@ package metricsnap
 
 import (
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -269,6 +270,7 @@ func strPtr(s string) *string { return &s }
 // whatever the fast tier happens to hold.
 func TestRecorder_MergesDisjointLanes(t *testing.T) {
 	r := New()
+	r.ConfigureSplitLanes("base", "fast")
 	base := r.TeeLane("base", gathererOf(family("opnsense_base_one"), family("opnsense_base_two")))
 	fast := r.TeeLane("fast", gathererOf(family("opnsense_fast_one")))
 
@@ -310,6 +312,7 @@ func TestRecorder_MergesDisjointLanes(t *testing.T) {
 // part, and claiming otherwise is the same class of quiet lie #382 removes.
 func TestRecorder_MergedAgeIsTheStalestLane(t *testing.T) {
 	r := New()
+	r.ConfigureSplitLanes("base", "fast")
 	old := r.TeeLane("base", gathererOf(family("opnsense_old")))
 	if _, err := old.Gather(); err != nil {
 		t.Fatalf("gather: %v", err)
@@ -328,11 +331,10 @@ func TestRecorder_MergedAgeIsTheStalestLane(t *testing.T) {
 	}
 }
 
-// TestRecorder_PartialLanePoisonsTheMerge: if ANY contributing lane was partial, the
-// merged capture must be marked partial — the console must not present a union that
-// contains a degraded half as if it were clean.
+// An error at startup may be shown provisionally, but cannot complete the split.
 func TestRecorder_PartialLanePoisonsTheMerge(t *testing.T) {
 	r := New()
+	r.ConfigureSplitLanes("base", "fast")
 	clean := r.TeeLane("base", gathererOf(family("opnsense_clean")))
 	broken := r.TeeLane("fast", errGathererOf(family("opnsense_partial")))
 	if _, err := clean.Gather(); err != nil {
@@ -342,12 +344,269 @@ func TestRecorder_PartialLanePoisonsTheMerge(t *testing.T) {
 		t.Fatal("the partial lane must still surface its error to its caller")
 	}
 	if c := r.Capture(); !c.Partial {
-		t.Error("a merge containing a partial lane must be marked partial")
+		t.Error("a provisional error result must be marked partial")
 	}
 }
 
 // TestRecorder_SingleLaneUnchanged pins backward compatibility: plain Tee (the
 // /metrics handler and single-lane OTLP) behaves exactly as before.
+func TestRecorder_SameFamilyAcrossSplitReaders(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	var observed []int
+	r.ConfigureSeriesBudget(SeriesBudget{Observed: func(total int) { observed = append(observed, total) }})
+	base := prometheus.NewRegistry()
+	fast := prometheus.NewRegistry()
+	for _, item := range []struct {
+		reg   *prometheus.Registry
+		label string
+	}{{base, "firmware"}, {fast, "interfaces"}} {
+		g := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "opnsense_exporter_scrape_collector_success", Help: "collector health"}, []string{"collector"})
+		g.WithLabelValues(item.label).Set(1)
+		item.reg.MustRegister(g)
+	}
+	_, _ = r.TeeLane("base", base).Gather()
+	_, _ = r.TeeLane("fast", fast).Gather()
+	c := r.Capture()
+	if len(c.Families) != 1 || len(c.Families[0].Metric) != 2 {
+		t.Fatalf("want both collector label series in one family, got %v", c.Families)
+	}
+	got := map[string]float64{}
+	for _, metric := range c.Families[0].Metric {
+		got[metric.Label[0].GetValue()] = metric.Gauge.GetValue()
+	}
+	if got["firmware"] != 1 || got["interfaces"] != 1 {
+		t.Fatalf("want both collector values, got %v", got)
+	}
+	if !reflect.DeepEqual(observed, []int{2}) {
+		t.Fatalf("want complete scheduler family budget total 2, got %v", observed)
+	}
+}
+
+// gatedGatherer holds a gather after its start token has been assigned.
+type gatedGatherer struct {
+	entered chan struct{}
+	release chan struct{}
+	result  fakeGatherer
+}
+
+func (g *gatedGatherer) Gather() ([]*dto.MetricFamily, error) {
+	close(g.entered)
+	select {
+	case <-g.release:
+		return g.result.Gather()
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("test gather timed out")
+	}
+}
+
+func startGated(t *testing.T, g prometheus.Gatherer, inner *gatedGatherer) chan struct{} {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { _, _ = g.Gather(); close(done) }()
+	select {
+	case <-inner.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("gather did not start")
+	}
+	return done
+}
+
+func releaseGated(t *testing.T, inner *gatedGatherer, done chan struct{}) {
+	t.Helper()
+	close(inner.release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("gather did not finish")
+	}
+}
+
+func gated(mfs ...*dto.MetricFamily) *gatedGatherer {
+	return &gatedGatherer{entered: make(chan struct{}), release: make(chan struct{}), result: fakeGatherer{mfs: mfs}}
+}
+
+func namesOf(c Capture) []string {
+	var names []string
+	for _, mf := range c.Families {
+		names = append(names, mf.GetName())
+	}
+	return names
+}
+
+func requireNames(t *testing.T, r *Recorder, want ...string) Capture {
+	t.Helper()
+	c := r.Capture()
+	if !reflect.DeepEqual(namesOf(c), want) {
+		t.Fatalf("families = %v, want %v", namesOf(c), want)
+	}
+	return c
+}
+
+// TestRecorder_CompleteViewHandoffs covers empty members, staged errors and
+// whole-view withdrawal: an incomplete handoff cannot blend with a full view.
+func TestRecorder_CompleteViewHandoffs(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	_, _ = r.Tee(gathererOf(family("full"))).Gather()
+	initial := requireNames(t, r, "full")
+	_, _ = r.TeeLane("base", gathererOf(family("base"))).Gather()
+	requireNames(t, r, "full")
+	_, _ = r.TeeLane("base", errGathererOf(family("bad"))).Gather()
+	_, _ = r.TeeLane("fast", gathererOf()).Gather()
+	c := requireNames(t, r, "full")
+	if c.Partial || !c.At.Equal(initial.At) || c.ErrorCount != 1 {
+		t.Fatalf("error changed complete view: %+v", c)
+	}
+	_, _ = r.TeeLane("base", gathererOf(family("base"))).Gather()
+	c = requireNames(t, r, "base")
+	if c.Partial {
+		t.Fatal("complete split marked partial")
+	}
+	_, _ = r.TeeLane("fast", gathererOf(family("fast"))).Gather()
+	beforeError := requireNames(t, r, "base", "fast")
+	_, _ = r.TeeLane("fast", errGathererOf(family("unreliable"))).Gather()
+	afterError := requireNames(t, r, "base", "fast")
+	if !afterError.At.Equal(beforeError.At) || afterError.Partial || afterError.ErrorCount != 2 {
+		t.Fatalf("error revoked complete split: %+v", afterError)
+	}
+	_, _ = r.TeeLane("base", gathererOf()).Gather()
+	requireNames(t, r, "fast")
+	_, _ = r.Tee(gathererOf()).Gather()
+	c = requireNames(t, r)
+	if c.At.IsZero() || c.Partial {
+		t.Fatalf("clean empty full not published: %+v", c)
+	}
+}
+
+// TestRecorder_StaleGatherOrdering covers same-source attempts, cutoff and a
+// full result that began before a published split withdrawal.
+func TestRecorder_StaleGatherOrdering(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	_, _ = r.Tee(gathererOf(family("full"))).Gather()
+	old := gated(family("old"))
+	done := startGated(t, r.TeeLane("base", old), old)
+	_, _ = r.TeeLane("base", gathererOf(family("base"))).Gather()
+	releaseGated(t, old, done)
+	_, _ = r.TeeLane("fast", gathererOf(family("fast"))).Gather()
+	requireNames(t, r, "base", "fast")
+	oldFull := gated(family("obsolete"))
+	done = startGated(t, r.Tee(oldFull), oldFull)
+	_, _ = r.TeeLane("base", gathererOf()).Gather()
+	releaseGated(t, oldFull, done)
+	requireNames(t, r, "fast")
+	oldSplit := gated(family("revived"))
+	done = startGated(t, r.TeeLane("base", oldSplit), oldSplit)
+	_, _ = r.Tee(gathererOf(family("newfull"))).Gather()
+	releaseGated(t, oldSplit, done)
+	_, _ = r.TeeLane("fast", gathererOf()).Gather()
+	requireNames(t, r, "newfull")
+	_, _ = r.TeeLane("base", gathererOf(family("newbase"))).Gather()
+	requireNames(t, r, "newbase")
+}
+
+func labelledFamily(value float64, labels ...string) *dto.MetricFamily {
+	mf := family("shared")
+	metric := &dto.Metric{Gauge: &dto.Gauge{Value: &value}}
+	for i := 0; i < len(labels); i += 2 {
+		n, v := labels[i], labels[i+1]
+		metric.Label = append(metric.Label, &dto.LabelPair{Name: &n, Value: &v})
+	}
+	mf.Metric = []*dto.Metric{metric}
+	return mf
+}
+
+// Shared identities use all labels independent of their input order; omission
+// falls back to the sibling and eventually withdraws the series.
+func TestRecorder_CanonicalIdentityAndFallback(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	base := labelledFamily(1, "a", "b", "c", "d")
+	fast := labelledFamily(2, "c", "d", "a", "b")
+	_, _ = r.TeeLane("base", gathererOf(base)).Gather()
+	_, _ = r.TeeLane("fast", gathererOf(fast)).Gather()
+	c := r.Capture()
+	if len(c.Families) != 1 || len(c.Families[0].Metric) != 1 || c.Families[0].Metric[0].Gauge.GetValue() != 2 {
+		t.Fatalf("duplicate winner: %+v", c.Families)
+	}
+	if fast.Metric[0].Label[0].GetName() != "c" || base.Metric[0].Label[0].GetName() != "a" {
+		t.Fatal("mutated input labels")
+	}
+	_, _ = r.TeeLane("fast", gathererOf()).Gather()
+	c = r.Capture()
+	if len(c.Families) != 1 || c.Families[0].Metric[0].Gauge.GetValue() != 1 {
+		t.Fatalf("fallback: %+v", c.Families)
+	}
+	_, _ = r.TeeLane("fast", gathererOf(labelledFamily(3, "a", "bc", "d", ""))).Gather()
+	c = r.Capture()
+	if len(c.Families[0].Metric) != 2 {
+		t.Fatalf("distinct label tuples collapsed: %+v", c.Families)
+	}
+	_, _ = r.TeeLane("base", gathererOf()).Gather()
+	_, _ = r.TeeLane("fast", gathererOf()).Gather()
+	requireNames(t, r)
+}
+
+// A newer error invalidates a staged qualifier; a success which started first
+// cannot restore it. Conversely stages newer than an in-flight full survive.
+func TestRecorder_StagedAttemptsAndOverlappingFull(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	_, _ = r.Tee(gathererOf(family("full"))).Gather()
+	_, _ = r.TeeLane("base", gathererOf(family("base"))).Gather()
+	old := gated(family("old"))
+	done := startGated(t, r.TeeLane("base", old), old)
+	_, _ = r.TeeLane("base", errGathererOf()).Gather()
+	releaseGated(t, old, done)
+	_, _ = r.TeeLane("fast", gathererOf(family("fast"))).Gather()
+	requireNames(t, r, "full")
+	_, _ = r.TeeLane("base", gathererOf(family("base2"))).Gather()
+	requireNames(t, r, "base2", "fast")
+	full := gated(family("laterfull"))
+	done = startGated(t, r.Tee(full), full)
+	// A complete published split contributor newer than full blocks takeover.
+	_, _ = r.TeeLane("fast", gathererOf()).Gather()
+	releaseGated(t, full, done)
+	requireNames(t, r, "base2")
+
+	r2 := New()
+	r2.ConfigureSplitLanes("base", "fast")
+	full = gated(family("full"))
+	done = startGated(t, r2.Tee(full), full)
+	_, _ = r2.TeeLane("base", gathererOf(family("base"))).Gather()
+	releaseGated(t, full, done)
+	requireNames(t, r2, "full")
+	_, _ = r2.TeeLane("fast", gathererOf(family("fast"))).Gather()
+	requireNames(t, r2, "base", "fast")
+}
+
+func TestRecorder_StartupErrorsAndUndeclaredLanes(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	_, _ = r.TeeLane("unknown", gathererOf(family("ignored"))).Gather()
+	_, _ = r.TeeLane("", gathererOf(family("ignored"))).Gather()
+	if c := r.Capture(); !c.At.IsZero() {
+		t.Fatalf("undeclared lane recorded: %+v", c)
+	}
+	_, _ = r.TeeLane("base", errGathererOf(family("partial"))).Gather()
+	c := requireNames(t, r, "partial")
+	if !c.Partial || c.ErrorCount != 1 || c.LastErrorAt.IsZero() {
+		t.Fatalf("startup partial: %+v", c)
+	}
+	_, _ = r.TeeLane("fast", errGathererOf()).Gather()
+	c2 := requireNames(t, r, "partial")
+	if !c2.At.Equal(c.At) || c2.ErrorCount != 2 {
+		t.Fatalf("empty error refreshed view: %+v", c2)
+	}
+	_, _ = r.TeeLane("fast", gathererOf()).Gather()
+	_, _ = r.TeeLane("base", gathererOf(family("base"))).Gather()
+	c = requireNames(t, r, "base")
+	if c.Partial || c.ErrorCount != 2 {
+		t.Fatalf("recovery: %+v", c)
+	}
+}
+
 func TestRecorder_SingleLaneUnchanged(t *testing.T) {
 	r := New()
 	g := r.Tee(gathererOf(family("opnsense_a"), family("opnsense_b")))

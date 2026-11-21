@@ -68,13 +68,93 @@ func (c *clockStub) advance(d time.Duration) {
 	c.cur = c.cur.Add(d)
 }
 
-// TestRecorder_SeriesBudgetRateLimitsRepeatedOverBudgetLogs is the test that
-// matters (#494): the naive implementation logs a warning on every single
-// over-budget Gather, which turns one real condition into a permanent log
-// flood. This drives MANY captures over budget at the SAME simulated instant
-// and asserts exactly one log fires — proving the rate limit actually
-// suppresses repeats, not merely that "a warning was logged at some point"
-// (which the naive implementation would also satisfy).
+// Publications and budget side effects cannot overtake a blocked callback;
+// provisional and failed split results must not falsely report recovery.
+func TestRecorder_SplitBudgetPublicationOrder(t *testing.T) {
+	r := New()
+	r.ConfigureSplitLanes("base", "fast")
+	entered, release := make(chan struct{}), make(chan struct{})
+	overtook := make(chan struct{}, 1)
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	var mu sync.Mutex
+	var totals []int
+	handler := &countingHandler{}
+	r.ConfigureSeriesBudget(SeriesBudget{Total: 2, Logger: slog.New(handler), Observed: func(n int) {
+		if n == 2 {
+			close(entered)
+			select {
+			case <-release:
+			case <-time.After(5 * time.Second):
+				return
+			}
+		} else {
+			select {
+			case overtook <- struct{}{}:
+			default:
+			}
+		}
+		mu.Lock()
+		totals = append(totals, n)
+		mu.Unlock()
+	}})
+	first := make(chan struct{})
+	go func() { _, _ = r.Tee(gathererOf(familyWithSeries("full", 2))).Gather(); close(first) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("callback not entered")
+	}
+	// A second full gather is itself an eligible complete publication, unlike
+	// an isolated split member. It must not overtake the blocked first effect.
+	secondInner := gated(familyWithSeries("newfull", 1))
+	second := startGated(t, r.Tee(secondInner), secondInner)
+	close(secondInner.release)
+	// Capture remains readable while the callback is blocked.
+	if c := r.Capture(); len(c.Families) != 1 || c.Families[0].GetName() != "full" {
+		t.Fatalf("capture while callback blocked: %+v", c)
+	}
+	select {
+	case <-overtook:
+		t.Fatal("later complete publication effect overtook blocked first effect")
+	case <-time.After(200 * time.Millisecond):
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case <-first:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first gather stuck")
+	}
+	select {
+	case <-second:
+	case <-time.After(5 * time.Second):
+		t.Fatal("second gather stuck")
+	}
+	_, _ = r.TeeLane("base", gathererOf(family("base"))).Gather()
+	_, _ = r.TeeLane("fast", errGathererOf()).Gather()
+	mu.Lock()
+	got := append([]int(nil), totals...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != 2 || got[1] != 1 || handler.count() != 2 {
+		t.Fatalf("ordered full effects or incomplete handoff: totals %v, logs %d", got, handler.count())
+	}
+	handler.mu.Lock()
+	levels := []slog.Level{handler.records[0].Level, handler.records[1].Level}
+	handler.mu.Unlock()
+	if levels[0] != slog.LevelWarn || levels[1] != slog.LevelInfo {
+		t.Fatalf("budget transition order: %v", levels)
+	}
+	_, _ = r.TeeLane("fast", gathererOf(labelledFamily(1, "collector", "fast"))).Gather()
+	mu.Lock()
+	got = append([]int(nil), totals...)
+	mu.Unlock()
+	if len(got) != 3 || got[2] != 1 || handler.count() != 2 {
+		t.Fatalf("complete split budget: totals %v, logs %d", got, handler.count())
+	}
+}
+
+// TestRecorder_SeriesBudgetRateLimitsRepeatedOverBudgetLogs verifies that
+// repeated gathers over budget do not flood the log.
 func TestRecorder_SeriesBudgetRateLimitsRepeatedOverBudgetLogs(t *testing.T) {
 	h := &countingHandler{}
 	logger := slog.New(h)
