@@ -282,7 +282,7 @@ func TestCARPReasonAndDemotionValuesAreNeverLabels(t *testing.T) {
 
 			// ...and the metric MUST NOT.
 			sink := &fakeSink{}
-			if !observeDerived(sink, "kernel", rec.Attributes) {
+			if !observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 				t.Fatal("observeDerived did not count a captured CARP record")
 			}
 			if len(sink.calls) != 1 || sink.calls[0].method != "carp" {
@@ -337,7 +337,7 @@ func TestObserveDerived_CARP(t *testing.T) {
 				t.Fatalf("parseCARP(%q) returned ok=false", tc.msg)
 			}
 			sink := &fakeSink{}
-			if !observeDerived(sink, "kernel", rec.Attributes) {
+			if !observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 				t.Fatal("observeDerived did not count a captured CARP record")
 			}
 			if len(sink.calls) != 1 || sink.calls[0].method != "carp" {
@@ -358,7 +358,7 @@ func TestObserveDerived_CARP_DoesNotCountUnrelatedKernelLines(t *testing.T) {
 	assertAttrs(t, rec, map[string]string{"syslog.event": "interface_link_changed"})
 
 	sink := &fakeSink{}
-	if observeDerived(sink, "kernel", rec.Attributes) {
+	if observeDerived(sink, "kernel", rec.Attributes, freshDerivation()) {
 		t.Error("observeDerived counted an unrelated kernel line")
 	}
 	if len(sink.calls) != 0 {
@@ -446,7 +446,7 @@ func TestCARPUnrelatedKernelLinesAreNotClaimed(t *testing.T) {
 			// Other kernel diagnostics may parse independently, but no CARP
 			// attributes or metric may be inferred from them.
 			rec, _ := buildRecord(env, nil, func(string) {})
-			if observeDerived(&fakeSink{}, "kernel", rec.Attributes) {
+			if observeDerived(&fakeSink{}, "kernel", rec.Attributes, freshDerivation()) {
 				t.Fatal("unrelated kernel line derived a metric")
 			}
 			if rec.Body != msg {

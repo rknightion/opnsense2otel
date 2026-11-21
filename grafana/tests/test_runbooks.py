@@ -102,7 +102,7 @@ class RunbookDocumentParityTest(unittest.TestCase):
         cls.markdown = build_rules.generate_runbooks_md()
         cls.headings = _headings(cls.markdown)
 
-    def test_exact_alert_count_is_64(self):
+    def test_exact_alert_count_is_65(self):
         # Re-measured against current main (#430 audit found the tracked issue's
         # figures - 31/19 rows - stale; the epic's 2026-07-27 revalidation corrected
         # it to 42/14, confirmed again here structurally). 43 since #520 added
@@ -135,7 +135,10 @@ class RunbookDocumentParityTest(unittest.TestCase):
         # operator's configured latencyhigh by design, which left every degradation
         # UNDER that ceiling unalertable - a WAN link stepped from a ~10ms baseline to
         # a sustained ~205ms at 0% loss and no rule in the set could fire on it.
-        self.assertEqual(len(build_rules.RULES), 64)
+        # 65 since #1202 added OPNsenseDHCP6ClientsStuckInSolicit: a client advertised an
+        # address that never reaches it retransmits one SOLICIT for hours, nothing fails,
+        # so no counter and none of the existing rules could see it.
+        self.assertEqual(len(build_rules.RULES), 65)
 
     def test_exact_recording_count_is_14(self):
         self.assertEqual(len(build_rules.RECORDING), 14)

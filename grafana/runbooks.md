@@ -4,7 +4,7 @@
 
 One section per alert rule in `grafana/alerts/build_rules.py`'s `RULES`, in source order, followed by every recording rule in `RECORDING`. Each alert section states what its expression measures, its threshold and window, what absent/no-data means for that specific rule, first checks, likely causes, and how to confirm it has genuinely recovered - mined from the same source comments and descriptions that drive the generated manifests, so this document and the alert's own annotations can never contradict each other.
 
-Total: **64 alert rules** and **14 recording rules**.
+Total: **65 alert rules** and **14 recording rules**.
 
 ## OPNsenseExporterDown
 
@@ -835,16 +835,16 @@ time() - opnsense_log_events_dhcp6c_address_updated_timestamp_seconds
 sum by (reason, opnsense_instance) (rate(opnsense_log_events_dhcp6_alloc_fail_total[5m]))
 ```
 
-**What it measures:** Rate of DHCPv6 allocation failures reported by kea-dhcp6, by reason. Counted once per failed allocation - kea emits up to three lines per failure sharing a tid, and only the cause line is counted.
+**What it measures:** Rate of failed DHCPv6 transactions reported by kea-dhcp6, by reason. Counted once per transaction (one DUID and tid): kea emits up to three lines per failure sharing a tid and only the cause line is counted, and a client that retransmits the same refused SOLICIT is not counted again. The exporter remembers each counted transaction for 2h after its last sighting (4096 at most). A device restart picks a new tid and counts once.
 
-**Threshold & window:** gt 0 on a 5m window, sustained for 30m. The pending period deliberately EXCEEDS the window (#594): a lone refusal keeps a rate window non-empty for the width of that window, so a pending period shorter than the window fires on a single event. Requiring every rolling 5m window to be non-empty for 30m straight means a real stuck pool fires while an occasional refusal does not.
+**Threshold & window:** gt 0 on a 5m window, sustained for 30m. The pending period deliberately EXCEEDS the window (#594): a lone refusal keeps a rate window non-empty for the width of that window, so a pending period shorter than the window fires on a single event. Requiring every rolling 5m window to be non-empty for 30m straight means a real stuck pool fires while an occasional refusal does not. Since #1202 the counter does not tick on retransmissions either, so a refused client retrying the same transaction for hours (a Thread border router with no pd-pools to be given) adds one count when it first asks and one per device restart, and leaves the rule in Normal the rest of the time. Only a steady stream of DIFFERENT failed transactions holds the window non-empty for the full 30m.
 
 **Absent / no-data semantics:** Default noDataState (Ok). No series means kea-dhcp6 has refused nothing, which is the normal state.
 
 **First checks:**
 - FIRST, establish whether the refusal was for an ADDRESS or a PREFIX - the metric cannot tell you, and the answer changes everything below. Capture a request: `tcpdump -i <lan-if> -n -vv "udp port 547"` and read whether the client SOLICIT carries IA_NA or IA_PD. An ADVERTISE answering with `IA_PD ... status-code NoPrefixAvail` is a prefix-delegation refusal
-- Identify the client. Every kea alloc-fail line carries duid=[...]; the exporter ships it as the dhcp.duid attribute, so group the log events by it. A single DUID at a low steady cadence is usually a border router asking for a prefix, not a subnet full of denied clients
-- reason=no_pools on an IA_PD request: the subnet has no pd-pools entry. Configure one (Services > Kea DHCP > DHCPv6, Prefix Delegation Pools) if the delegation is wanted, and be aware kea installs no route back to a delegated prefix. If it is not wanted, this is cosmetic
+- Identify the client. Every kea alloc-fail line carries duid=[...]; the exporter ships it as the dhcp.duid attribute, so group the log events by it. A single DUID, or a handful of them each retrying one transaction, is usually border routers asking for a prefix, not a subnet full of denied clients. The rule only fires on a stream of different failed transactions, so several DUIDs or a DUID that keeps changing tid is expected here
+- reason=no_pools on an IA_PD request: the subnet has no pd-pools entry. Configure one (Services > Kea DHCP > DHCPv6, Prefix Delegation Pools) if the delegation is wanted, and be aware kea installs no route back to a delegated prefix. If it is not wanted this is cosmetic: an IA_PD-only border router that is refused on purpose adds one count per device restart (it retransmits the same tid with backoff capped at 3600s, which is not counted again)
 - reason=no_pools on an IA_NA request: check that the subnet the client is on actually has a v6 address pool defined - this one never resolves itself
 - reason=exhausted: check pool utilisation against the lease count on the DHCP tab, and whether the lease time is long enough to be holding addresses for departed clients
 - Check whether the failures correlate with the delegated prefix changing - a re-delegation invalidates the pool the old subnet was carved from
@@ -858,6 +858,39 @@ sum by (reason, opnsense_instance) (rate(opnsense_log_events_dhcp6_alloc_fail_to
 **Verify recovery:**
 - The failure rate returns to zero and clients obtain leases again
 - For the IA_PD case, the client SOLICIT is answered with a prefix rather than NoPrefixAvail
+
+## OPNsenseDHCP6ClientsStuckInSolicit
+
+**Severity:** warning  
+**Pending window:** 30m0s  
+**Rule name:** `opnsense-dhcp6-clients-stuck-in-solicit`
+
+**Expression:**
+```promql
+max by (opnsense_instance) (opnsense_log_events_dhcp6_solicit_stuck_clients)
+```
+
+**What it measures:** The number of distinct DHCPv6 clients (by DUID) kea-dhcp6 has advertised an address to under one transaction id, advertised again under the same id at least 10 minutes after the first advertisement, and has not allocated or renewed a lease for since. The gauge is evaluated at scrape time: a client leaves the count on its next ALLOC or RENEW, or 2h after its last such sighting (a client that stays stuck retransmits roughly hourly, so it keeps refreshing it). A normal exchange (milliseconds) and a quick retransmission (seconds) never count. The DUID is never a label.
+
+**Threshold & window:** gt 0 sustained for 30m. The 10 minute advertisement gap is already in the metric, so for_min only needs to ride out a client that recovers shortly after it is counted, not to prove persistence. The gauge never exceeds the number of DHCPv6 clients, so any positive value is a real client without an address. A gauge, not a rate: it needs no window shorter than the pending period.
+
+**Absent / no-data semantics:** Default noDataState (Ok). The exporter emits the series (0 when nothing is stuck) whenever the log-events collector is on; no series means the collector is disabled or kea-dhcp6 syslog is not being received, in which case this rule cannot see anything.
+
+**First checks:**
+- Find the clients. Group the Loki records by dhcp.duid: the stuck ones are DHCP6_LEASE_ADVERT lines (dhcp.action=advertise) repeating under one dhcp.tid at a slow cadence with no DHCP6_LEASE_ALLOC or RENEW for that DUID. The matching PACKET_RECEIVED lines name the interface and the link-local source address of each SOLICIT
+- Check neighbour discovery for that link-local on the firewall: `ndp -an | grep <link-local-from-the-SOLICIT>`. No entry (or an incomplete one) for the address the SOLICIT came from is the cause: the router cannot resolve the client, so the unicast ADVERTISE has nowhere to go. A client that restarted and came back with a new link-local address is the classic trigger
+- Check that the problem is on the link and not in kea: `tcpdump -i <lan-if> -n -vv "udp port 546 or udp port 547"` shows the SOLICIT arriving and the ADVERTISE leaving but no REQUEST following. A wireless segment where multicast neighbour solicitations are filtered or rate-limited is a common place for the resolution to fail
+- Check OPNsenseDHCP6AllocationFailures and the DHCPv6 Server Allocation Failures panel: this rule exists for the case where nothing failed, so a flat failure counter beside a positive gauge is the expected shape
+
+**Likely causes:**
+- The router cannot resolve a client's new link-local address by neighbour discovery (the client restarted or changed address), so the unicast ADVERTISE is dropped and the client never sees it
+- The LAN segment between the router and the clients drops IPv6 multicast or neighbour discovery (Wi-Fi multicast filtering or rate limiting, an access point that does not forward it)
+- The client sent the SOLICIT from an address the router cannot reach back to, for example a stale neighbour cache entry for a previous link-local address
+
+**Verify recovery:**
+- Non-invasive recovery: ping the all-nodes group on the affected interface (`ping6 -c 3 ff02::1%<lan-if>`). Every client answers or solicits the router, and the router learns each one, so the pending ADVERTISE can be delivered
+- The client sends a REQUEST and a DHCP6_LEASE_ALLOC (or RENEW) for its DUID appears in the logs
+- The gauge returns to 0 on the next scrape after that line
 
 ## OPNsenseNetisrQueueDrops
 

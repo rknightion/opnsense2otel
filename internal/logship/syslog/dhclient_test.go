@@ -311,7 +311,7 @@ func TestObserveDerived_DHCPClient(t *testing.T) {
 			}
 
 			sink := &fakeSink{}
-			if !observeDerived(sink, "dhclient", rec.Attributes) {
+			if !observeDerived(sink, "dhclient", rec.Attributes, freshDerivation()) {
 				t.Fatal("observeDerived() counted = false, want true")
 			}
 			if len(sink.calls) != len(tt.want) {
@@ -348,7 +348,7 @@ func TestDHCPClientAddressesAreNeverLabels(t *testing.T) {
 			t.Fatalf("parseDHCPClient(%q) ok = false", msg)
 		}
 		sink := &fakeSink{}
-		observeDerived(sink, "dhclient", rec.Attributes)
+		observeDerived(sink, "dhclient", rec.Attributes, freshDerivation())
 		for _, call := range sink.calls {
 			for _, arg := range call.args {
 				if arg == "203.0.113.233" || arg == "203.0.113.148" {
@@ -393,7 +393,7 @@ func TestDHCPClientUnmodelledLinesAreNotClaimed(t *testing.T) {
 			}
 			rec := genericRecord(env)
 			sink := &fakeSink{}
-			if observeDerived(sink, "dhclient", rec.Attributes) {
+			if observeDerived(sink, "dhclient", rec.Attributes, freshDerivation()) {
 				t.Errorf("observeDerived() counted an unmodelled dhclient line: %q", msg)
 			}
 		})

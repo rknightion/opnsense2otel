@@ -139,6 +139,16 @@ func (f *fakeSink) ObserveDHCP6AllocFail(reason string) bool {
 	return true
 }
 
+func (f *fakeSink) ObserveDHCP6SolicitStuck(duid string) bool {
+	f.calls = append(f.calls, fakeCall{"dhcp6_solicit_stuck", []string{duid}})
+	return true
+}
+
+func (f *fakeSink) ClearDHCP6SolicitStuck(duid string) bool {
+	f.calls = append(f.calls, fakeCall{"dhcp6_solicit_stuck_clear", []string{duid}})
+	return true
+}
+
 func (f *fakeSink) ObserveUPnP(event, result, protocol string) bool {
 	f.calls = append(f.calls, fakeCall{"upnp", []string{event, result, protocol}})
 	return true
@@ -249,7 +259,7 @@ func TestObserveDerived_RADIUS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, "radiusd", tt.attrs)
+			counted := observeDerived(sink, "radiusd", tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -272,7 +282,7 @@ func TestObserveDerived_RADIUSWithNopSink(t *testing.T) {
 		"radius.event":        "access",
 		"radius.result":       "accepted",
 		"radius.client_scope": "configured",
-	}) {
+	}, freshDerivation()) {
 		t.Fatal("NopMetricSink rejected a valid RADIUS observation")
 	}
 }
@@ -320,7 +330,7 @@ func TestObserveDerived_Gateway(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, "dpinger", tt.attrs)
+			counted := observeDerived(sink, "dpinger", tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -342,7 +352,7 @@ func TestObserveDerived_GatewayWithNopSink(t *testing.T) {
 	if !observeDerived(logship.NopMetricSink{}, "dpinger", map[string]string{
 		"gateway.event": "alarm_started",
 		"gateway.name":  "TEST_GATEWAY",
-	}) {
+	}, freshDerivation()) {
 		t.Fatal("NopMetricSink rejected a valid gateway observation")
 	}
 }
@@ -434,7 +444,7 @@ func TestObserveDerived_VPN(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, tt.program, tt.attrs)
+			counted := observeDerived(sink, tt.program, tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -473,7 +483,7 @@ func TestObserveDerived_VPNNeverLabelsARawUUID(t *testing.T) {
 		},
 	} {
 		sink := &fakeSink{}
-		if !observeDerived(sink, "charon", attrs) {
+		if !observeDerived(sink, "charon", attrs, freshDerivation()) {
 			t.Fatal("a well-formed vpn observation was not counted")
 		}
 		for _, arg := range sink.calls[0].args {
@@ -489,7 +499,7 @@ func TestObserveDerived_VPNWithNopSink(t *testing.T) {
 		"vpn.backend": "openvpn",
 		"vpn.event":   "established",
 		"vpn.result":  "success",
-	}) {
+	}, freshDerivation()) {
 		t.Fatal("NopMetricSink rejected a valid VPN observation")
 	}
 }
@@ -549,7 +559,7 @@ func TestEveryParserPrefixHasAFamilyDecision(t *testing.T) {
 
 func TestObserveDerived_UnknownProgram(t *testing.T) {
 	sink := &fakeSink{}
-	counted := observeDerived(sink, "unbound", map[string]string{"foo": "bar"})
+	counted := observeDerived(sink, "unbound", map[string]string{"foo": "bar"}, freshDerivation())
 	if counted {
 		t.Error("counted = true for an unknown program, want false")
 	}
@@ -561,7 +571,7 @@ func TestObserveDerived_UnknownProgram(t *testing.T) {
 func TestObserveDerived_ReportsSinkRejection(t *testing.T) {
 	sink := &rejectFirewallSink{}
 	attrs := map[string]string{"action": "pass"}
-	if observeDerived(sink, "filterlog", attrs) {
+	if observeDerived(sink, "filterlog", attrs, freshDerivation()) {
 		t.Fatal("counted = true after the sink rejected the observation, want false")
 	}
 	rec := logship.Record{Attributes: attrs}
@@ -638,7 +648,7 @@ func TestObserveDerived_Firewall(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, "filterlog", tt.attrs)
+			counted := observeDerived(sink, "filterlog", tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -694,7 +704,7 @@ func TestObserveDerived_HAProxy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, "haproxy", tt.attrs)
+			counted := observeDerived(sink, "haproxy", tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -748,7 +758,7 @@ func TestObserveDerived_SSHD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, tt.program, tt.attrs)
+			counted := observeDerived(sink, tt.program, tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -803,7 +813,7 @@ func TestObserveDerived_DHCP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, tt.program, tt.attrs)
+			counted := observeDerived(sink, tt.program, tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -853,7 +863,7 @@ func TestObserveDerived_Audit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, tt.program, tt.attrs)
+			counted := observeDerived(sink, tt.program, tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -944,7 +954,7 @@ func TestObserveDerived_IDS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			counted := observeDerived(sink, "suricata", tt.attrs)
+			counted := observeDerived(sink, "suricata", tt.attrs, freshDerivation())
 			if counted != tt.wantCounted {
 				t.Fatalf("counted = %v, want %v", counted, tt.wantCounted)
 			}
@@ -974,7 +984,7 @@ func TestObserveDerived_HAProxy_EndToEnd(t *testing.T) {
 	}
 
 	sink := &fakeSink{}
-	counted := observeDerived(sink, "haproxy", rec.Attributes)
+	counted := observeDerived(sink, "haproxy", rec.Attributes, freshDerivation())
 	if !counted {
 		t.Fatal("observeDerived did not count a well-formed httplog record")
 	}
@@ -1003,7 +1013,7 @@ func TestObserveDerived_DnsmasqDHCP_EndToEnd(t *testing.T) {
 	}
 
 	sink := &fakeSink{}
-	counted := observeDerived(sink, "dnsmasq-dhcp", rec.Attributes)
+	counted := observeDerived(sink, "dnsmasq-dhcp", rec.Attributes, freshDerivation())
 	if !counted {
 		t.Fatal("observeDerived did not count a well-formed dnsmasq-dhcp DHCPACK")
 	}
@@ -1020,7 +1030,7 @@ func TestObserveDerived_DnsmasqDHCP_EndToEnd(t *testing.T) {
 		t.Fatal("parseDHCP returned ok=false for a dnsmasq-dhcp DHCPREQUEST")
 	}
 	sink2 := &fakeSink{}
-	if !observeDerived(sink2, "dnsmasq-dhcp", rec2.Attributes) {
+	if !observeDerived(sink2, "dnsmasq-dhcp", rec2.Attributes, freshDerivation()) {
 		t.Fatal("observeDerived did not count a well-formed dnsmasq-dhcp DHCPREQUEST")
 	}
 	assertArgs(t, sink2.calls[0].args, []string{"request", "ixl0_vlan50", ""})

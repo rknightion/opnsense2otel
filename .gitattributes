@@ -23,6 +23,7 @@
 /grafana/alerts/grafana-managed/opnsense-dhcp6-address-expiring.json linguist-generated=true
 /grafana/alerts/grafana-managed/opnsense-dhcp6-address-not-refreshing.json linguist-generated=true
 /grafana/alerts/grafana-managed/opnsense-dhcp6-alloc-failures.json linguist-generated=true
+/grafana/alerts/grafana-managed/opnsense-dhcp6-clients-stuck-in-solicit.json linguist-generated=true
 /grafana/alerts/grafana-managed/opnsense-dhcp6-prefix-expiring.json linguist-generated=true
 /grafana/alerts/grafana-managed/opnsense-dhcp6-prefix-not-refreshing.json linguist-generated=true
 /grafana/alerts/grafana-managed/opnsense-disk-space-low.json linguist-generated=true
