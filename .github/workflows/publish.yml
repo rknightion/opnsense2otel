@@ -44,9 +44,10 @@ jobs:
       id-token: write
       attestations: write
       security-events: write
-    uses: rknightion/.github/.github/workflows/container-publish.yml@77faed457d4f87675fec4024e2cd526fe964d7c9 # v1.30.36 # zizmor: ignore[unpinned-uses]
+    uses: rknightion/.github/.github/workflows/container-publish.yml@ac54996b4cf19e6ef58b02754903610c77f0383f # v1.31.0 # zizmor: ignore[unpinned-uses]
     with:
       release-tag: ${{ inputs.release_tag }}
+      publish-branch-tags-on-prerelease: false
       build-args: |
         GO_LICENSES_VERSION=${{ needs.go-licenses-pin.outputs.version }}
         GO_LICENSES_MODULE=${{ needs.go-licenses-pin.outputs.module }}
