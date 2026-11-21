@@ -571,7 +571,8 @@ services:
       # OPN2OTEL_OTLP_GRAFANA_CLOUD_TOKEN: ""
       # OTLP headers as comma-separated key=value pairs (e.g.
       # X-Scope-OrgID=1,Authorization=Bearer x). When set, replaces
-      # OTEL_EXPORTER_OTLP_HEADERS entirely; when empty, that env var is used.
+      # OTEL_EXPORTER_OTLP_HEADERS entirely; when empty, that env var is used. This
+      # flag/ENV or OPN2OTEL_OTLP_HEADERS_FILE may be set.
       # OPN2OTEL_OTLP_HEADERS: ""
       # Disable TLS for the OTLP connection (plaintext).
       # OPN2OTEL_OTLP_INSECURE: "false"
@@ -779,7 +780,8 @@ services:
       # 10.0.0.254/32). Empty accepts any sender. The receiver is unauthenticated unless
       # --logs.zenarmor.auth-user is set, so set this on a shared network.
       # OPN2OTEL_LOGS_ZENARMOR_ALLOWED_PEERS: ""
-      # Password for --logs.zenarmor.auth-user.
+      # Password for --logs.zenarmor.auth-user. This flag/ENV or
+      # OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE may be set.
       # OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD: ""
       # Require HTTP basic auth on the Zenarmor receiver, with this username. Set the
       # same credentials in Zenarmor's streaming settings. Empty disables auth.

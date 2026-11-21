@@ -38,6 +38,7 @@ import (
 	"github.com/rknightion/opnsense2otel/v5/internal/metricsnap"
 	"github.com/rknightion/opnsense2otel/v5/internal/options"
 	"github.com/rknightion/opnsense2otel/v5/internal/profiling"
+	"github.com/rknightion/opnsense2otel/v5/internal/redact"
 	"github.com/rknightion/opnsense2otel/v5/internal/server"
 	"github.com/rknightion/opnsense2otel/v5/internal/telemetry"
 	"github.com/rknightion/opnsense2otel/v5/internal/webui"
@@ -1349,7 +1350,7 @@ func main() {
 			}
 			logger.Info(
 				"pyroscope continuous profiling enabled",
-				"server", pyroCfg.ServerAddress,
+				"server", redact.URL(pyroCfg.ServerAddress),
 				"application", pyroCfg.ApplicationName,
 				"mutex_block", !pyroCfg.DisableMutexBlock,
 				"goroutine_leak", profiling.GoroutineLeakAvailable(),
@@ -1452,7 +1453,7 @@ func main() {
 		}, collectorRegistry, logship.SelfMetricsRegisterer(selfMetricsRegistry, instanceLabel), logger)
 		go annotationWatcher.Run(annotationCtx)
 		logger.Info("grafana annotation writing enabled",
-			"url", cfg.Annotations.GrafanaURL,
+			"url", redact.URL(cfg.Annotations.GrafanaURL),
 			"interval", cfg.Annotations.Interval.String(),
 			"lookback", cfg.Annotations.Lookback.String(),
 			"kinds", strings.Join(annotationKinds(cfg.Annotations.Kinds), ","))
@@ -1553,7 +1554,7 @@ func main() {
 		}
 		logger.Info(
 			"otlp metrics export enabled (lazy connect: delivery is proven by opnsense_exporter_otlp_* , not by this line)",
-			"endpoint", otlpCfg.Endpoint,
+			"endpoint", redact.URL(otlpCfg.Endpoint),
 			"protocol", otlpCfg.Protocol,
 			"interval", otlpCfg.ExportInterval.String(),
 		)
