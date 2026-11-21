@@ -29,10 +29,10 @@ var (
 	logsBufferSize = kingpin.Flag(
 		"logs.buffer-size",
 		"Capacity of the in-memory backpressure queue between pollers and the sink. On overflow the oldest "+
-			"record is dropped and counted (logs_dropped_total). At the measured ~475 bytes/record retained "+
-			"size, 65536 records is ~31MB, comfortably under the 128MiB --logs.buffer-max-bytes default, so "+
-			"the two bounds read against one number instead of this record cap silently binding first at a "+
-			"fraction of the byte budget.",
+			"record is dropped and counted (logs_dropped_total). Example estimated retained sizes are 1356 bytes "+
+			"for an Unbound query and 4034 bytes for a Zenarmor connection. At 65536 records these are about "+
+			"85MiB and 252MiB respectively; the default 128MiB --logs.buffer-max-bytes limits the latter "+
+			"to roughly 33000 records. Actual capacity depends on the record mix and both bounds.",
 	).Envar("OPN2OTEL_LOGS_BUFFER_SIZE").Default("65536").Int()
 	logsBatchMax = kingpin.Flag(
 		"logs.batch-max",

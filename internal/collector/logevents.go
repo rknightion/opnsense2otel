@@ -469,13 +469,23 @@ type logEventSnapshot struct {
 // overflow total emitted as opnsense_log_events_cardinality_capped_total, so the
 // live series plus the overflow still sum to the true observed count.
 type LogEventStore struct {
-	commands chan logEventCommand
-	stop     chan struct{}
-	done     chan struct{}
-	close    sync.Once
+	commands        chan logEventCommand
+	active          chan logEventCommand
+	activeFast      atomic.Pointer[chan logEventCommand]
+	activeState     atomic.Uint64
+	switchTo        chan chan logEventCommand
+	space           chan struct{}
+	activate        sync.Once
+	channelMu       sync.Mutex
+	waitingControls uint32
+	stop            chan struct{}
+	done            chan struct{}
+	close           sync.Once
 	// beforeSnapshot is a test seam used to hold the map-owning goroutine in actual
 	// snapshot work. Production stores leave it nil.
-	beforeSnapshot func()
+	beforeSnapshot     func()
+	beforeControlWait  func()
+	beforeControlClaim func()
 
 	// observationDrops counts observations refused only because the bounded handoff
 	// was full. It is atomic so recording saturation is itself non-blocking.
@@ -520,12 +530,14 @@ type LogEventStore struct {
 }
 
 func newLogEventStore() *LogEventStore {
-	return newLogEventStoreWithCapacity(logEventHandoffCapacity, nil)
+	return newLogEventStoreWithCapacity(64, nil)
 }
 
 func newLogEventStoreWithCapacity(capacity int, beforeSnapshot func()) *LogEventStore {
 	s := &LogEventStore{
 		commands:         make(chan logEventCommand, capacity),
+		switchTo:         make(chan chan logEventCommand, 1),
+		space:            make(chan struct{}, 1),
 		stop:             make(chan struct{}),
 		done:             make(chan struct{}),
 		beforeSnapshot:   beforeSnapshot,
@@ -558,6 +570,7 @@ func newLogEventStoreWithCapacity(capacity int, beforeSnapshot func()) *LogEvent
 		dhcp6Stuck:       newBoundedInventory[string, struct{}](maxDHCP6StuckClients, dhcp6StuckClientTTL, compareZenDeviceName),
 		filterlogDomains: newFilterlogDomainCounter(maxFilterlogDomainCandidates),
 	}
+	s.active = s.commands
 	go s.run()
 	return s
 }
@@ -580,12 +593,90 @@ func (s *LogEventStore) SetMaxKeys(max int) {
 	}
 }
 
+// ActivateLogEventHandoff expands the receiver handoff once a sink is wired.
+// Earlier commands are processed before the new queue becomes visible.
+func (s *LogEventStore) ActivateLogEventHandoff() {
+	s.activate.Do(func() {
+		select {
+		case <-s.stop:
+			return
+		default:
+		}
+		next := make(chan logEventCommand, logEventHandoffCapacity)
+		s.channelMu.Lock()
+		defer s.channelMu.Unlock()
+		select {
+		case <-s.stop:
+			return
+		default:
+		}
+		s.active = next
+		// Upper 32 bits count controls awaiting admission, lower 32 bits are
+		// unreserved active queue slots. Publish both before the fast path.
+		s.activeState.Store(uint64(s.waitingControls)<<32 | uint64(cap(next)))
+		s.activeFast.Store(&next)
+		s.switchTo <- next
+		select {
+		case s.space <- struct{}{}:
+		default:
+		}
+	})
+}
+
 func (s *LogEventStore) sendControl(cmd logEventCommand) bool {
-	select {
-	case s.commands <- cmd:
-		return true
-	case <-s.stop:
-		return false
+	s.channelMu.Lock()
+	s.waitingControls++
+	if s.active != s.commands {
+		s.activeState.Add(1 << 32)
+	}
+	for {
+		select {
+		case <-s.stop:
+			s.waitingControls--
+			if s.active != s.commands {
+				s.activeState.Add(^(uint64(1) << 32) + 1)
+			}
+			s.channelMu.Unlock()
+			return false
+		default:
+		}
+		admitted := false
+		if s.active == s.commands {
+			select {
+			case s.active <- cmd:
+				admitted = true
+			default:
+			}
+		} else if s.activeState.Load()&0xffffffff != 0 {
+			// This control is counted as waiting, and channelMu excludes other
+			// control claims. Observers cannot consume the last reserved slot;
+			// the owner can only return slots. So once free is nonzero it cannot
+			// become zero before this single claim, even if the state changes.
+			if s.beforeControlClaim != nil {
+				s.beforeControlClaim()
+			}
+			s.activeState.Add(^(uint64(1) << 32)) // subtract one waiter and one slot
+			s.active <- cmd
+			admitted = true
+		}
+		if admitted {
+			s.waitingControls--
+			s.channelMu.Unlock()
+			select {
+			case s.space <- struct{}{}:
+			default:
+			}
+			return true
+		}
+		s.channelMu.Unlock()
+		if s.beforeControlWait != nil {
+			s.beforeControlWait()
+		}
+		select {
+		case <-s.space:
+		case <-s.stop:
+		}
+		s.channelMu.Lock()
 	}
 }
 
@@ -601,12 +692,54 @@ func (s *LogEventStore) observe(cmd logEventCommand) bool {
 	// the single observation handoff so every family stores exactly the bytes it
 	// accounts for.
 	cmd = detachLogEventValues(cmd)
+	if active := s.activeFast.Load(); active != nil {
+		return s.observeActive(*active, cmd)
+	}
+	s.channelMu.Lock()
+	if s.active != s.commands {
+		active := s.active
+		s.channelMu.Unlock()
+		return s.observeActive(active, cmd)
+	}
+	defer s.channelMu.Unlock()
 	select {
-	case s.commands <- cmd:
+	case <-s.stop:
+		return false
+	default:
+	}
+	// Slots promised to blocked controls are unavailable to observations. This
+	// reservation follows a queue switch and prevents sustained producer traffic
+	// from stealing each slot before a woken control can acquire it.
+	if int64(cap(s.active)-len(s.active)) <= int64(s.waitingControls) {
+		s.observationDrops.Add(1)
+		return false
+	}
+	select {
+	case s.active <- cmd:
 		return true
 	default:
 		s.observationDrops.Add(1)
 		return false
+	}
+}
+
+// observeActive reserves capacity without acquiring the control/transition lock.
+// A reserved slot belongs to this sender until its channel send completes.
+func (s *LogEventStore) observeActive(active chan logEventCommand, cmd logEventCommand) bool {
+	for {
+		state := s.activeState.Load()
+		if state&0xffffffff <= state>>32 {
+			s.observationDrops.Add(1)
+			return false
+		}
+		if s.activeState.CompareAndSwap(state, state-1) {
+			select {
+			case active <- cmd:
+				return true
+			default:
+				panic("log event handoff slot accounting violated")
+			}
+		}
 	}
 }
 
@@ -807,10 +940,30 @@ func (s *LogEventStore) clock() time.Time {
 
 func (s *LogEventStore) run() {
 	defer close(s.done)
+	commands := s.commands
 	for {
 		select {
-		case cmd := <-s.commands:
+		case cmd := <-commands:
+			wake := true
+			if commands != s.commands {
+				// An active control that arrives after this dequeue checks the
+				// returned slot itself; only existing waiters need a wake-up.
+				wake = s.activeState.Add(1)>>32 != 0
+			}
+			if wake {
+				select {
+				case s.space <- struct{}{}:
+				default:
+				}
+			}
 			s.apply(cmd)
+		case next := <-s.switchTo:
+			// All old-queue senders have left before activation publishes next.
+			// Drain their commands before accepting any from the new queue.
+			for len(commands) > 0 {
+				s.apply(<-commands)
+			}
+			commands = next
 		case <-s.stop:
 			return
 		}

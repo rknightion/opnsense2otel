@@ -65,8 +65,9 @@ services:
       # scheduled collector polls, including nested sub-requests. Bounds the
       # simultaneous PHP/configd load on the firewall: lower it (e.g. 4-8) to protect a
       # low-power appliance at the cost of queued or longer polls; raise it to let more
-      # independent polls progress concurrently on capable hardware. It does not affect
-      # /metrics replay. Must be >= 1.
+      # independent polls progress concurrently on capable hardware. At most 8 collector
+      # polls run at once regardless of this value. It does not affect /metrics replay.
+      # Must be >= 1.
       # OPN2OTEL_OPS_MAX_CONCURRENT_REQUESTS: "16"
       # Maximum attempts for retryable OPNsense API failures (non-timeout transport
       # errors and GET gateway errors). Transport timeouts are not retried. Retry
@@ -913,11 +914,12 @@ services:
       # cap. 0 disables the byte budget.
       # OPN2OTEL_LOGS_BUFFER_MAX_BYTES: "134217728"
       # Capacity of the in-memory backpressure queue between pollers and the sink. On
-      # overflow the oldest record is dropped and counted (logs_dropped_total). At the
-      # measured ~475 bytes/record retained size, 65536 records is ~31MB, comfortably
-      # under the 128MiB --logs.buffer-max-bytes default, so the two bounds read against
-      # one number instead of this record cap silently binding first at a fraction of
-      # the byte budget.
+      # overflow the oldest record is dropped and counted (logs_dropped_total). Example
+      # estimated retained sizes are 1356 bytes for an Unbound query and 4034 bytes for
+      # a Zenarmor connection. At 65536 records these are about 85MiB and 252MiB
+      # respectively; the default 128MiB --logs.buffer-max-bytes limits the latter to
+      # roughly 33000 records. Actual capacity depends on the record mix and both
+      # bounds.
       # OPN2OTEL_LOGS_BUFFER_SIZE: "65536"
       # Ship one deduplicated device-inventory record per observed network device to
       # Loki. Records fuse ARP, NDP, DHCP, host-discovery and LLDP observations and

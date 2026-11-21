@@ -1685,6 +1685,7 @@ func main() {
 		// (#258), unless the collector is disabled — in which case the receiver sees a
 		// nil sink and skips derivation entirely.
 		if collectorsSwitches.LogEvents {
+			collector.LogEvents.ActivateLogEventHandoff()
 			deps.MetricSink = collector.LogEvents
 		}
 		// Flow records are derived only when something consumes them: the collector is
