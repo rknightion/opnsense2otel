@@ -99,7 +99,7 @@ if ! docker exec "$container" systemctl start opnsense2otel; then
   exit 1
 fi
 docker exec "$container" systemctl is-active --quiet opnsense2otel
-docker exec "$container" curl --fail --silent --show-error http://127.0.0.1:8080/-/healthy
+docker exec "$container" curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/-/healthy
 docker exec "$container" systemctl show opnsense2otel -p User -p Group --value
 
 printf 'documented systemd unit reached /-/healthy with file credentials\n'
