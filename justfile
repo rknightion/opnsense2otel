@@ -72,11 +72,11 @@ test-coverage:
 [group('check')]
 [no-exit-message]
 fuzz-one package target fuzztime="10s" timeout="3m":
-    go test '{{ package }}' -run='^$' -fuzz='^{{ target }}$' -fuzztime={{ fuzztime }} -parallel=1 -timeout={{ timeout }}
+    @target={{ quote(target) }}; [[ "$target" == Fuzz* && "$target" != *$'\n'* ]] || { echo 'invalid fuzz target' >&2; exit 1; }; GOFLAGS=' ' go test {{ quote(package) }} -list="^${target}$" | grep -Fx -- "$target" >/dev/null || { if [[ "$target" =~ ^Fuzz[[:alnum:]_]*$ ]]; then printf 'fuzz target not found: %q\n' "$target" >&2; else echo 'fuzz target not found' >&2; fi; exit 1; }; GOFLAGS=' ' go test {{ quote(package) }} -run='^$' -fuzz="^${target}$" -fuzztime={{ quote(fuzztime) }} -parallel=1 -timeout={{ quote(timeout) }}
 
 # run every fuzz target for 10s as a deterministic smoke gate
 [group('check')]
-fuzz-smoke: (fuzz-one "./internal/flow/netflow" "FuzzDecodePacketAndTemplate") (fuzz-one "./internal/logship/syslog" "FuzzParseEnvelope") (fuzz-one "./internal/logship/syslog" "FuzzTCPFrames") (fuzz-one "./internal/logship/zenarmor" "FuzzParseDocument")
+fuzz-smoke: (fuzz-one "./internal/flow/netflow" "FuzzDecodePacketAndTemplate") (fuzz-one "./internal/logship/syslog" "FuzzParseEnvelope") (fuzz-one "./internal/logship/syslog" "FuzzTCPFrames") (fuzz-one "./internal/logship/syslog" "FuzzSkipStructuredData") (fuzz-one "./internal/logship/zenarmor" "FuzzParseDocument")
 
 # reject globally routable IP literals that are not in scripts/public-ip-allowlist.json (#565)
 [group('check')]
