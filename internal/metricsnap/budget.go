@@ -13,7 +13,7 @@ import (
 const budgetRepeatInterval = time.Hour
 
 // SeriesBudget configures the optional soft total-series budget check (#494)
-// performed on every real capture that flows through Recorder.Tee / TeeLane.
+// performed on recorded publications flowing through Recorder.Tee / TeeLane.
 // It is reporting only: nothing is ever dropped, capped or refused when the
 // budget is exceeded.
 //
@@ -39,17 +39,18 @@ type SeriesBudget struct {
 	// Now returns the current time; defaults to time.Now when nil. Overridable
 	// so tests can drive the hourly repeat window without a wall-clock sleep.
 	Now func() time.Time
-	// Observed, when non-nil, is called with the current total collector
-	// series count on every real Gather — independent of whether Total is
-	// configured — so a caller (the opnsense_exporter_series
-	// self-metric) can stay current without this package depending on the
-	// collector package.
+	// Observed, when non-nil, receives the current total collector series
+	// count, independent of whether Total is configured. In split mode it is
+	// called only for complete publications, never provisional or failed
+	// handoffs. In plain mode it is called for each accepted gather.
+	// It feeds opnsense_exporter_series without a collector dependency.
 	Observed func(total int)
 }
 
 // budgetState is the Recorder's rate-limiting state for the over-budget log.
 // Guarded by its own mutex, separate from Recorder.mu, since it is read/written
-// after the lane-capture lock has already been released.
+// after the capture lock has already been released. Recorder.effects keeps
+// these observations ordered with publications.
 type budgetState struct {
 	mu         sync.Mutex
 	overBudget bool
