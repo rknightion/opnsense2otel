@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly repository='rknightion/opnsense2otel'
-readonly signing_identity='https://github.com/rknightion/.github/.github/workflows/binaries.yml@d1c590b295b9d7f2535fadc7bc5e74f2eddbd512'
+readonly signing_identity_regexp='^https://github\.com/rknightion/\.github/\.github/workflows/binaries\.yml@[0-9a-f]{40}$'
 readonly signing_issuer='https://token.actions.githubusercontent.com'
 
 usage() {
@@ -57,7 +57,8 @@ curl -fsSLo "$temporary_directory/$archive" "$base_url/$archive"
 
 cosign verify-blob \
   --bundle "$temporary_directory/checksums.txt.sigstore.json" \
-  --certificate-identity "$signing_identity" \
+  --certificate-identity-regexp "$signing_identity_regexp" \
+  --certificate-github-workflow-repository "$repository" \
   --certificate-oidc-issuer "$signing_issuer" \
   "$temporary_directory/checksums.txt"
 
