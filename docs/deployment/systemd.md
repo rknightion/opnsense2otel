@@ -13,11 +13,13 @@ Run opnsense2otel as a managed systemd service on a Linux host.
 
 Download a specific release from [GitHub Releases](https://github.com/rknightion/opnsense2otel/releases). Linux archives are named `opnsense2otel_Linux_x86_64.tar.gz` and `opnsense2otel_Linux_arm64.tar.gz`; do not use the old raw-binary URL.
 
-Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) on the deployment host, then obtain the verifier from the same repository revision you are deploying. The verifier constrains `--certificate-identity` to `https://github.com/rknightion/.github/.github/workflows/binaries.yml@d1c590b295b9d7f2535fadc7bc5e74f2eddbd512` and `--certificate-oidc-issuer` to `https://token.actions.githubusercontent.com`, verifies the archive checksum, extracts the binary, and runs `--version`.
+Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) on the deployment host, then obtain the verifier from the same repository revision you are deploying. The verifier accepts signatures from `https://github.com/rknightion/.github/.github/workflows/binaries.yml` at any full 40-character lowercase hexadecimal commit SHA. The certificate must identify `rknightion/opnsense2otel` as the repository that called the workflow and `https://token.actions.githubusercontent.com` as the OIDC issuer. The verifier checks the archive against the signed checksums, extracts the binary, and runs `--version` before making it available for installation.
+
+Choose a release tag that includes the verifier described here and supports `--config.check`. Earlier tags retain the scripts they originally shipped.
 
 ```bash
 # Select a released version and the Linux architecture reported by uname -m.
-VERSION=vX.Y.Z # a release tag that includes this verifier and --config.check
+VERSION=vX.Y.Z # choose a tag that includes this verifier and --config.check
 ARCH=x86_64 # use arm64 on aarch64 hosts
 
 INSTALL_ROOT=$(mktemp -d)
@@ -198,11 +200,11 @@ You should see Prometheus metrics including `opnsense_up{opnsense_instance="my-f
 
 ## Upgrading
 
-To upgrade to a new version:
+Choose a target release tag that includes the verifier described in Step 1 and supports `--config.check`.
 
 ```bash
 # Verify and stage the new binary while the current service remains running.
-VERSION=vX.Y.Z # replace with the target release tag
+VERSION=vX.Y.Z # choose a tag that includes this verifier and --config.check
 ARCH=x86_64 # use arm64 on aarch64 hosts
 UPGRADE_ROOT=$(mktemp -d)
 git clone --depth 1 --branch "$VERSION" https://github.com/rknightion/opnsense2otel.git "$UPGRADE_ROOT/source"

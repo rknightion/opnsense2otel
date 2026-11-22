@@ -49,6 +49,9 @@ resources:
 # Supply complete flags, for example: ["--collector.poll-interval=30s"].
 extraArgs: []
 
+# Additional environment variables, including Secret references, for both containers.
+extraEnv: []
+
 receivers:
   syslog:
     enabled: false
@@ -80,14 +83,6 @@ settings:
   #
   # Hostname or IP address of OPNsense API
   # opnsense.address: ""
-  #
-  # API key to use to connect to OPNsense API. This flag/ENV or OPN2OTEL_OPS_API_KEY_FILE
-  # (legacy alias OPS_API_KEY_FILE) may be set.
-  # opnsense.api-key: ""
-  #
-  # API secret to use to connect to OPNsense API. This flag/ENV or
-  # OPN2OTEL_OPS_API_SECRET_FILE (legacy alias OPS_API_SECRET_FILE) may be set.
-  # opnsense.api-secret: ""
   #
   # Disable TLS certificate verification
   # opnsense.insecure: false
@@ -687,16 +682,6 @@ settings:
   # This flag/ENV or OPN2OTEL_OTLP_GRAFANA_CLOUD_INSTANCE_ID_FILE may be set.
   # otlp.grafana-cloud-instance-id: ""
   #
-  # Grafana Cloud Access Policy token. This flag/ENV or
-  # OPN2OTEL_OTLP_GRAFANA_CLOUD_TOKEN_FILE may be set.
-  # otlp.grafana-cloud-token: ""
-  #
-  # OTLP headers as comma-separated key=value pairs (e.g.
-  # X-Scope-OrgID=1,Authorization=Bearer x). When set, replaces OTEL_EXPORTER_OTLP_HEADERS
-  # entirely; when empty, that env var is used. This flag/ENV or OPN2OTEL_OTLP_HEADERS_FILE
-  # may be set.
-  # otlp.headers: ""
-  #
   # Disable TLS for the OTLP connection (plaintext).
   # otlp.insecure: false
   #
@@ -721,11 +706,6 @@ settings:
   #
   # Pyroscope application name profiles are reported under.
   # pyroscope.application-name: "opnsense2otel"
-  #
-  # HTTP basic auth password for Pyroscope (Grafana Cloud Access Policy token). This
-  # flag/ENV or OPN2OTEL_PYROSCOPE_AUTH_PASSWORD_FILE (legacy alias
-  # PYROSCOPE_AUTH_PASSWORD_FILE) may be set.
-  # pyroscope.auth-password: ""
   #
   # HTTP basic auth user for Pyroscope (Grafana Cloud stack/instance ID). This flag/ENV or
   # OPN2OTEL_PYROSCOPE_AUTH_USER_FILE (legacy alias PYROSCOPE_AUTH_USER_FILE) may be set.
@@ -793,11 +773,6 @@ settings:
   #
   # Timeout for each Grafana annotation API request.
   # annotations.timeout: "10s"
-  #
-  # Grafana service-account token used to write annotations. It needs the annotation write
-  # permission and nothing else. This flag/ENV or OPN2OTEL_ANNOTATIONS_TOKEN_FILE may be
-  # set.
-  # annotations.token: ""
 
   # ---- Log shipping: syslog receiver ----
   # Push-based. The firewall sends syslog here; the exporter parses, enriches and ships it.
@@ -920,10 +895,6 @@ settings:
   # accepts any sender. The receiver is unauthenticated unless --logs.zenarmor.auth-user is
   # set, so set this on a shared network.
   # logs.zenarmor.allowed-peers: ""
-  #
-  # Password for --logs.zenarmor.auth-user. This flag/ENV or
-  # OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD_FILE may be set.
-  # logs.zenarmor.auth-password: ""
   #
   # Require HTTP basic auth on the Zenarmor receiver, with this username. Set the same
   # credentials in Zenarmor's streaming settings. Empty disables auth.
@@ -1339,10 +1310,6 @@ settings:
   # only at startup.
   # geoip.download.interval: "24h"
   #
-  # MaxMind license key. This flag/ENV or OPN2OTEL_GEOIP_DOWNLOAD_LICENSE_KEY_FILE may be
-  # set; the file form is preferred for a container secret.
-  # geoip.download.license-key: ""
-  #
   # End-to-end timeout for one edition's download. A timeout leaves the installed database
   # untouched and is retried on the next interval.
   # geoip.download.timeout: "5m"
@@ -1368,6 +1335,14 @@ settings:
   # which asks MaxMind whether a newer build exists. 0 disables reloading.
   # geoip.reload-interval: "15m"
 
-  # Excluded on purpose -- never renderable via settings at all:
+  # Excluded from this inventory:
+  #   annotations.token: supply OPN2OTEL_ANNOTATIONS_TOKEN through extraEnv from a Secret
   #   config.check: one-shot validate-and-exit; wiring it through settings would turn every pod start into a no-op that exits 0 instead of running the exporter
+  #   geoip.download.license-key: supply OPN2OTEL_GEOIP_DOWNLOAD_LICENSE_KEY through extraEnv from a Secret
+  #   logs.zenarmor.auth-password: supply OPN2OTEL_LOGS_ZENARMOR_AUTH_PASSWORD through extraEnv from a Secret
+  #   opnsense.api-key: OPN2OTEL_OPS_API_KEY is available, but mounted files take precedence; update the Secret selected by opnsense.existingSecret
+  #   opnsense.api-secret: OPN2OTEL_OPS_API_SECRET is available, but mounted files take precedence; update the Secret selected by opnsense.existingSecret
+  #   otlp.grafana-cloud-token: supply OPN2OTEL_OTLP_GRAFANA_CLOUD_TOKEN through extraEnv from a Secret
+  #   otlp.headers: supply OPN2OTEL_OTLP_HEADERS through extraEnv from a Secret
+  #   pyroscope.auth-password: supply OPN2OTEL_PYROSCOPE_AUTH_PASSWORD through extraEnv from a Secret
 # <!-- docgen:end:helm-settings -->

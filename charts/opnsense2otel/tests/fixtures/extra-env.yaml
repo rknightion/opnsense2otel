@@ -1,0 +1,15 @@
+opnsense:
+  address: edge-fw.example.net
+extraEnv:
+  - name: OPN2OTEL_OTLP_HEADERS
+    valueFrom:
+      secretKeyRef:
+        name: synthetic-secret
+        key: headers
+  - name: EXTRA_PLAIN
+    value: example
+settings:
+  otlp.headers: synthetic-placeholder
+  collector.poll-interval: 30s
+extraArgs:
+  - --annotations.token=synthetic-placeholder

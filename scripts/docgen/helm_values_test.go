@@ -7,22 +7,40 @@ import (
 	"testing"
 )
 
-func TestHelmValuesListsEveryFlagExceptConfigCheck(t *testing.T) {
+func TestHelmValuesListsEveryFlagExceptExcluded(t *testing.T) {
 	flags := collectAllFlags()
 	block := renderHelmSettingsBlock(flags)
 
+	excludedNames := map[string]bool{
+		"config.check": true, "opnsense.api-key": true, "opnsense.api-secret": true,
+		"otlp.grafana-cloud-token": true, "otlp.headers": true, "pyroscope.auth-password": true,
+		"annotations.token": true, "logs.zenarmor.auth-password": true, "geoip.download.license-key": true,
+	}
 	for _, f := range flags {
-		if f.Name == "config.check" {
-			if !strings.Contains(block, "config.check: ") {
-				t.Error("config.check should still be named in the excluded-flags footer")
+		if excludedNames[f.Name] {
+			if !strings.Contains(block, "  #   "+f.Name+": ") {
+				t.Errorf("excluded flag %q missing from footer", f.Name)
 			}
-			if strings.Contains(block, "\n  # config.check: \"") {
-				t.Error("config.check must never render as a settable settings entry")
+			if strings.Contains(block, "\n  # "+f.Name+": ") {
+				t.Errorf("excluded flag %q rendered as a settings entry", f.Name)
 			}
 			continue
 		}
 		if !strings.Contains(block, "  # "+f.Name+": ") {
 			t.Errorf("flag %q not found as a commented settings entry in the generated block", f.Name)
+		}
+	}
+}
+
+func TestHelmValuesAPISecretsUseMountedSecret(t *testing.T) {
+	block := renderHelmSettingsBlock(collectAllFlags())
+	for _, name := range []string{"opnsense.api-key", "opnsense.api-secret"} {
+		for _, line := range strings.Split(block, "\n") {
+			if strings.HasPrefix(line, "  #   "+name+": ") {
+				if !strings.Contains(line, "opnsense.existingSecret") || !strings.Contains(line, "mounted files take precedence") {
+					t.Errorf("%s must explain mounted Secret precedence: %s", name, line)
+				}
+			}
 		}
 	}
 }

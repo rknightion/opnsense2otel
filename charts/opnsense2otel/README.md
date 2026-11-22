@@ -60,7 +60,18 @@ For non-secret exporter flags, prefer the generated, schema-checked `settings` m
 
 Syslog and Zenarmor feed the log-shipping pipeline. Its default sink is OTLP, so configure non-secret `--otlp.*` transport settings through `settings`, or select `--logs.sink=stdout`. The chart does not silently replace the exporter's sink default.
 
-Both `settings` and `extraArgs` become container arguments. Do not put tokens, passwords or header values in either. The chart mounts only the API key pair; other secrets have no chart mount route yet. See [issue #1124 (mounting other chart secrets)](https://github.com/rknightion/opnsense2otel/issues/1124).
+Both `settings` and `extraArgs` become container arguments. Use `extraEnv` to supply tokens, passwords and header values from an existing Kubernetes Secret to both the configuration check and exporter containers:
+
+```yaml
+extraEnv:
+  - name: OPN2OTEL_OTLP_HEADERS
+    valueFrom:
+      secretKeyRef:
+        name: exporter-otlp
+        key: headers
+```
+
+The API key and secret come from mounted files in the Secret selected by `opnsense.existingSecret`. Those files take precedence over their environment variables, so update that Secret to rotate the API pair. The generated settings inventory names the environment variable for each credential flag. The chart continues to accept legacy credential flags, but Helm release records and container arguments expose their values.
 
 The pod runs as UID/GID `65532`, has no service-account token, drops all capabilities, disallows privilege escalation, uses a read-only root filesystem, and sets the RuntimeDefault seccomp profile. A hardened `config-check` init container validates configuration and mounted credentials before the exporter starts.
 

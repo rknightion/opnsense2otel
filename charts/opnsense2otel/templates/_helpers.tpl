@@ -55,6 +55,9 @@ seccompProfile:
   value: /etc/opnsense2otel/creds/api-key
 - name: OPS_API_SECRET_FILE
   value: /etc/opnsense2otel/creds/api-secret
+{{- with .Values.extraEnv }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
