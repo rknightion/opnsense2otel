@@ -5,10 +5,7 @@ set -euo pipefail
 # port, credential mount, or hardening control even when Helm accepts the YAML.
 chart_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_dir="$chart_dir/tests/fixtures"
-render_dir="$chart_dir/tests/.rendered"
-
-rm -rf "$render_dir"
-mkdir -p "$render_dir"
+render_dir="$(mktemp -d)"
 trap 'rm -rf "$render_dir"' EXIT
 
 fail() {
@@ -39,6 +36,45 @@ render() {
   shift 2
   helm template contract "$chart_dir" --namespace monitoring -f "$values" "$@" > "$render_dir/$name.yaml"
 }
+
+# Exercise NOTES as a rendered template in an isolated copy of the real chart.
+cp -R "$chart_dir" "$render_dir/chart"
+python3 - "$render_dir/chart/templates/NOTES.txt" "$render_dir/chart/templates/notes-test.yaml" <<'PYCODE'
+import sys
+notes = open(sys.argv[1]).read()
+with open(sys.argv[2], "w") as out:
+    out.write("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: notes-test\ndata:\n  notes: |\n")
+    out.writelines("    " + line for line in notes.splitlines(keepends=True))
+PYCODE
+render extra-env "$fixture_dir/extra-env.yaml"
+for section in initContainers containers; do
+  awk -v section="$section" '/^      initContainers:/{p=(section=="initContainers");next} /^      containers:/{p=(section=="containers");next} /^      volumes:/{p=0} p' "$render_dir/extra-env.yaml" > "$render_dir/$section"
+  assert_contains "$render_dir/$section" 'name: OPN2OTEL_OTLP_HEADERS'
+  assert_contains "$render_dir/$section" 'secretKeyRef:'
+  assert_contains "$render_dir/$section" 'name: synthetic-secret'
+  assert_contains "$render_dir/$section" 'key: headers'
+  assert_contains "$render_dir/$section" 'name: EXTRA_PLAIN'
+  assert_contains "$render_dir/$section" 'value: example'
+done
+helm template contract "$render_dir/chart" -f "$fixture_dir/extra-env.yaml" --show-only templates/notes-test.yaml > "$render_dir/notes.yaml"
+assert_contains "$render_dir/notes.yaml" 'otlp.headers'
+assert_contains "$render_dir/notes.yaml" 'annotations.token'
+assert_not_contains "$render_dir/notes.yaml" 'synthetic-placeholder'
+assert_not_contains "$render_dir/notes.yaml" 'collector.poll-interval'
+# Legacy credential flags which were accepted still render through either interface.
+for credential in otlp.grafana-cloud-token otlp.headers pyroscope.auth-password annotations.token geoip.download.license-key; do
+  escaped="${credential//./\\.}"
+  render legacy-setting "$fixture_dir/minimal.yaml" --set-string "settings.$escaped=synthetic-placeholder"
+  assert_count "$render_dir/legacy-setting.yaml" "--$credential=synthetic-placeholder" 2
+  render legacy-arg "$fixture_dir/minimal.yaml" --set-string "extraArgs[0]=--$credential=synthetic-placeholder"
+  assert_count "$render_dir/legacy-arg.yaml" "--$credential=synthetic-placeholder" 2
+done
+helm template contract "$render_dir/chart" -f "$fixture_dir/minimal.yaml" --show-only templates/notes-test.yaml \
+  --set-string 'extraArgs[0]=--other=otlp.headers=synthetic-placeholder' > "$render_dir/notes-empty.yaml"
+assert_not_contains "$render_dir/notes-empty.yaml" 'WARNING:'
+if helm template contract "$chart_dir" -f "$fixture_dir/minimal.yaml" --set 'extraEnv[0].name=VALID,extraEnv[0].unknown=x' > /dev/null 2>&1; then
+  fail 'schema accepted an unknown extraEnv field'
+fi
 
 helm lint "$chart_dir" --strict -f "$fixture_dir/minimal.yaml"
 render minimal "$fixture_dir/minimal.yaml"

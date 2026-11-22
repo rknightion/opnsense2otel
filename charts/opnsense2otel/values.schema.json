@@ -79,6 +79,19 @@
       },
       "additionalProperties": false
     },
+    "extraEnv": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "value": { "type": "string" },
+          "valueFrom": { "type": "object" }
+        }
+      }
+    },
     "extraArgs": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }

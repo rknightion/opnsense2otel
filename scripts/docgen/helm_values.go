@@ -20,9 +20,16 @@ const helmValuesWrapWidth = 92
 // excludedFromHelmSettings lists flags that must never appear in the generated
 // settings block, with the reason rendered into values.yaml so the omission reads as
 // deliberate rather than a docgen gap.
-var excludedFromHelmSettings = map[string]string{
-	"config.check": "one-shot validate-and-exit; wiring it through settings would turn " +
-		"every pod start into a no-op that exits 0 instead of running the exporter",
+var excludedFromHelmSettings = map[string]bool{
+	"config.check":                true,
+	"opnsense.api-key":            true,
+	"opnsense.api-secret":         true,
+	"otlp.grafana-cloud-token":    true,
+	"otlp.headers":                true,
+	"pyroscope.auth-password":     true,
+	"annotations.token":           true,
+	"logs.zenarmor.auth-password": true,
+	"geoip.download.license-key":  true,
 }
 
 // cumulativeValue structurally matches kingpin's unexported repeatableFlag interface.
@@ -163,9 +170,20 @@ func renderHelmSettingsBlock(flags []FlagDoc) string {
 		}
 	}
 
-	b.WriteString("\n  # Excluded on purpose -- never renderable via settings at all:\n")
+	b.WriteString("\n  # Excluded from this inventory:\n")
+	envs := make(map[string]string, len(flags))
+	for _, f := range flags {
+		envs[f.Name] = f.Envar
+	}
 	for _, name := range sortedExcludedNames() {
-		fmt.Fprintf(&b, "  #   %s: %s\n", name, excludedFromHelmSettings[name])
+		switch name {
+		case "config.check":
+			fmt.Fprintf(&b, "  #   %s: one-shot validate-and-exit; wiring it through settings would turn every pod start into a no-op that exits 0 instead of running the exporter\n", name)
+		case "opnsense.api-key", "opnsense.api-secret":
+			fmt.Fprintf(&b, "  #   %s: %s is available, but mounted files take precedence; update the Secret selected by opnsense.existingSecret\n", name, envs[name])
+		default:
+			fmt.Fprintf(&b, "  #   %s: supply %s through extraEnv from a Secret\n", name, envs[name])
+		}
 	}
 
 	return b.String()

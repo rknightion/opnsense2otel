@@ -6,3 +6,20 @@ Prometheus can scrape http://{{ $name }}.{{ $namespace }}.svc:{{ .Values.ports.h
 
 The chart uses the existing Secret {{ .Values.opnsense.existingSecret }} for API credential files.
 Grafana dashboards and alert rules remain managed by this repository's supported Grafana artifacts; this chart does not install Prometheus Operator dashboard or rule CRDs.
+
+{{- $credentials := list "opnsense.api-key" "opnsense.api-secret" "otlp.grafana-cloud-token" "otlp.headers" "pyroscope.auth-password" "annotations.token" "logs.zenarmor.auth-password" "geoip.download.license-key" }}
+{{- $found := dict }}
+{{- range $name, $_ := .Values.settings }}
+{{- if has $name $credentials }}{{- $_ := set $found $name true }}{{- end }}
+{{- end }}
+{{- range .Values.extraArgs }}
+{{- $name := (splitn "=" 2 (trimPrefix "--" .))._0 }}
+{{- if has $name $credentials }}{{- $_ := set $found $name true }}{{- end }}
+{{- end }}
+{{- if $found }}
+
+WARNING: Credential flags in settings or extraArgs are stored in container arguments and Helm release records. Use Secret references through extraEnv instead:
+{{- range $name, $_ := $found }}
+  --{{ $name }}
+{{- end }}
+{{- end }}
