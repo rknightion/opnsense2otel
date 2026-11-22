@@ -58,9 +58,9 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
   `just --list`. Heavy CI-only legs are not a lane's job: say the change is untested against them.
 - auto-rc classifies only the head commit of a push; every merge to `main` is one squash commit.
 - A major release needs the module path moved first: `just bump-module-major major=<N>`.
-- Review the exact candidate independently against its base locally, then use Cursor Bugbot on
-  the exact landing pull request head (the maintainer code-review section of `AGENTS.md`). A
-  missing or incomplete review is no verdict, never a pass.
+- Review the exact candidate independently against its base locally. A landing pull request that
+  needs a hosted review gets Codex, with Cursor Bugbot as fallback and second reviewer, under the
+  maintainer's review rule. A missing or incomplete review is no verdict, never a pass.
 - Loki cannot show a record stamped older than 3h until its ingester chunk flushes, up to two
   hours: a proof asserting its own historical record within the run never passes. Report
   visibility-pending and read `logs_shipped_total`, `logs_dropped_total{reason}` and `partialSuccess`.
