@@ -92,6 +92,9 @@ jobs:
           - name: syslog-tcp
             package: ./internal/logship/syslog
             target: FuzzTCPFrames
+          - name: syslog-structured-data
+            package: ./internal/logship/syslog
+            target: FuzzSkipStructuredData
           - name: zenarmor
             package: ./internal/logship/zenarmor
             target: FuzzParseDocument

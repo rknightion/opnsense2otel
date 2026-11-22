@@ -30,6 +30,9 @@ jobs:
           - name: syslog-tcp
             package: ./internal/logship/syslog
             target: FuzzTCPFrames
+          - name: syslog-structured-data
+            package: ./internal/logship/syslog
+            target: FuzzSkipStructuredData
           - name: zenarmor
             package: ./internal/logship/zenarmor
             target: FuzzParseDocument
@@ -41,6 +44,10 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27.4"
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.59.0'
 
       - name: Resolve fuzz cache path
         id: fuzz-cache
@@ -61,13 +68,7 @@ jobs:
         env:
           FUZZ_PACKAGE: ${{ matrix.package }}
           FUZZ_TARGET: ${{ matrix.target }}
-        run: >-
-          go test "$FUZZ_PACKAGE"
-          -run='^$'
-          -fuzz="^${FUZZ_TARGET}$"
-          -fuzztime=5m
-          -parallel=1
-          -timeout=7m
+        run: just fuzz-one "$FUZZ_PACKAGE" "$FUZZ_TARGET" 5m 7m
 
       # Go writes minimized reproducers to testdata/fuzz when possible and keeps
       # working corpus in GOCACHE/fuzz. Preserve both for human review; never
