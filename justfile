@@ -347,6 +347,15 @@ _tool-goreleaser:
     @mkdir -p '{{ tools_dir }}'
     @{ test -x '{{ tools_dir }}/goreleaser' && test "$(cat '{{ tools_dir }}/goreleaser.pin' 2>/dev/null)" = 'github.com/goreleaser/goreleaser/v2@{{ goreleaser_version }}' && '{{ tools_dir }}/goreleaser' --version >/dev/null 2>&1; } || { GOBIN='{{ tools_dir }}' go install github.com/goreleaser/goreleaser/v2@{{ goreleaser_version }} && printf '%s\n' 'github.com/goreleaser/goreleaser/v2@{{ goreleaser_version }}' > '{{ tools_dir }}/goreleaser.pin'; }
 
+# Emit release tool pins so CI and releases resolve the same versions.
+[private]
+print-syft-version:
+    @printf '%s\n' {{ quote(syft_version) }}
+
+[private]
+print-goreleaser-version:
+    @printf '%s\n' {{ quote(goreleaser_version) }}
+
 # Emit the pinned go-licenses version/module so CI and publish resolve the same pin.
 [private]
 print-go-licenses-version:
