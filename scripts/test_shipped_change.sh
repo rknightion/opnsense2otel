@@ -71,6 +71,29 @@ sed -i.bak "s#workflows/container-publish.yml@${old}#workflows/other-publish.yml
 git commit -qam "retarget shared pin"
 expect true "pin moved to a different rknightion/.github target"
 
+echo 'baseline docs' >>README.md
+git commit -qam "successful docs"
+successful=$(git rev-parse HEAD)
+echo '// cancelled run' >>main.go
+git commit -qam "shipped change with cancelled run"
+cancelled=$(git rev-parse HEAD)
+echo 'later docs' >>README.md
+git commit -qam "next docs push"
+selector="$(dirname "$script")/edge-diff-base.sh"
+selected=$(bash "$selector" HEAD "$cancelled" "$successful")
+[ "$selected" = "$successful" ] || { echo 'FAIL successful run base' >&2; exit 1; }
+expect true "cancelled shipped change is included" "$selected"
+expect false "event before misses cancelled shipped change" "$cancelled"
+
+for unavailable in '' 0000000000000000000000000000000000000000 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef; do
+  selected=$("$selector" HEAD "$cancelled" "$unavailable" 2>/dev/null)
+  [ "$selected" = "$cancelled" ] || { echo 'FAIL unavailable run fallback' >&2; exit 1; }
+done
+later=$(git rev-parse HEAD)
+selected=$("$selector" "$cancelled" "$successful" "$later" 2>/dev/null)
+[ "$selected" = "$successful" ] || { echo 'FAIL later run fallback' >&2; exit 1; }
+echo 'ok   unavailable and later successful runs fall back'
+
 before=$(git rev-parse HEAD)
 echo '// z' >>main.go
 git commit -qam "code in a push"

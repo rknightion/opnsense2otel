@@ -162,6 +162,9 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created != 'true'
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read # look up the last successful workflow run
     outputs:
       shipped: ${{ steps.paths.outputs.shipped }}
     steps:
@@ -180,11 +183,16 @@ jobs:
         id: paths
         env:
           HEAD_SHA: ${{ github.sha }}
-          # Every commit in the push counts: a Go change followed by a docs-only
-          # commit must still publish. All-zero (new branch) falls back to the parent.
           BEFORE_SHA: ${{ github.event.before }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          shipped=$(scripts/shipped-change.sh "${HEAD_SHA}" "${BEFORE_SHA}")
+          # A cancelled intervening run may have contained a shipped change.
+          if ! successful=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release-please.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty'); then
+            echo '::warning::Could not look up the last successful release-please run' >&2
+            successful=''
+          fi
+          base=$(scripts/edge-diff-base.sh "$HEAD_SHA" "$BEFORE_SHA" "$successful")
+          shipped=$(scripts/shipped-change.sh "$HEAD_SHA" "$base")
           echo "shipped=${shipped}" >> "${GITHUB_OUTPUT}"
 
   edge:

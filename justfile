@@ -113,7 +113,7 @@ deployment-test: _tool-kubeconform
 [group('check')]
 [no-exit-message]
 release-gate-test:
-    bash -n scripts/shipped-change.sh scripts/test_shipped_change.sh
+    bash -n scripts/shipped-change.sh scripts/edge-diff-base.sh scripts/test_shipped_change.sh
     scripts/test_shipped_change.sh
 
 # unit-test the testbed tooling's host-independent seams (#504, #625)
