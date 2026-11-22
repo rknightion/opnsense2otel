@@ -71,7 +71,6 @@ sed -i.bak "s#workflows/container-publish.yml@${old}#workflows/other-publish.yml
 git commit -qam "retarget shared pin"
 expect true "pin moved to a different rknightion/.github target"
 
-before=$(git rev-parse HEAD)
 echo 'baseline docs' >>README.md
 git commit -qam "successful docs"
 successful=$(git rev-parse HEAD)
@@ -95,6 +94,7 @@ selected=$("$selector" "$cancelled" "$successful" "$later" 2>/dev/null)
 [ "$selected" = "$successful" ] || { echo 'FAIL later run fallback' >&2; exit 1; }
 echo 'ok   unavailable and later successful runs fall back'
 
+before=$(git rev-parse HEAD)
 echo '// z' >>main.go
 git commit -qam "code in a push"
 echo 'again' >>README.md
