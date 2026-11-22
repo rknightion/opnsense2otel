@@ -34,6 +34,7 @@ jobs:
   # rebuild and republish :main on the previous month's files, which costs a
   # pointless image push and, worse, makes the refresh look like it worked.
   check:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     outputs:
       available: ${{ steps.probe.outputs.available }}
@@ -52,10 +53,10 @@ jobs:
           available=true
           for product in country asn; do
             url="https://download.db-ip.com/free/dbip-${product}-lite-${month}.mmdb.gz"
-            if curl -fsSI --max-time 60 -o /dev/null "$url"; then
+            if code="$(curl -sSLI --max-time 60 -o /dev/null -w '%{http_code}' "$url")" && [[ "$code" == 2?? ]]; then
               echo "present: ${url}"
             else
-              echo "::notice::${url} is not published yet — skipping this refresh"
+              echo "::notice::${url} is unavailable or could not be confirmed - skipping this refresh"
               available=false
             fi
           done
@@ -76,3 +77,49 @@ jobs:
     uses: ./.github/workflows/publish.yml
     with:
       release_tag: ""
+
+  verify:
+    needs: [check, rebuild]
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - name: Download published architecture digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/geoip-digests
+          pattern: digests-linux-*
+      - name: Check the published editions
+        env:
+          MONTH: ${{ needs.check.outputs.month }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Read the moving tag once, then compare that snapshot to this run's
+          # published child digests before inspecting either immutable image.
+          docker buildx imagetools inspect --raw "${IMAGE}:main" > "${RUNNER_TEMP}/main-index.json"
+          declare -A refs
+          for arch in amd64 arm64; do
+            dir="${RUNNER_TEMP}/geoip-digests/digests-linux-${arch}"
+            mapfile -t digests < <(find "$dir" -maxdepth 1 -type f -printf '%f\n')
+            if [ "${#digests[@]}" -ne 1 ] || [[ ! "${digests[0]}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Missing or invalid published digest for ${arch}"
+              exit 1
+            fi
+            digest="sha256:${digests[0]}"
+            jq -e --arg arch "$arch" --arg digest "$digest" \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest] == [$digest]' \
+              "${RUNNER_TEMP}/main-index.json" > /dev/null || { echo "::error::Published main index does not contain this run's ${arch} digest" >&2; exit 1; }
+            refs[$arch]="${IMAGE}@${digest}"
+          done
+          for arch in amd64 arm64; do
+            ref="${refs[$arch]}"
+            docker pull --platform "linux/${arch}" "$ref"
+            container="$(docker create --platform "linux/${arch}" "$ref")"
+            docker cp "${container}:/licenses/GEOIP-DB-IP-ATTRIBUTION.txt" "${RUNNER_TEMP}/geoip-${arch}.txt"
+            docker rm "$container"
+            grep -Fx "  Country edition: ${MONTH}" "${RUNNER_TEMP}/geoip-${arch}.txt"
+            grep -Fx "  ASN edition: ${MONTH}" "${RUNNER_TEMP}/geoip-${arch}.txt"
+          done

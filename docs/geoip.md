@@ -89,7 +89,14 @@ consequence worth stating plainly:
 **Refresh.** DB-IP republishes on the 1st of each month. A scheduled workflow
 rebuilds and republishes the `:main` image on the 3rd once the new files are
 published, and every tagged release build fetches current data as a matter of
-course. The database's own build date is exported as
+course. Builds distinguish a confirmed month from an inconclusive provider probe
+in their download cache. A current edition probe gets a fresh cache identity for each run, so a later
+download failure can fall back without poisoning the next run. When both current editions are definitely absent and both previous ones are
+available, builds can reuse a cache keyed to the previous edition. Each database still tries
+the current month first, then the previous month. Local builds retain the current-month then
+previous-month fallback. The refresh checks the `:main` index against the
+published architecture digests and checks both databases by immutable digest;
+a mismatch fails the workflow after publication. The database's own build date is exported as
 `opnsense_flow_geoip_database_build_timestamp_seconds{database}`, so freshness is a
 query rather than a claim - and `OPNsenseFlowGeoIPDatabaseStale` fires on it.
 

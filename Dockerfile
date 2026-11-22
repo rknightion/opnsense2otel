@@ -74,8 +74,11 @@ RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 # Empty = "the current UTC year-month, falling back to the previous one". Set it
 # (e.g. --build-arg DBIP_MONTH=2026-07) to pin a reproducible build to a known file.
 ARG DBIP_MONTH=""
+# Cache identity supplied by automated publishers; empty keeps local defaults.
+ARG GEOIP_REFRESH=""
 
 RUN set -eu; \
+  echo "geoip: cache identity ${GEOIP_REFRESH}"; \
   apk add --no-cache curl >/dev/null; \
   mkdir -p /geoip; \
   # DB-IP publishes on the 1st, and their publish can lag UTC midnight — so a
@@ -118,7 +121,7 @@ RUN set -eu; \
         grep -q "$marker" /tmp/meta.txt || { echo "::error::${out} is not a ${marker} database" >&2; exit 1; }; \
         rm -f /tmp/meta.txt /tmp/meta.bin; \
         echo "geoip: ${out} ok (${sz} B, ${marker}, ${mo})"; \
-        echo "$mo" > /geoip-month; \
+        echo "$mo" > "/geoip-${product}-month"; \
         return 0; \
       fi; \
       echo "geoip: ${url} unavailable, trying the previous month"; \
@@ -143,7 +146,8 @@ RUN set -eu; mkdir -p /geoip-licenses; { \
   echo "Files (unmodified as published by DB-IP):"; \
   echo "  /usr/share/opnsense2otel/geoip/dbip-country-lite.mmdb  (DB-IP Country Lite)"; \
   echo "  /usr/share/opnsense2otel/geoip/dbip-asn-lite.mmdb      (DB-IP ASN Lite)"; \
-  echo "  Edition: $(cat /geoip-month)"; \
+  echo "  Country edition: $(cat /geoip-country-month)"; \
+  echo "  ASN edition: $(cat /geoip-asn-month)"; \
   echo; \
   echo "They are redistributed byte-for-byte, not adapted. Each database's own build"; \
   echo "date is exported as opnsense_flow_geoip_database_build_timestamp_seconds."; \
