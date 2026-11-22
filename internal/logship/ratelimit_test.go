@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -202,6 +204,198 @@ func TestShipBatch_LearnedChunkCarriesToTheNextBatch(t *testing.T) {
 	if sizes[0] != learned {
 		t.Fatalf("second batch's first attempt carried %d records, want the learned %d — "+
 			"re-learning the limit costs a refused wire attempt on every batch", sizes[0], learned)
+	}
+}
+
+// Terminal rejection accounts for the failed chunk but must not delay or discard
+// later chunks, even when each chunk contains a rejected record.
+func TestShipBatchRejectedChunkDoesNotBackOff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		sink := &partitionedSink{result: func(batch []Entry) SinkResult {
+			return SinkResult{Acked: batch[1:], Rejected: batch[:1], Err: errors.New("rejected")}
+		}}
+		p, cancel := ratePipeline(t, reg, sink)
+		defer cancel()
+		p.cfg.ShipMaxAttempts = 3
+		p.shipChunk = 32
+		entries := rateEntries(128)
+		for i := range entries {
+			entries[i].Record.Body = strconv.Itoa(i)
+		}
+
+		start := time.Now()
+		p.shipBatch(entries)
+		if elapsed := time.Since(start); elapsed != 0 {
+			t.Errorf("delivery took %s, want no retry backoff between terminal rejections", elapsed)
+		}
+		attempts := sink.attempts()
+		if len(attempts) != 4 {
+			t.Errorf("attempts=%d, want 4 chunks attempted exactly once", len(attempts))
+		}
+		for i, chunk := range attempts {
+			if len(chunk) != 32 {
+				t.Errorf("chunk size=%d, want 32", len(chunk))
+			}
+			for j, body := range chunk {
+				if want := strconv.Itoa(i*32 + j); body != want {
+					t.Errorf("chunk %d record %d=%q, want %q", i, j, body, want)
+				}
+			}
+		}
+		series := gatherSeries(t, reg)
+		for name, want := range map[string]float64{
+			`opnsense_exporter_logs_shipped_total{source="syslog"}`:                                124,
+			`opnsense_exporter_logs_dropped_total{reason="rejected",source="syslog"}`:              4,
+			`opnsense_exporter_logs_dropped_total{reason="ship_failed_permanent",source="syslog"}`: 0,
+			`opnsense_exporter_logs_ship_errors_total`:                                             4,
+		} {
+			if got := series[name]; got != want {
+				t.Errorf("%s=%v, want %v", name, got, want)
+			}
+		}
+		if p.shipChunk != 64 {
+			t.Errorf("shipChunk=%d, want 64 after completed batch", p.shipChunk)
+		}
+	})
+}
+
+// A terminal rejection must preserve pacing learned from an earlier rate limit.
+func TestShipBatchRejectedChunkKeepsRateLimitPace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		calls := 0
+		sink := &partitionedSink{result: func(batch []Entry) SinkResult {
+			calls++
+			if calls == 1 {
+				return SinkResult{Retry: batch, Err: &rateLimitError{err: errors.New("limited")}}
+			}
+			return SinkResult{Acked: batch[1:], Rejected: batch[:1], Err: errors.New("rejected")}
+		}}
+		p, cancel := ratePipeline(t, prometheus.NewRegistry(), sink)
+		defer cancel()
+		start := time.Now()
+		p.shipBatch(rateEntries(64))
+		if elapsed, want := time.Since(start), 2*shipRateLimitPause; elapsed != want {
+			t.Errorf("delivery took %s, want %s for two paced chunks", elapsed, want)
+		}
+		if calls != 3 {
+			t.Errorf("calls=%d, want one rate limit and two terminal chunks", calls)
+		}
+	})
+}
+
+// Stop can expire while the sink returns a terminal-only response. Its tail
+// must not be sent after the stop context expires, even before cancellation of
+// the delivery context is propagated by its asynchronous callbacks.
+func TestShipBatchRejectedChunkHonoursShutdownDeadline(t *testing.T) {
+	for _, expired := range []bool{false, true} {
+		t.Run(strconv.FormatBool(expired), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				reg := prometheus.NewRegistry()
+				stopCtx, stopCancel := context.WithCancel(context.Background())
+				defer stopCancel()
+				var p *pipeline
+				calls := 0
+				sink := &partitionedSink{result: func(batch []Entry) SinkResult {
+					calls++
+					if calls == 1 {
+						p.stopMu.Lock()
+						p.stopCtx = stopCtx
+						p.stopMu.Unlock()
+						p.cancel()
+						if expired {
+							stopCancel()
+						}
+						return SinkResult{Acked: batch[1:], Rejected: batch[:1], Err: errors.New("rejected")}
+					}
+					return ackedResult(batch)
+				}}
+				var cancel context.CancelFunc
+				p, cancel = ratePipeline(t, reg, sink)
+				defer cancel()
+				p.shipChunk = 32
+				p.shipBatch(rateEntries(64))
+				wantCalls, wantShipped, wantDropped := 2, float64(63), float64(0)
+				if expired {
+					wantCalls, wantShipped, wantDropped = 1, 31, 32
+				}
+				if calls != wantCalls {
+					t.Errorf("calls=%d, want %d", calls, wantCalls)
+				}
+				series := gatherSeries(t, reg)
+				if got := series[`opnsense_exporter_logs_shipped_total{source="syslog"}`]; got != wantShipped {
+					t.Errorf("shipped=%v, want %v", got, wantShipped)
+				}
+				if got := series[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="syslog"}`]; got != wantDropped {
+					t.Errorf("shutdown dropped=%v, want %v", got, wantDropped)
+				}
+			})
+		})
+	}
+}
+
+// delayedAfterFuncContext models a cancellation callback that has not yet run.
+type delayedAfterFuncContext struct{ context.Context }
+
+func (delayedAfterFuncContext) AfterFunc(func()) func() bool { return func() bool { return true } }
+func (delayedAfterFuncContext) Value(any) any                { return nil }
+
+// Stop can start during the pace following a terminal rejection. The next
+// chunk is attempted only if the shutdown context still permits delivery.
+func TestShipBatchRejectedChunkPaceHonoursShutdownDeadline(t *testing.T) {
+	for _, expired := range []bool{false, true} {
+		t.Run(strconv.FormatBool(expired), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				reg := prometheus.NewRegistry()
+				calls := 0
+				sink := &partitionedSink{result: func(batch []Entry) SinkResult {
+					calls++
+					switch calls {
+					case 1:
+						return SinkResult{Retry: batch, Err: &rateLimitError{err: errors.New("limited")}}
+					case 2:
+						return SinkResult{Acked: batch[1:], Rejected: batch[:1], Err: errors.New("rejected")}
+					default:
+						return ackedResult(batch)
+					}
+				}}
+				p, cancel := ratePipeline(t, reg, sink)
+				defer cancel()
+				p.ctx = delayedAfterFuncContext{p.ctx}
+				done := make(chan struct{})
+				go func() { p.shipBatch(rateEntries(64)); close(done) }()
+				synctest.Wait() // rate-limit pace before the first split chunk
+				time.Sleep(shipRateLimitPause)
+				synctest.Wait() // terminal response returned; tail is now paced
+				if calls != 2 {
+					t.Fatalf("calls before shutdown=%d, want 2", calls)
+				}
+				stopCtx, stopCancel := context.WithCancel(context.Background())
+				defer stopCancel()
+				p.stopMu.Lock()
+				p.stopCtx = stopCtx
+				p.stopMu.Unlock()
+				if expired {
+					stopCancel()
+				}
+				p.cancel()
+				<-done
+				wantCalls, wantShipped, wantDropped := 3, float64(63), float64(0)
+				if expired {
+					wantCalls, wantShipped, wantDropped = 2, 31, 32
+				}
+				if calls != wantCalls {
+					t.Errorf("calls=%d, want %d", calls, wantCalls)
+				}
+				series := gatherSeries(t, reg)
+				if got := series[`opnsense_exporter_logs_shipped_total{source="syslog"}`]; got != wantShipped {
+					t.Errorf("shipped=%v, want %v", got, wantShipped)
+				}
+				if got := series[`opnsense_exporter_logs_dropped_total{reason="ship_failed",source="syslog"}`]; got != wantDropped {
+					t.Errorf("shutdown dropped=%v, want %v", got, wantDropped)
+				}
+			})
+		})
 	}
 }
 
