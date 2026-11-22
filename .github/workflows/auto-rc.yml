@@ -69,11 +69,42 @@ jobs:
           shipped=$(scripts/shipped-change.sh "${HEAD_SHA}")
           echo "shipped=${shipped}" >> "${GITHUB_OUTPUT}"
 
+  # Validate the exact tested commit before the tagger can create a prerelease.
+  # Older in-flight CI runs lack the recipes and fail here without creating a tag.
+  tool-pins-preflight:
+    needs: shipped-change
+    if: needs.shipped-change.outputs.shipped == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - name: Checkout the commit CI tested
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.59.0'
+      - name: Preflight release tool pins
+        run: |
+          set -euo pipefail
+          version_pattern='v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*)(\.([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
+          # Validate raw output before command substitution can strip trailing newlines.
+          resolve_pin() {
+            just "$1" | jq -Rser --arg pattern "$version_pattern" \
+              'if test("\\A" + $pattern + "\\n\\z") then .[0:-1] else error("invalid release tool pin") end'
+          }
+          resolve_pin print-syft-version >/dev/null
+          resolve_pin print-goreleaser-version >/dev/null
+
   rc:
     # shipped-change itself runs only after green CI; this second gate prevents
     # release-neutral commits from reaching the shared RC workflow.
-    needs: shipped-change
-    if: needs.shipped-change.outputs.shipped == 'true'
+    needs: [shipped-change, tool-pins-preflight]
+    if: needs.shipped-change.outputs.shipped == 'true' && needs.tool-pins-preflight.result == 'success'
     permissions:
       contents: write      # create the RC tag and the GitHub prerelease
       pull-requests: read  # find the open release-please PR
@@ -102,19 +133,55 @@ jobs:
     with:
       release_tag: ${{ needs.rc.outputs.tag }}
 
+  tool-pins:
+    needs: rc
+    if: needs.rc.outputs.tag != ''
+    runs-on: ubuntu-26.04
+    outputs:
+      syft: ${{ steps.pin.outputs.syft }}
+      goreleaser: ${{ steps.pin.outputs.goreleaser }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.rc.outputs.tag }}
+          persist-credentials: false
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.59.0'
+      - name: Resolve release tool pins
+        id: pin
+        run: |
+          set -euo pipefail
+          version_pattern='v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*)(\.([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
+          # Validate raw output before command substitution can strip trailing newlines.
+          resolve_pin() {
+            just "$1" | jq -Rser --arg pattern "$version_pattern" \
+              'if test("\\A" + $pattern + "\\n\\z") then .[0:-1] else error("invalid release tool pin") end'
+          }
+          syft=$(resolve_pin print-syft-version)
+          goreleaser=$(resolve_pin print-goreleaser-version)
+          printf 'syft=%s\ngoreleaser=%s\n' "$syft" "$goreleaser" >> "$GITHUB_OUTPUT"
+
   # goreleaser-args and pre-cmd are copied VERBATIM from release-please.yml's
   # binaries job (tag reference adapted to this workflow's `rc` job output).
   binaries:
-    needs: rc
+    needs: [rc, tool-pins]
     if: needs.rc.outputs.tag != ''
     permissions:
       contents: write     # upload binaries + checksums to the RC release
       id-token: write     # cosign keyless signing
       packages: write     # goreleaser reads the registry for existing artifacts
       attestations: write # SLSA build provenance on the archives
-    uses: rknightion/.github/.github/workflows/binaries.yml@f460d96cfd777d8e01066df655f4c157d4cf9332 # v1.31.1
+    uses: rknightion/.github/.github/workflows/binaries.yml@0fcba83976b38cfa9532336edfacfcc2105b68ea # v1.31.4
     with:
       release-tag: ${{ needs.rc.outputs.tag }}
+      qualify-release-tag: true
       go-version: "1.27.4"
       install-cosign: true
-      pre-cmd: "go install github.com/anchore/syft/cmd/syft@v1.57.2" # archive SBOMs
+      goreleaser-version: ${{ needs.tool-pins.outputs.goreleaser }}
+      pre-cmd: "go install github.com/anchore/syft/cmd/syft@${{ needs.tool-pins.outputs.syft }}" # archive SBOMs
