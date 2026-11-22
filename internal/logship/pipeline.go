@@ -476,6 +476,7 @@ func (p *pipeline) shipBatch(batch []Entry) {
 	var pace time.Duration
 	attempt := 0
 	limited := false
+	terminalTail := false
 
 	for len(pending) > 0 {
 		if time.Until(deadline) <= 0 {
@@ -484,6 +485,22 @@ func (p *pipeline) shipBatch(batch []Entry) {
 		}
 		if pace > 0 && !p.waitOrAbandon(deliveryCtx, pace, pending) {
 			return
+		}
+		if terminalTail {
+			// Shutdown cancellation propagates asynchronously to deliveryCtx. Check
+			// the published stop context after pacing, before attempting the tail.
+			stopped := false
+			if p.ctx.Err() != nil {
+				p.stopMu.Lock()
+				stopCtx := p.stopCtx
+				p.stopMu.Unlock()
+				stopped = stopCtx == nil || stopCtx.Err() != nil
+			}
+			if stopped || deliveryCtx.Err() != nil || time.Until(deadline) <= 0 {
+				p.abandonDelivery(pending)
+				return
+			}
+			terminalTail = false
 		}
 		n := chunk
 		if n < 1 {
@@ -511,11 +528,8 @@ func (p *pipeline) shipBatch(batch []Entry) {
 			continue
 		}
 
-		// One increment per attempt that did not deliver everything, whatever the
-		// reason. It stays an ATTEMPT counter, not a record counter: the records are
-		// accounted for by shipped/dropped, and conflating the two would make the
-		// three families impossible to reconcile.
-		attempt++
+		// Count each export that did not deliver everything, including terminal
+		// rejections, independently of the retry budget.
 		p.metrics.shipErrors.Inc()
 
 		if len(res.Rejected) > 0 && p.limiter.Allow("ship_rejected") {
@@ -523,6 +537,15 @@ func (p *pipeline) shipBatch(batch []Entry) {
 				"(a permanent protocol response, or an OTLP partial-success rejection)",
 				"count", len(res.Rejected), "err", res.Err)
 		}
+
+		if len(res.Retry) == 0 {
+			// Terminally rejected records are already accounted for. Continue with
+			// the unattempted tail without consuming a retry or relaxing its pace.
+			pending = rest
+			terminalTail = true
+			continue
+		}
+		attempt++
 
 		// Whatever this chunk did not deliver goes back to the FRONT of the outstanding
 		// set, ahead of the chunks not yet attempted, so ordering within the batch is
