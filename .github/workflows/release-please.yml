@@ -104,7 +104,7 @@ jobs:
       id-token: write
       packages: write
       attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
-    uses: rknightion/.github/.github/workflows/binaries.yml@0fcba83976b38cfa9532336edfacfcc2105b68ea # v1.31.4
+    uses: rknightion/.github/.github/workflows/binaries.yml@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       qualify-release-tag: true
