@@ -50,8 +50,8 @@ jobs:
       - name: Test release gate
         run: just release-gate-test
 
-      - name: Check justfile formatting
-        run: just --fmt --check
+      - name: Check formatting
+        run: just fmt-check
 
   lint:
     name: Lint
