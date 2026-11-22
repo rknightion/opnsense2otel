@@ -1,11 +1,11 @@
 package collector
 
 import (
-	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/common/promslog"
@@ -109,65 +109,74 @@ func TestLogEventStoreChannelIsLazy(t *testing.T) {
 // A control waiting behind a full idle queue must not lose every newly available
 // slot to observations, even when activation changes the queue it will use.
 func TestLogEventStoreWaitingControlSurvivesActivation(t *testing.T) {
-	s, releaseSnapshot := newStalledSnapshotStore(t, 1)
-	waiting := make(chan struct{})
-	resume := make(chan struct{})
-	var resumeOnce, waitingOnce sync.Once
-	t.Cleanup(func() { resumeOnce.Do(func() { close(resume) }) })
-	s.beforeControlWait = func() { waitingOnce.Do(func() { close(waiting) }); <-resume }
-	if !s.ObserveFirewall("pass", "wan", "first", "", "") {
-		t.Fatal("failed to fill idle queue")
-	}
-	done := make(chan struct{})
-	go func() { s.SetMaxKeys(1); close(done) }()
-	select {
-	case <-waiting:
-	case <-time.After(time.Second):
-		t.Fatal("control did not wait on full idle queue")
-	}
-	s.ActivateLogEventHandoff()
-	// Fill all but the slot promised to the waiting control. The owner is still
-	// stalled, so this does not depend on goroutine scheduling.
-	for range cap(s.active) - 1 {
+	synctest.Test(t, func(t *testing.T) {
+		s, releaseSnapshot := newStalledSnapshotStore(t, 1)
+		waiting := make(chan struct{})
+		resume := make(chan struct{})
+		var resumeOnce, waitingOnce sync.Once
+		t.Cleanup(func() { resumeOnce.Do(func() { close(resume) }) })
+		s.beforeControlWait = func() {
+			waitingOnce.Do(func() { close(waiting) })
+			<-resume
+		}
 		if !s.ObserveFirewall("pass", "wan", "first", "", "") {
-			t.Fatal("observation refused before reaching the reserved slot")
+			t.Fatal("failed to fill idle queue")
 		}
-	}
-	if s.ObserveFirewall("pass", "wan", "competitor", "", "") {
-		t.Fatal("observation overtook a waiting control after activation")
-	}
-	resumeOnce.Do(func() { close(resume) })
-	// Admission fills the last slot while the owner is still stalled.
-	deadline := time.After(time.Second)
-	for len(s.active) != cap(s.active) {
+		done := make(chan struct{})
+		go func() { s.SetMaxKeys(1); close(done) }()
+		synctest.Wait()
 		select {
-		case <-deadline:
-			t.Fatal("waiting control was not admitted to the activated queue")
+		case <-waiting:
 		default:
-			runtime.Gosched()
+			t.Fatal("control did not wait on full idle queue")
 		}
-	}
-	if s.ObserveFirewall("pass", "wan", "second", "", "") {
-		t.Fatal("observation accepted into the full activated queue")
-	}
-	releaseSnapshot()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("control did not complete")
-	}
-	if !s.ObserveFirewall("pass", "wan", "second", "", "") {
-		t.Fatal("post-control observation refused")
-	}
-	snap, ok := s.snapshot()
-	if !ok || len(snap.fw) != 1 || snap.fw[0].k.ruleID != "first" || snap.fw[0].v != float64(cap(s.active)) {
-		t.Fatalf("handoff reordered accepted commands: %+v", snap.fw)
-	}
-	for _, sat := range snap.sat {
-		if sat.family == logFamilyFirewall && sat.capped != 1 {
-			t.Fatalf("post-control overflow = %v, want 1", sat.capped)
+		s.ActivateLogEventHandoff()
+		// Fill all but the slot promised to the waiting control while the owner
+		// is stalled.
+		for range cap(s.active) - 1 {
+			if !s.ObserveFirewall("pass", "wan", "first", "", "") {
+				t.Fatal("observation refused before reaching the reserved slot")
+			}
 		}
-	}
+		if s.ObserveFirewall("pass", "wan", "competitor", "", "") {
+			t.Fatal("observation overtook a waiting control after activation")
+		}
+		resumeOnce.Do(func() { close(resume) })
+		synctest.Wait()
+		// Admission fills the last slot while the owner is still stalled.
+		if len(s.active) != cap(s.active) {
+			t.Fatal("waiting control was not admitted to the activated queue")
+		}
+		if s.ObserveFirewall("pass", "wan", "second", "", "") {
+			t.Fatal("observation accepted into the full activated queue")
+		}
+		select {
+		case <-done:
+			t.Fatal("control returned before the owner could apply it")
+		default:
+		}
+		releaseSnapshot()
+		// The owner has a full queue to drain before acknowledging the control.
+		// Wait for the work to settle independently of available CPU time.
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Fatal("control did not complete")
+		}
+		if !s.ObserveFirewall("pass", "wan", "second", "", "") {
+			t.Fatal("post-control observation refused")
+		}
+		snap, ok := s.snapshot()
+		if !ok || len(snap.fw) != 1 || snap.fw[0].k.ruleID != "first" || snap.fw[0].v != float64(cap(s.active)) {
+			t.Fatalf("handoff reordered accepted commands: %+v", snap.fw)
+		}
+		for _, sat := range snap.sat {
+			if sat.family == logFamilyFirewall && sat.capped != 1 {
+				t.Fatalf("post-control overflow = %v, want 1", sat.capped)
+			}
+		}
+	})
 }
 
 func TestLogEventStoreControlClaimsReservedSlotDespiteDequeue(t *testing.T) {
