@@ -218,3 +218,12 @@ func routingSnapshot(gateway string, status opnsense.GatewayStatusType) RoutingS
 		}},
 	}
 }
+
+func TestRoutingChangeRedactionHandlesPropertyValuePairs(t *testing.T) {
+	event := map[string]any{"nested": []any{map[string]any{"property": "oinkcode", "value": "synthetic"}}}
+	redactRoutingChangeValue(event)
+	pair := event["nested"].([]any)[0].(map[string]any)
+	if _, ok := pair["value"]; ok {
+		t.Fatalf("value of a sensitive property survived: %v", pair)
+	}
+}

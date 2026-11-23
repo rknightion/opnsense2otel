@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/rknightion/opnsense2otel/v5/internal/redact"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
@@ -152,6 +153,7 @@ func securityPostureAPIKeyOwners(owners []opnsense.APIKeyOwner) []securityPostur
 func redactSecurityPostureConfig(value any) {
 	switch value := value.(type) {
 	case map[string]any:
+		redact.ConfigPropertyValue(value)
 		for key, child := range value {
 			if opnsense.SensitiveConfigKey(key) {
 				delete(value, key)

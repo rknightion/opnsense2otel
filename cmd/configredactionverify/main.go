@@ -8,12 +8,19 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
-const redactionMarker = "[redacted]"
+const (
+	redactionMarker = "[redacted]"
+	noNewlineLine   = "\\ No newline at end of file"
+	truncationLine  = "[config diff truncated at 192 KiB]"
+)
+
+var hunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@`)
 
 type request struct {
 	ConfigChange []string `json:"configchange"`
@@ -68,26 +75,31 @@ func verify(input request) result {
 	return result
 }
 
-// verifyConfigChange mirrors the redactor's diff-line discipline. Unified
-// diffs are not XML documents, so a general XML decoder would reject valid
-// input. Instead this scanner insists every sensitive element emitted on an
-// added or removed line contains only the source's exact marker. It rejects
-// malformed tags rather than treating an unscannable body as clean.
+// verifyConfigChange applies the redactor's rules to delivered output without
+// sharing its code, so a defect in one is not a blind spot in the other. Unified
+// diffs are not XML documents, so a general XML decoder would reject valid input.
+// Each side of each hunk is scanned separately. A sensitive element, or a value
+// with no visible property directly before it, must hold only the exact marker,
+// and so must text that no open element owns. Anything unscannable fails.
 func verifyConfigChange(body string) (bool, int) {
 	if strings.TrimSpace(body) == "" {
 		return false, 0
 	}
-	seenXML := false
-	openTag := ""
-	var openPrefix byte
+	lines := strings.Split(body, "\n")
+	var old, updated diffSide
+	seenXML, inHunk := false, false
 	sensitive := 0
-	for _, line := range strings.Split(body, "\n") {
-		if strings.HasPrefix(line, "@@") {
-			openTag = ""
+	for i, line := range lines {
+		if header := hunkHeader.FindString(line); header != "" {
+			if rest := strings.TrimSpace(line[len(header):]); rest != "" && rest != redactionMarker {
+				return false, sensitive
+			}
+			inHunk = true
+			old, updated = diffSide{}, diffSide{}
 			continue
 		}
-		if strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- ") ||
-			strings.HasPrefix(line, "+++\t") || strings.HasPrefix(line, "---\t") {
+		if line == noNewlineLine || (!inHunk && isFileHeader(lines, i)) ||
+			(i == len(lines)-1 && line == truncationLine) {
 			continue
 		}
 		prefix := byte(0)
@@ -95,79 +107,179 @@ func verifyConfigChange(body string) (bool, int) {
 		if len(line) > 0 && (line[0] == '+' || line[0] == '-' || line[0] == ' ') {
 			prefix, lineBody = line[0], line[1:]
 		}
-		if openTag != "" && prefix != openPrefix {
-			openTag = ""
+		var clean, saw bool
+		var count int
+		switch prefix {
+		case '-':
+			clean, saw, count = old.scan(lineBody)
+		case '+':
+			clean, saw, count = updated.scan(lineBody)
+		default:
+			oldClean, oldSaw, oldCount := old.scan(lineBody)
+			newClean, newSaw, newCount := updated.scan(lineBody)
+			clean, saw, count = oldClean && newClean, oldSaw || newSaw, max(oldCount, newCount)
 		}
-		clean, saw, nextOpen, count := verifyConfigChangeLine(lineBody, openTag)
+		sensitive += count
 		if !clean {
-			return false, sensitive + count
+			return false, sensitive
 		}
 		seenXML = seenXML || saw
-		sensitive += count
-		openTag = nextOpen
-		openPrefix = prefix
 	}
 	return seenXML, sensitive
 }
 
-func verifyConfigChangeLine(line, openTag string) (clean, sawXML bool, nextOpen string, sensitive int) {
-	for cursor := 0; cursor < len(line); {
-		if openTag != "" {
-			closing := "</" + openTag + ">"
-			end := strings.Index(line[cursor:], closing)
-			if end < 0 {
-				return line[cursor:] == redactionMarker, true, openTag, sensitive
-			}
-			if line[cursor:cursor+end] != redactionMarker {
-				return false, true, openTag, sensitive
-			}
-			cursor += end + len(closing)
-			openTag = ""
-			continue
-		}
-		start := strings.IndexByte(line[cursor:], '<')
-		if start < 0 {
-			return true, sawXML, "", sensitive
-		}
-		cursor += start
-		end := strings.IndexByte(line[cursor:], '>')
-		if end < 0 {
-			return false, true, "", sensitive
-		}
-		tag := line[cursor : cursor+end+1]
-		cursor += end + 1
-		sawXML = true
-		name, opening := xmlOpeningName(tag)
-		if !opening {
-			continue
-		}
-		if opnsense.SensitiveConfigKey(name) {
-			sensitive++
-			openTag = name
-		}
+func isFileHeader(lines []string, i int) bool {
+	oldHeader := func(line string) bool {
+		return strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "---\t")
 	}
-	// The source leaves an opening tag at the end of a line intact and
-	// redacts its value on following lines. No value was present to inspect.
-	return true, sawXML, openTag, sensitive
+	newHeader := func(line string) bool {
+		return strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "+++\t")
+	}
+	if oldHeader(lines[i]) {
+		return i+1 < len(lines) && newHeader(lines[i+1])
+	}
+	return newHeader(lines[i]) && i > 0 && oldHeader(lines[i-1])
 }
 
-func xmlOpeningName(tag string) (string, bool) {
+// diffSide is the verifier's state for one side of one hunk.
+type diffSide struct {
+	sensitive    string
+	text         string
+	valueVisible bool
+}
+
+func (s *diffSide) scan(line string) (clean, sawXML bool, sensitive int) {
+	propertyOnLine := false
+	for cursor := 0; cursor < len(line); {
+		if s.sensitive != "" {
+			closing := "</" + s.sensitive + ">"
+			end := strings.Index(line[cursor:], closing)
+			if end < 0 {
+				return line[cursor:] == redactionMarker, true, sensitive
+			}
+			if line[cursor:cursor+end] != redactionMarker {
+				return false, true, sensitive
+			}
+			cursor += end + len(closing)
+			s.sensitive = ""
+			continue
+		}
+		start, end := nextTag(line, cursor)
+		text := line[cursor:start]
+		tag := ""
+		if end >= 0 {
+			tag = line[start:end]
+		}
+		kind, name := classifyTag(tag)
+		if trimmed := strings.TrimSpace(text); trimmed != "" &&
+			(s.text == "" || (kind == tagClose && name != s.text)) {
+			if trimmed != redactionMarker {
+				return false, sawXML, sensitive
+			}
+			// A hunk wholly inside a value has no tags, only markers.
+			sawXML = true
+			s.text, s.valueVisible = "", false
+		}
+		if end < 0 {
+			return start == len(line), sawXML, sensitive
+		}
+		cursor = end
+		sawXML = true
+		valueVisible := s.valueVisible
+		s.valueVisible = false
+		switch kind {
+		case tagMarkup:
+			propertyOnLine = false
+			if s.text == "" {
+				return false, true, sensitive
+			}
+		case tagClose:
+			if propertyOnLine && name == s.text && strings.EqualFold(name, "property") {
+				property := strings.TrimSpace(text)
+				s.valueVisible = property != "" && !opnsense.SensitiveConfigKey(property)
+			}
+			s.text = ""
+		case tagSelfClosing:
+			s.text = ""
+		default:
+			s.text = ""
+			if opnsense.SensitiveConfigKey(name) || (strings.EqualFold(name, "value") && !valueVisible) {
+				sensitive++
+				s.sensitive = name
+			} else {
+				s.text = name
+				propertyOnLine = strings.EqualFold(name, "property")
+			}
+		}
+	}
+	return true, sawXML, sensitive
+}
+
+type tagKind int
+
+const (
+	tagInvalid tagKind = iota
+	tagMarkup
+	tagOpen
+	tagClose
+	tagSelfClosing
+)
+
+// nextTag returns the next well-formed tag at or after from. Without one, end is
+// -1 and start is the unterminated '<', or len(line) when there is none.
+func nextTag(line string, from int) (start, end int) {
+	for search := from; ; {
+		lt := strings.IndexByte(line[search:], '<')
+		if lt < 0 {
+			return len(line), -1
+		}
+		start = search + lt
+		gt := strings.IndexByte(line[start:], '>')
+		if gt < 0 {
+			return start, -1
+		}
+		gt += start
+		start += strings.LastIndexByte(line[start:gt], '<')
+		if kind, _ := classifyTag(line[start : gt+1]); kind != tagInvalid {
+			return start, gt + 1
+		}
+		search = gt + 1
+	}
+}
+
+func classifyTag(tag string) (tagKind, string) {
 	if len(tag) < 3 || tag[0] != '<' || tag[len(tag)-1] != '>' {
-		return "", false
+		return tagInvalid, ""
 	}
-	inner := strings.TrimSpace(tag[1 : len(tag)-1])
-	if inner == "" || strings.HasPrefix(inner, "/") || strings.HasPrefix(inner, "!") ||
-		strings.HasPrefix(inner, "?") || strings.HasSuffix(inner, "/") {
-		return "", false
+	inner := tag[1 : len(tag)-1]
+	kind := tagOpen
+	switch {
+	case inner[0] == '!' || inner[0] == '?':
+		return tagMarkup, ""
+	case inner[0] == '/':
+		kind, inner = tagClose, strings.TrimRight(inner[1:], " \t")
+	case inner[len(inner)-1] == '/':
+		kind, inner = tagSelfClosing, inner[:len(inner)-1]
 	}
-	name := inner
-	if cut := strings.IndexAny(name, " \t\r\n"); cut >= 0 {
-		name = name[:cut]
+	if cut := strings.IndexAny(inner, " \t"); cut >= 0 {
+		if kind == tagClose {
+			return tagInvalid, ""
+		}
+		inner = inner[:cut]
 	}
-	if name == "" || strings.ContainsAny(name, "<>\"'") {
-		return "", false
+	for i := 0; i < len(inner); i++ {
+		c := inner[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_', c == ':', c >= 0x80:
+		case i > 0 && (c >= '0' && c <= '9' || c == '-' || c == '.'):
+		default:
+			return tagInvalid, ""
+		}
 	}
-	return name, true
+	if inner == "" {
+		return tagInvalid, ""
+	}
+	return kind, inner
 }
 
 func verifyConfigState(body string) (bool, int) {
@@ -199,7 +311,9 @@ func verifyConfigStateToken(decoder *json.Decoder, token json.Token) (bool, int,
 	}
 	seen := make(map[string]bool)
 	clean, sensitive := true, 0
+	hasProperty, hasValue, propertyVisible := false, false, true
 	for decoder.More() {
+		isProperty := false
 		if delim == '{' {
 			keyToken, err := decoder.Token()
 			key, ok := keyToken.(string)
@@ -211,10 +325,19 @@ func verifyConfigStateToken(decoder *json.Decoder, token json.Token) (bool, int,
 				clean = false
 				sensitive++
 			}
+			isProperty = strings.EqualFold(key, "property")
+			hasValue = hasValue || strings.EqualFold(key, "value")
 		}
 		child, err := decoder.Token()
 		if err != nil {
 			return false, sensitive, err
+		}
+		if isProperty {
+			hasProperty = true
+			name, ok := child.(string)
+			if !ok || strings.TrimSpace(name) == "" || opnsense.SensitiveConfigKey(name) {
+				propertyVisible = false
+			}
 		}
 		childClean, childSensitive, err := verifyConfigStateToken(decoder, child)
 		sensitive += childSensitive
@@ -222,6 +345,10 @@ func verifyConfigStateToken(decoder *json.Decoder, token json.Token) (bool, int,
 			return false, sensitive, err
 		}
 		clean = clean && childClean
+	}
+	if hasProperty && hasValue && !propertyVisible {
+		clean = false
+		sensitive++
 	}
 	closing, err := decoder.Token()
 	if err != nil || (delim == '{' && closing != json.Delim('}')) || (delim == '[' && closing != json.Delim(']')) {

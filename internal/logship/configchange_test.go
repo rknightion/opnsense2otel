@@ -126,7 +126,7 @@ func TestConfigChangeSource_EmitsNewRevisionExactlyOnce(t *testing.T) {
 
 func TestConfigChangeSource_PollEmitsFixedSchemaObservationWithoutDiffContent(t *testing.T) {
 	t0 := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
-	const diff = "- old secret-shaped but synthetic content\n+ changed content\n"
+	const diff = "-<descr>old secret-shaped but synthetic content</descr>\n+<descr>changed content</descr>\n"
 	fetcher := &fakeConfigChangeFetcher{
 		revisions: []ConfigChangeRevision{
 			{ID: "config-r1.xml", Timestamp: t0},

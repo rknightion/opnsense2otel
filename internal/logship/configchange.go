@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -352,24 +353,38 @@ const configChangeRedactionMarker = "[redacted]"
 // had its secrets removed, and so the truncation bound is measured against what
 // is actually shipped.
 //
-// The scanner tracks an element left open at the end of a line to handle
-// multiline XML values. Diff prefixes may change while the element remains
-// open. Each side has its own state: a removed closing tag does not close the
-// added value. Context lines are scrubbed against both sides, and a hunk header
-// clears both. Over-redaction is the safe direction here.
+// The scanner works per side of the diff, because a removed closing tag does not
+// close the added value, and context lines are scrubbed against both sides. A
+// hunk header clears both: the unified context window can begin or end inside a
+// multi-line value, so its opening tag may simply not be in the hunk. Text is
+// therefore shipped only when the element holding it is known. Anything else is
+// replaced with the marker, and a generic <value> needs the <property> directly
+// before it to be visible and not name a credential. Over-redaction is the safe
+// direction here.
 func redactConfigChangeDiff(diff string) string {
 	lines := strings.Split(diff, "\n")
 	var (
-		b              strings.Builder
-		oldTag, newTag string
+		b        strings.Builder
+		old, new configDiffSide
+		inHunk   bool
 	)
 	b.Grow(len(diff))
 	for i, line := range lines {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		if strings.HasPrefix(line, "@@") {
-			oldTag, newTag = "", ""
+		if header := configDiffHunkHeader.FindString(line); header != "" {
+			inHunk = true
+			old, new = configDiffSide{}, configDiffSide{}
+			b.WriteString(header)
+			// Text after the range is a copied source line, not diff structure.
+			if strings.TrimSpace(line[len(header):]) != "" {
+				b.WriteByte(' ')
+				b.WriteString(configChangeRedactionMarker)
+			}
+			continue
+		}
+		if line == configDiffNoNewlineLine || (!inHunk && isConfigDiffFileHeader(lines, i)) {
 			b.WriteString(line)
 			continue
 		}
@@ -381,13 +396,12 @@ func redactConfigChangeDiff(diff string) string {
 		var redacted string
 		switch prefix {
 		case '-':
-			redacted, oldTag = redactConfigDiffBody(body, oldTag)
+			redacted = old.redact(body)
 		case '+':
-			redacted, newTag = redactConfigDiffBody(body, newTag)
+			redacted = new.redact(body)
 		default:
-			var oldBody, newBody string
-			oldBody, oldTag = redactConfigDiffBody(body, oldTag)
-			newBody, newTag = redactConfigDiffBody(body, newTag)
+			oldBody := old.redact(body)
+			newBody := new.redact(body)
 			switch {
 			case oldBody == newBody, newBody == body:
 				redacted = oldBody
@@ -407,53 +421,194 @@ func redactConfigChangeDiff(diff string) string {
 	return b.String()
 }
 
-// redactConfigDiffBody redacts one diff line's content, carrying in and out the
-// name of a sensitive element left unterminated by the previous line.
-func redactConfigDiffBody(body, openTag string) (string, string) {
+// configDiffNoNewlineLine is the one diff line that is neither content nor a
+// header. Matching it exactly keeps any other backslash line under redaction.
+const configDiffNoNewlineLine = "\\ No newline at end of file"
+
+var configDiffHunkHeader = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@`)
+
+// isConfigDiffFileHeader recognises only an adjacent ---/+++ pair. A removed
+// line whose content starts with "-- " has the same first characters, so the
+// caller also requires that no hunk has started.
+func isConfigDiffFileHeader(lines []string, i int) bool {
+	isOld := func(line string) bool {
+		return strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "---\t")
+	}
+	isNew := func(line string) bool {
+		return strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "+++\t")
+	}
+	if isOld(lines[i]) {
+		return i+1 < len(lines) && isNew(lines[i+1])
+	}
+	return isNew(lines[i]) && i > 0 && isOld(lines[i-1])
+}
+
+// configDiffSide is the scanner state for one side of one hunk.
+type configDiffSide struct {
+	// sensitive names a credential element left open by an earlier line.
+	sensitive string
+	// text names the ordinary element whose text is being read. It is empty
+	// after any closing tag, so text between elements is never attributed to a
+	// parent.
+	text string
+	// valueVisible is set only by a complete, visible, non-sensitive
+	// <property> and is spent by the next tag of any kind.
+	valueVisible bool
+}
+
+// redact rewrites one diff line's content and advances the side's state.
+func (s *configDiffSide) redact(body string) string {
 	var b strings.Builder
+	propertyOnLine := false
 	for i := 0; i < len(body); {
-		if openTag != "" {
-			closing := "</" + openTag + ">"
+		if s.sensitive != "" {
+			closing := "</" + s.sensitive + ">"
+			b.WriteString(configChangeRedactionMarker)
 			idx := strings.Index(body[i:], closing)
 			if idx < 0 {
-				b.WriteString(configChangeRedactionMarker)
-				return b.String(), openTag
+				return b.String()
 			}
-			b.WriteString(configChangeRedactionMarker)
 			b.WriteString(closing)
 			i += idx + len(closing)
-			openTag = ""
+			s.sensitive = ""
 			continue
 		}
-		lt := strings.IndexByte(body[i:], '<')
-		if lt < 0 {
-			b.WriteString(body[i:])
-			break
-		}
-		b.WriteString(body[i : i+lt])
-		i += lt
-		gt := strings.IndexByte(body[i:], '>')
-		if gt < 0 {
-			b.WriteString(body[i:])
-			break
-		}
-		tag := body[i : i+gt+1]
-		b.WriteString(tag)
-		i += gt + 1
 
-		name := strings.TrimSuffix(strings.TrimPrefix(tag, "<"), ">")
-		// A closing, self-closing, comment or processing-instruction tag opens
-		// nothing, so none of them can start a sensitive element.
-		if name == "" || strings.HasPrefix(name, "/") || strings.HasPrefix(name, "!") ||
-			strings.HasPrefix(name, "?") || strings.HasSuffix(name, "/") {
+		start, end := nextConfigDiffTag(body, i)
+		text := body[i:start]
+		tag := ""
+		if end >= 0 {
+			tag = body[start:end]
+		}
+		kind, name := parseConfigDiffTag(tag)
+		if strings.TrimSpace(text) != "" &&
+			(s.text == "" || (kind == configDiffTagClose && name != s.text)) {
+			// Text with no known owner may be the tail of a value whose opening
+			// tag is outside this hunk. Anything up to the next closing tag can
+			// belong to that value, including characters that look like a tag.
+			b.WriteString(text[:len(text)-len(strings.TrimLeft(text, " \t"))])
+			b.WriteString(configChangeRedactionMarker)
+			s.text, s.valueVisible = "", false
+			closing := strings.Index(body[start:], "</")
+			if closing < 0 {
+				return b.String()
+			}
+			i = start + closing
 			continue
 		}
-		if cut := strings.IndexAny(name, " \t"); cut >= 0 {
-			name = name[:cut]
+		b.WriteString(text)
+		if end < 0 {
+			if start < len(body) {
+				// An unterminated tag cannot be classified.
+				b.WriteString(configChangeRedactionMarker)
+			}
+			return b.String()
 		}
-		if opnsense.SensitiveConfigKey(name) {
-			openTag = name
+		i = end
+
+		valueVisible := s.valueVisible
+		s.valueVisible = false
+		switch kind {
+		case configDiffTagMarkup:
+			// Comments and character data carry text of their own.
+			propertyOnLine = false
+			if s.text == "" {
+				b.WriteString(configChangeRedactionMarker)
+			} else {
+				b.WriteString(tag)
+			}
+		case configDiffTagClose:
+			b.WriteString(tag)
+			if propertyOnLine && name == s.text && strings.EqualFold(name, "property") {
+				property := strings.TrimSpace(text)
+				s.valueVisible = property != "" && !opnsense.SensitiveConfigKey(property)
+			}
+			s.text = ""
+		case configDiffTagSelfClosing:
+			b.WriteString(tag)
+			s.text = ""
+		default:
+			b.WriteString(tag)
+			s.text = ""
+			if opnsense.SensitiveConfigKey(name) || (strings.EqualFold(name, "value") && !valueVisible) {
+				s.sensitive = name
+			} else {
+				s.text = name
+				propertyOnLine = strings.EqualFold(name, "property")
+			}
 		}
 	}
-	return b.String(), openTag
+	return b.String()
+}
+
+type configDiffTagKind int
+
+const (
+	configDiffTagInvalid configDiffTagKind = iota
+	configDiffTagMarkup
+	configDiffTagOpen
+	configDiffTagClose
+	configDiffTagSelfClosing
+)
+
+// nextConfigDiffTag returns the bounds of the next well-formed tag at or after
+// from. Without one, end is -1 and start is the unterminated '<', or len(body)
+// when there is none. A '<' that does not begin a tag is left as text.
+func nextConfigDiffTag(body string, from int) (start, end int) {
+	for search := from; ; {
+		lt := strings.IndexByte(body[search:], '<')
+		if lt < 0 {
+			return len(body), -1
+		}
+		start = search + lt
+		gt := strings.IndexByte(body[start:], '>')
+		if gt < 0 {
+			return start, -1
+		}
+		gt += start
+		start += strings.LastIndexByte(body[start:gt], '<')
+		if kind, _ := parseConfigDiffTag(body[start : gt+1]); kind != configDiffTagInvalid {
+			return start, gt + 1
+		}
+		search = gt + 1
+	}
+}
+
+func parseConfigDiffTag(tag string) (configDiffTagKind, string) {
+	if len(tag) < 3 || tag[0] != '<' || tag[len(tag)-1] != '>' {
+		return configDiffTagInvalid, ""
+	}
+	inner := tag[1 : len(tag)-1]
+	kind := configDiffTagOpen
+	switch {
+	case inner[0] == '!' || inner[0] == '?':
+		return configDiffTagMarkup, ""
+	case inner[0] == '/':
+		kind, inner = configDiffTagClose, strings.TrimRight(inner[1:], " \t")
+	case inner[len(inner)-1] == '/':
+		kind, inner = configDiffTagSelfClosing, inner[:len(inner)-1]
+	}
+	if cut := strings.IndexAny(inner, " \t"); cut >= 0 {
+		if kind == configDiffTagClose {
+			return configDiffTagInvalid, ""
+		}
+		inner = inner[:cut]
+	}
+	if !validConfigDiffTagName(inner) {
+		return configDiffTagInvalid, ""
+	}
+	return kind, inner
+}
+
+func validConfigDiffTagName(name string) bool {
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_', c == ':', c >= 0x80:
+		case i > 0 && (c >= '0' && c <= '9' || c == '-' || c == '.'):
+		default:
+			return false
+		}
+	}
+	return name != ""
 }

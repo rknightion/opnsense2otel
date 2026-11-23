@@ -249,12 +249,76 @@ func TestSensitiveConfigKey(t *testing.T) {
 		{key: "community_id", want: false},
 		{key: "community_name", want: false},
 		{key: "remoteCommunity", want: false},
+		{key: "eab_hmac", want: true},
+		{key: "dns_netcup_pw", want: true},
+		{key: "dns_namecheap_api", want: true},
+		{key: "dns_dnsexit_api", want: true},
+		{key: "dns_dnsexit_auth_pass", want: true},
+		{key: "dns_pleskxml_pass", want: true},
+		{key: "dns_kas_authdata", want: true},
+		{key: "dns_wedos_wapipass", want: true},
+		{key: "acme_ruckus_pass", want: true},
+		{key: "acme_synology_dsm_otpcode", want: true},
+		{key: "rules_oinkcode", want: true},
+		{key: "api", want: true},
+		{key: "bypass", want: false},
+		{key: "compass", want: false},
+		{key: "api_url", want: false},
+		{key: "api_version", want: false},
+		{key: "rapid", want: false},
+		{key: "dnsNetcupPw", want: true},
+		{key: "eabHmac", want: true},
+		{key: "dnsDnsexitAuthPass", want: true},
+		{key: "acmeSynologyDsmOtpcode", want: true},
+		{key: "dnsNamecheapApi", want: true},
+		{key: "dnsNamecheapAPI", want: true},
+		{key: "dns2Pw", want: true},
+		{key: "dnsPWField", want: true},
+		{key: "dnsKasAuthData", want: true},
+		{key: "dsmOtpCode", want: true},
+		{key: "AuThDaTa", want: true},
+		{key: "apiUrl", want: false},
+		{key: "hwbypass", want: false},
+		{key: "privateaddress", want: false},
+		{key: "pwd_changed_at", want: false},
+		{key: "KeyExpiry", want: false},
+		{key: "keyExpiry", want: false},
+		{key: "kEyExpiry", want: false},
+		{key: "dnsCfKey", want: true},
+		{key: "publicKey", want: false},
+		{key: "peerPublicKey", want: false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {
 			if got := SensitiveConfigKey(tc.key); got != tc.want {
 				t.Errorf("SensitiveConfigKey(%q) = %t, want %t", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRedactConfigSnapshotFieldsHandlesPropertyValuePairs(t *testing.T) {
+	cases := []struct {
+		name      string
+		row       map[string]any
+		wantValue bool
+	}{
+		{name: "sensitive property", row: map[string]any{"property": "oinkcode", "value": "synthetic"}},
+		{name: "non-string property", row: map[string]any{"property": 1, "value": "synthetic"}},
+		{name: "blank property", row: map[string]any{"property": " ", "value": "synthetic"}},
+		{name: "capitalised keys", row: map[string]any{"Property": "oinkcode", "Value": "synthetic"}},
+		{name: "visible property", row: map[string]any{"property": "ruleset", "value": "synthetic"}, wantValue: true},
+		{name: "value without a property", row: map[string]any{"value": "synthetic"}, wantValue: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped := map[string]any{"nested": []any{tc.row}}
+			redactConfigSnapshotFields(wrapped)
+			_, lower := tc.row["value"]
+			_, upper := tc.row["Value"]
+			if got := lower || upper; got != tc.wantValue {
+				t.Fatalf("value kept = %t, want %t: %v", got, tc.wantValue, tc.row)
 			}
 		})
 	}
