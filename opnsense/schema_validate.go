@@ -34,6 +34,9 @@ type ValidationResult struct {
 	UnknownTopKeys []string
 	UnknownPaths   []string
 	Unverified     []string
+	// Facts records structure-only counts of the payload as served, before any
+	// normalisation. It never holds a response value.
+	Facts PayloadFacts
 }
 
 // Clean reports whether the response matched the schema with no drift signals.
@@ -410,6 +413,7 @@ func ValidateResponseSchema(s EndpointSchema, raw []byte, ex SchemaExemption) (V
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return res, fmt.Errorf("response is not valid JSON: %w", err)
 	}
+	res.Facts = payloadFactsFor(EndpointName(s.Endpoint), root)
 
 	// Strip rows the API CLIENT discards as synthetic before validating, so the
 	// probe and the client see the same records (#618). Without this the canary

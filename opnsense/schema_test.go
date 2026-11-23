@@ -158,10 +158,10 @@ func TestSchemasUpToDate(t *testing.T) {
 		t.Fatalf("AllEndpointSchemas: %v", err)
 	}
 	// Committed non-golden files that live alongside the goldens: the compat
-	// ledger and the live-coverage ledger (#377). Neither is generated, so
+	// ledger, the live-coverage ledger (#377) and the known-blocked ledger. Neither is generated, so
 	// neither may be reported as an orphan (nor removed by `just schemas` — see
 	// the matching allowlist in cmd/apischema).
-	seen := map[string]bool{"exemptions.json": true, "coverage.json": true}
+	seen := map[string]bool{"exemptions.json": true, "coverage.json": true, "known-blocked.json": true}
 	for _, s := range schemas {
 		name := s.Endpoint + ".json"
 		seen[name] = true

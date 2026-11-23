@@ -1,0 +1,92 @@
+{
+  "ipsecPhase1": {
+    "paths": [
+      {
+        "path": "rows[].install-time",
+        "profiles": {
+          "nightly": {
+            "reason": "The only lab IPsec tunnel is a road-warrior PSK connection that the traffgen container dials into this firewall, so a live SA comes and goes between runs. The latest nightly report resolved every other required phase 1 path and left only install-time unverified. OPNsense's searchPhase1Action leaves install-time null on a row with no child SA. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A live IKE SA with traffic through it at probe time (swanctl --list-sas shows it), kept up across box restarts. The entries are intermittent, so a run that finds the tunnel up shows them as verified without warning; prune them once the tunnel is reliably held.",
+            "requires": "ipsec-down",
+            "intermittent": true
+          },
+          "release-vm": {
+            "reason": "The coverage ledger records that this release-channel firewall has no IPsec peer. The latest release-vm report resolved every other required phase 1 path and left only install-time unverified. OPNsense's searchPhase1Action leaves install-time null on a row with no child SA. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A second connection profile from the traffgen container to the release-channel firewall, with a matching tunnel and PSK, established and carrying traffic (confirm with swanctl --list-sas on the box) so that api/ipsec/sessions/search_phase1 returns a connected row with a child SA.",
+            "requires": "ipsec-down"
+          }
+        }
+      }
+    ]
+  },
+  "ipsecSad": {
+    "paths": [
+      {
+        "path": "rows[].satype",
+        "profiles": {
+          "nightly": {
+            "reason": "The only lab IPsec tunnel is a road-warrior PSK connection that the traffgen container dials into this firewall, so a live SA comes and goes between runs. The latest nightly report left every SAD row path unverified. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A live IKE SA with traffic through it at probe time (swanctl --list-sas shows it), kept up across box restarts. The entries are intermittent, so a run that finds the tunnel up shows them as verified without warning; prune them once the tunnel is reliably held.",
+            "requires": "ipsec-down",
+            "intermittent": true
+          },
+          "release-vm": {
+            "reason": "The coverage ledger records that this release-channel firewall has no IPsec peer. The latest release-vm report left every SAD row path unverified. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A second connection profile from the traffgen container to the release-channel firewall, with a matching tunnel and PSK, established and carrying traffic (confirm with swanctl --list-sas on the box) so that api/ipsec/sessions/search_phase1 returns a connected row with a child SA.",
+            "requires": "ipsec-down"
+          }
+        }
+      },
+      {
+        "path": "rows[].spi",
+        "profiles": {
+          "nightly": {
+            "reason": "The only lab IPsec tunnel is a road-warrior PSK connection that the traffgen container dials into this firewall, so a live SA comes and goes between runs. The latest nightly report left every SAD row path unverified. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A live IKE SA with traffic through it at probe time (swanctl --list-sas shows it), kept up across box restarts. The entries are intermittent, so a run that finds the tunnel up shows them as verified without warning; prune them once the tunnel is reliably held.",
+            "requires": "ipsec-down",
+            "intermittent": true
+          },
+          "release-vm": {
+            "reason": "The coverage ledger records that this release-channel firewall has no IPsec peer. The latest release-vm report left every SAD row path unverified. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A second connection profile from the traffgen container to the release-channel firewall, with a matching tunnel and PSK, established and carrying traffic (confirm with swanctl --list-sas on the box) so that api/ipsec/sessions/search_phase1 returns a connected row with a child SA.",
+            "requires": "ipsec-down"
+          }
+        }
+      }
+    ]
+  },
+  "ipsecSpd": {
+    "paths": [
+      {
+        "path": "rows[].dir",
+        "profiles": {
+          "nightly": {
+            "reason": "The only lab IPsec tunnel is a road-warrior PSK connection that the traffgen container dials into this firewall, so a live SA comes and goes between runs. The latest nightly report left every SPD row path unverified. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A live IKE SA with traffic through it at probe time (swanctl --list-sas shows it), kept up across box restarts. The entries are intermittent, so a run that finds the tunnel up shows them as verified without warning; prune them once the tunnel is reliably held.",
+            "requires": "ipsec-down",
+            "intermittent": true
+          },
+          "release-vm": {
+            "reason": "The coverage ledger records that this release-channel firewall has no IPsec peer. The latest release-vm report left every SPD row path unverified. This entry holds only on a run where phase 1, the SAD and the SPD all show the tunnel down: phase 1 has a configured row with nothing connected or installed, the SAD has at most the synthetic No SAD entries placeholder, and the SPD has no rows.",
+            "unblockedBy": "A second connection profile from the traffgen container to the release-channel firewall, with a matching tunnel and PSK, established and carrying traffic (confirm with swanctl --list-sas on the box) so that api/ipsec/sessions/search_phase1 returns a connected row with a child SA.",
+            "requires": "ipsec-down"
+          }
+        }
+      }
+    ]
+  },
+  "zerotierNetworkInfo": {
+    "skipped": {
+      "nightly": {
+        "reason": "The endpoint takes a network configuration UUID that the prober reads from api/zerotier/network/search. That route answers 404 on this lab, so there is no UUID to probe with, and the exporter's own ZeroTier fetch returns at the same 404, so nothing here reaches the info route. This entry holds only on a run where zerotierNetworks answers 404.",
+        "unblockedBy": "Install os-zerotier on the box and configure at least one network, so that api/zerotier/network/search returns a row carrying a uuid.",
+        "requires": "absent:zerotierNetworks"
+      },
+      "release-vm": {
+        "reason": "The endpoint takes a network configuration UUID that the prober reads from api/zerotier/network/search. That route answers 404 on this lab, so there is no UUID to probe with, and the exporter's own ZeroTier fetch returns at the same 404, so nothing here reaches the info route. This entry holds only on a run where zerotierNetworks answers 404.",
+        "unblockedBy": "Install os-zerotier on the box and configure at least one network, so that api/zerotier/network/search returns a row carrying a uuid.",
+        "requires": "absent:zerotierNetworks"
+      }
+    }
+  }
+}
