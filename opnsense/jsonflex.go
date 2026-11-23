@@ -82,9 +82,24 @@ func (f *flexBool) UnmarshalJSON(data []byte) error {
 // flexInt is an int type whose JSON unmarshaling tolerates the shapes
 // OPNsense API variants use for numeric fields: a JSON number (123), a quoted
 // numeric string ("123"), a float, null, an empty string, or an empty array.
-// Unparseable values decode to 0 rather than failing the whole response
-// (observed on Kea lease "expire" across OPNsense versions — upstream #105).
+// A fractional or exponent form truncates toward zero and is decoded from its
+// digits, so a whole value in that form is exact above 2^53 where a float64
+// would round it. Unparseable values, and values outside the int range, decode
+// to 0 rather than failing the whole response or landing on a platform-dependent
+// integer (observed on Kea lease "expire" across OPNsense versions — upstream #105).
 type flexInt int
+
+// intRangeFloat is the magnitude of the smallest int, the first float64 past
+// the top of the int range.
+const intRangeFloat = float64(1 << (strconv.IntSize - 1))
+
+// isHexFloat reports whether s, after an optional sign, has a hex prefix.
+func isHexFloat(s string) bool {
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		s = s[1:]
+	}
+	return len(s) > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')
+}
 
 // Int returns the underlying int value.
 func (f flexInt) Int() int { return int(f) }
@@ -101,9 +116,20 @@ func (f *flexInt) UnmarshalJSON(data []byte) error {
 		*f = flexInt(n)
 		return nil
 	}
-	if fl, err := strconv.ParseFloat(s, 64); err == nil {
-		*f = flexInt(int(fl))
+	// One exact decision for every other numeric form, shared with the voucher
+	// expiry parser. It reports false outside the int range or for text that is
+	// not a decimal number, and both decode to 0.
+	if n, ok := parseExactDecimalInt(s); ok {
+		*f = flexInt(n)
 		return nil
+	}
+	// A hex float is the one other form ParseFloat accepts. Its range check runs
+	// on the float because the decimal parser above cannot read it.
+	if isHexFloat(s) {
+		if fl, err := strconv.ParseFloat(s, 64); err == nil && fl >= -intRangeFloat && fl < intRangeFloat {
+			*f = flexInt(int(fl))
+			return nil
+		}
 	}
 	*f = 0
 	return nil

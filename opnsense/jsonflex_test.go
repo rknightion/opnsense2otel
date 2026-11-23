@@ -2,6 +2,9 @@ package opnsense
 
 import (
 	"encoding/json"
+	"math"
+	"math/big"
+	"strconv"
 	"testing"
 )
 
@@ -135,6 +138,15 @@ func TestFlexStringMap_EmptyObject(t *testing.T) {
 	}
 }
 
+// The int range literals are derived from math so the table holds on a 32-bit
+// build as well as a 64-bit one.
+var (
+	maxIntLiteral     = strconv.Itoa(math.MaxInt)
+	minIntLiteral     = strconv.Itoa(math.MinInt)
+	pastMaxIntLiteral = new(big.Int).Add(big.NewInt(math.MaxInt), big.NewInt(1)).String()
+	pastMinIntLiteral = new(big.Int).Sub(big.NewInt(math.MinInt), big.NewInt(1)).String()
+)
+
 func TestFlexInt_UnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name string
@@ -148,6 +160,33 @@ func TestFlexInt_UnmarshalJSON(t *testing.T) {
 		{"empty string", `""`, 0},
 		{"empty array", `[]`, 0},
 		{"garbage string", `"never"`, 0},
+		{"plus sign", `"+5"`, 5},
+		{"negative", `-5`, -5},
+		{"fraction truncates toward zero", `1.9`, 1},
+		{"negative fraction truncates toward zero", `-1.9`, -1},
+		{"magnitude below one", `0.9`, 0},
+		{"exponent form", `1e3`, 1000},
+		{"quoted exponent form", `"1.5E3"`, 1500},
+		{"negative exponent", `2500e-2`, 25},
+		{"whole fraction above 2^53 is exact", `9007199254740993.0`, 9007199254740993},
+		{"quoted whole fraction above 2^53 is exact", `"9007199254740993.0"`, 9007199254740993},
+		{"exponent form above 2^53 is exact", `9.007199254740993e15`, 9007199254740993},
+		{"largest int in fraction form", maxIntLiteral + ".0", math.MaxInt},
+		{"smallest int in fraction form", minIntLiteral + ".0", math.MinInt},
+		{"largest int plain", maxIntLiteral, math.MaxInt},
+		{"one past the largest int, plain", maxIntLiteral + "0", 0},
+		{"one past the largest int, fraction form", pastMaxIntLiteral + ".0", 0},
+		{"one past the smallest int, fraction form", pastMinIntLiteral + ".0", 0},
+		{"exponent far out of range", `1e30`, 0},
+		{"negative exponent far out of range", `-1e30`, 0},
+		{"quoted out of range float", `"1e30"`, 0},
+		{"absurd exponent", `1e999999999999`, 0},
+		{"hex float", `"0x1p4"`, 16},
+		{"negative hex float truncates toward zero", `"-0x1.8p1"`, -3},
+		{"hex float out of range", `"0x1p80"`, 0},
+		{"negative hex float out of range", `"-0x1p80"`, 0},
+		{"not a decimal number", `"Inf"`, 0},
+		{"not a number float", `"NaN"`, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
