@@ -131,7 +131,7 @@ func (c *Client) FetchBPFStatistics() (BPFStatistics, *APICallError) {
 	if decodeErr != nil {
 		return data, &APICallError{
 			Endpoint:   string(url),
-			Message:    "failed to decode bpf-entry: " + decodeErr.Error(),
+			Message:    "failed to decode bpf-entry: " + decodeFailureReason(decodeErr),
 			StatusCode: 0,
 		}
 	}

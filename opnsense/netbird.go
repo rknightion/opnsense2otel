@@ -3,7 +3,6 @@ package opnsense
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -238,7 +237,7 @@ func (c *Client) FetchNetbirdStatus() (NetbirdStatus, *APICallError) {
 	if err := json.Unmarshal(trimmed, &obj); err != nil {
 		return data, &APICallError{
 			Endpoint:   "netbirdStatus",
-			Message:    fmt.Sprintf("failed to decode netbird status object: %s", err.Error()),
+			Message:    "failed to decode netbird status object: " + decodeFailureReason(err),
 			StatusCode: 0,
 		}
 	}

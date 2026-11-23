@@ -67,7 +67,7 @@ func (c *Client) FetchFirewallConfigSnapshots() ([]ConfigSnapshotEntity, *APICal
 		}
 		rows, err := configSnapshotRows(endpoint.kind, response.Rows)
 		if err != nil {
-			return nil, &APICallError{Endpoint: string(endpoint.name), Message: err.Error()}
+			return nil, &APICallError{Endpoint: string(endpoint.name), Message: "failed to decode " + endpoint.kind + " configuration rows: " + decodeFailureReason(err)}
 		}
 		entities = append(entities, rows...)
 	}

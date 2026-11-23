@@ -439,9 +439,8 @@ func voucherNames(values []*string) ([]string, bool) {
 
 // withoutVoucherResponseBody drops the message from an API error, keeping its
 // endpoint and status. A voucher row's username is a bearer credential (#227),
-// and the message can hold bytes the upstream sent: a failed response carries a
-// bounded slice of its body, and with status 0 Go's malformed-response transport
-// error quotes what it received. So no voucher error keeps its message.
+// and a voucher error must stay free of upstream bytes whatever a lower layer
+// reports. So no voucher error keeps its message.
 func withoutVoucherResponseBody(err *APICallError) *APICallError {
 	if err == nil {
 		return nil

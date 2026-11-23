@@ -324,7 +324,7 @@ func (c *Client) FetchCrowdSecAlerts() ([]CrowdSecAlert, *APICallError) {
 
 	var raw []crowdsecAlertRow
 	if jsonErr := json.Unmarshal(rows, &raw); jsonErr != nil {
-		c.log.Warn("crowdsec: failed to decode alerts rows; omitting", "err", jsonErr)
+		c.log.Warn("crowdsec: failed to decode alerts rows; omitting", "err", decodeFailureReason(jsonErr))
 		return nil, nil
 	}
 
@@ -365,7 +365,7 @@ func (c *Client) FetchCrowdSecDecisions() ([]CrowdSecDecision, *APICallError) {
 
 	var raw []crowdsecDecisionRow
 	if jsonErr := json.Unmarshal(rows, &raw); jsonErr != nil {
-		c.log.Warn("crowdsec: failed to decode decisions rows; omitting", "err", jsonErr)
+		c.log.Warn("crowdsec: failed to decode decisions rows; omitting", "err", decodeFailureReason(jsonErr))
 		return nil, nil
 	}
 
@@ -483,7 +483,7 @@ func (c *Client) FetchCrowdSecStatusWithHub(includeHub bool) (CrowdSecStatus, *A
 			// than reporting a fake zero (#104).
 			data.HasBouncers = false
 			c.log.Warn("crowdsec: failed to decode bouncers rows; omitting bouncers metrics",
-				"err", jsonErr)
+				"err", decodeFailureReason(jsonErr))
 		}
 	}
 
@@ -516,7 +516,7 @@ func (c *Client) FetchCrowdSecStatusWithHub(includeHub bool) (CrowdSecStatus, *A
 			// rather than emitting a false machines_total=0 (#104).
 			data.HasMachines = false
 			c.log.Warn("crowdsec: failed to decode machines rows; omitting machines metrics",
-				"err", jsonErr)
+				"err", decodeFailureReason(jsonErr))
 		}
 	}
 
@@ -545,7 +545,7 @@ func (c *Client) FetchCrowdSecStatusWithHub(includeHub bool) (CrowdSecStatus, *A
 		var items []crowdsecHubItemRow
 		if jsonErr := json.Unmarshal(rows, &items); jsonErr != nil {
 			c.log.Warn("crowdsec: failed to decode hub item rows; omitting hub metrics for component",
-				"component", component, "err", jsonErr)
+				"component", component, "err", decodeFailureReason(jsonErr))
 			return
 		}
 		for _, item := range items {

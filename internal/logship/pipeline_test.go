@@ -512,8 +512,8 @@ func TestPipeline_SourcePollErrorRedactsAPICallErrorBeforeShipping(t *testing.T)
 		if got := e.Record.Attributes["err"]; strings.Contains(got, secret) {
 			t.Fatalf("forwarded poll error leaked %q: %s", secret, got)
 		}
-		if got := e.Record.Attributes["err"]; !strings.Contains(got, "[REDACTED]") {
-			t.Fatalf("forwarded poll error has no redaction marker: %s", got)
+		if got := e.Record.Attributes["err"]; strings.Contains(got, "community") || !strings.Contains(got, "withheld") {
+			t.Fatalf("forwarded poll error must withhold the body and say so: %s", got)
 		}
 		return
 	}

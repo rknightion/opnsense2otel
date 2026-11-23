@@ -96,8 +96,7 @@ func (c *Client) responseBodyLimit() int {
 	return maxResponseBodyBytes
 }
 
-// maxErrorBodyBytes caps how much of a non-2xx response body is propagated
-// into APICallError messages (and from there into logs).
+// maxErrorBodyBytes caps the input truncateBody keeps.
 const maxErrorBodyBytes = 4 << 10 // 4 KiB
 
 // EndpointName is the custom type for name of an endpoint definition
@@ -639,7 +638,7 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 			}
 			return &APICallError{
 				Endpoint:   string(path),
-				Message:    string(cached.body),
+				Message:    httpFailureMessage(cached.statusCode),
 				StatusCode: cached.statusCode,
 			}
 		}
@@ -902,9 +901,8 @@ func (b *bodyEndTracker) gzipFailureReason(err error) string {
 
 // readResponse decompresses, size-limits and unmarshals an API response into
 // responseStruct, closing the response body. Non-2xx responses and unmarshal
-// failures carry a bounded slice of the body in the returned error, which is
-// where response payloads are surfaced for debugging; successful responses are
-// never logged.
+// failures report the status and endpoint only: no response payload reaches an
+// error or a log.
 //
 // A successful GET body is handed to the response cache, which keeps it only if
 // the endpoint has a TTL. Failures are deliberately never cached: a scrape that
@@ -947,19 +945,19 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errBody := truncateBody(respBody)
 		// A 404 from a plugin-gated endpoint means the plugin is not installed. Cache it
 		// regardless of method (only if the endpoint has an absent TTL): route absence is
 		// body-independent, so the POST-body-collision problem that rules out positive
 		// POST caching does not apply. put() ignores every other status, so a 5xx or an
 		// auth failure still re-requests — and reports whether it stored, which is what
-		// makes this call a cache miss (a fetch that filled the cache).
-		if c.cache.put(path, resp.StatusCode, errBody) && c.cacheObserver != nil {
+		// makes this call a cache miss (a fetch that filled the cache). The entry holds
+		// only the status: a replay needs nothing else, so the error body is not retained.
+		if c.cache.put(path, resp.StatusCode, nil) && c.cacheObserver != nil {
 			c.cacheObserver.ObserveCacheMiss(string(path))
 		}
 		return &APICallError{
 			Endpoint:   string(path),
-			Message:    string(errBody),
+			Message:    httpFailureMessage(resp.StatusCode),
 			StatusCode: resp.StatusCode,
 		}
 	}
@@ -1012,7 +1010,7 @@ func unmarshalBody(path EndpointPath, body []byte, statusCode int, responseStruc
 		var typeErr *json.UnmarshalTypeError
 		return &APICallError{
 			Endpoint:      string(path),
-			Message:       fmt.Sprintf("failed to unmarshal response body: %s; body: %s", err.Error(), truncateBody(body)),
+			Message:       decodeFailureMessage(statusCode, err),
 			StatusCode:    statusCode,
 			PartialDecode: errors.As(err, &typeErr),
 		}
@@ -2035,8 +2033,9 @@ func redactSensitiveFields(b []byte, truncated bool) []byte {
 	return b
 }
 
-// truncateBody redacts credential-like field values from a response body
-// destined for an error message, then bounds its length.
+// truncateBody redacts credential-like field values from a response body, then
+// bounds its length. Response handling no longer calls it: API errors carry no
+// body text at all.
 func truncateBody(b []byte) []byte {
 	truncated := len(b) > maxErrorBodyBytes
 	if truncated {

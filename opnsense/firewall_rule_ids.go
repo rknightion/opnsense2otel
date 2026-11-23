@@ -60,7 +60,7 @@ func (c *Client) FetchFirewallRuleIDs() ([]FirewallRuleID, *APICallError) {
 	if err := json.Unmarshal(raw, &bare); err != nil {
 		return nil, &APICallError{
 			Endpoint:   string(url),
-			Message:    "failed to unmarshal rule ids: " + err.Error(),
+			Message:    "failed to unmarshal rule ids: " + decodeFailureReason(err),
 			StatusCode: 0,
 		}
 	}
