@@ -444,6 +444,8 @@ func (c *Client) MaxConcurrentRequests() int { return cap(c.sem) }
 
 // NewClient creates a new OPNsense API Client
 func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Logger) (Client, error) {
+	installTransportLogGuard()
+
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = defaultClientTimeout
@@ -763,20 +765,25 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 					StatusCode: 0,
 				}
 			}
+			// The raw error can quote what the upstream sent, so only the bounded
+			// reason reaches the log or the returned error.
+			reason := transportFailureReason(err)
 			// Warn without promising a retry: timeout errors and the final attempt stop here.
 			c.log.Warn("failed to send request",
 				"component", "opnsense-client",
+				"endpoint", string(path),
+				"code", 0,
 				"attempt", attempt,
-				"err", err.Error())
+				"err", reason)
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
 				return &APICallError{
 					Endpoint:   string(path),
-					Message:    err.Error(),
+					Message:    reason,
 					StatusCode: 0,
 				}
 			}
-			lastErr = err.Error()
+			lastErr = reason
 			continue
 		}
 
@@ -788,6 +795,7 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 			release()
 			c.log.Warn("retryable server error; will retry",
 				"component", "opnsense-client",
+				"endpoint", string(path),
 				"attempt", attempt,
 				"code", resp.StatusCode)
 			continue
@@ -803,6 +811,47 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 		Message:    fmt.Sprintf("max retries of %d times reached: %s", c.maxRetries, lastErr),
 		StatusCode: 0,
 	}
+}
+
+// httpsToPlainHTTPError is net/http's fixed text for a plain-HTTP reply to a TLS
+// request. It has no exported type to match, and it is the usual symptom of a
+// wrong protocol setting, so it is worth keeping.
+const httpsToPlainHTTPError = "http: server gave HTTP response to HTTPS client"
+
+// transportFailureReason describes a failed round trip without quoting anything
+// the upstream sent. net/http puts received bytes in its error text (a malformed
+// status line or header, HTTP/2 GOAWAY debug data), and a voucher endpoint's
+// reply can hold voucher codes, so the text cannot be filtered for content.
+// Only error types whose text is built locally pass through: anything else gets
+// a fixed reason. The endpoint and status travel separately.
+func transportFailureReason(err error) string {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return certErr.Error()
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Error()
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return opErr.Error()
+	}
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		return "timeout waiting for upstream: deadline exceeded"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "request canceled"
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return "upstream closed the connection"
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil && urlErr.Err.Error() == httpsToPlainHTTPError {
+		return httpsToPlainHTTPError
+	}
+	return "upstream reply was not valid HTTP or the connection failed (detail withheld)"
 }
 
 // readResponse decompresses, size-limits and unmarshals an API response into
@@ -823,7 +872,7 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 		if err != nil {
 			return &APICallError{
 				Endpoint:   string(path),
-				Message:    fmt.Sprintf("failed to decompress gzip response body: %s", err.Error()),
+				Message:    fmt.Sprintf("failed to decompress gzip response body: %s", transportFailureReason(err)),
 				StatusCode: resp.StatusCode,
 			}
 		}
@@ -836,7 +885,7 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 	if err != nil {
 		return &APICallError{
 			Endpoint:   string(path),
-			Message:    fmt.Sprintf("failed to read response body: %s", err.Error()),
+			Message:    fmt.Sprintf("failed to read response body: %s", transportFailureReason(err)),
 			StatusCode: resp.StatusCode,
 		}
 	}
