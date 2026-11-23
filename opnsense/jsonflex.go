@@ -2,7 +2,9 @@ package opnsense
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 )
@@ -82,9 +84,40 @@ func (f *flexBool) UnmarshalJSON(data []byte) error {
 // flexInt is an int type whose JSON unmarshaling tolerates the shapes
 // OPNsense API variants use for numeric fields: a JSON number (123), a quoted
 // numeric string ("123"), a float, null, an empty string, or an empty array.
-// Unparseable values decode to 0 rather than failing the whole response
-// (observed on Kea lease "expire" across OPNsense versions — upstream #105).
+// A fractional or exponent form truncates toward zero and is decoded from its
+// digits, so a whole value in that form is exact above 2^53 where a float64
+// would round it. Unparseable values, and values outside the int range, decode
+// to 0 rather than failing the whole response or landing on a platform-dependent
+// integer (observed on Kea lease "expire" across OPNsense versions — upstream #105).
 type flexInt int
+
+// parseExactFlexInt truncates any number strconv.ParseFloat accepts toward zero
+// without passing through a float64. ParseFloat decides the grammar, so
+// underscored and hex forms stay accepted; a range error only means the value
+// does not fit a float64, which the exact parse below decides for itself.
+func parseExactFlexInt(s string) (int, bool) {
+	if _, err := strconv.ParseFloat(s, 64); err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, false
+	}
+	unsigned := strings.TrimLeft(s, "+-")
+	if !strings.HasPrefix(unsigned, "0x") && !strings.HasPrefix(unsigned, "0X") {
+		return parseExactDecimalInt(strings.ReplaceAll(s, "_", ""))
+	}
+	// A hex mantissa converts to binary exactly, and rounding toward zero cannot
+	// carry a fraction into the integer part.
+	value, _, err := big.ParseFloat(s, 0, hexFlexIntPrecision, big.ToZero)
+	if err != nil || value.IsInf() || value.MantExp(nil) > strconv.IntSize {
+		return 0, false
+	}
+	integer, _ := value.Int(nil)
+	if !integer.IsInt64() || int64(int(integer.Int64())) != integer.Int64() {
+		return 0, false
+	}
+	return int(integer.Int64()), true
+}
+
+// hexFlexIntPrecision holds every bit of an int with room to spare.
+const hexFlexIntPrecision = 128
 
 // Int returns the underlying int value.
 func (f flexInt) Int() int { return int(f) }
@@ -101,8 +134,10 @@ func (f *flexInt) UnmarshalJSON(data []byte) error {
 		*f = flexInt(n)
 		return nil
 	}
-	if fl, err := strconv.ParseFloat(s, 64); err == nil {
-		*f = flexInt(int(fl))
+	// One exact decision for every other numeric form. It reports false outside
+	// the int range or for text that is not a number, and both decode to 0.
+	if n, ok := parseExactFlexInt(s); ok {
+		*f = flexInt(n)
 		return nil
 	}
 	*f = 0
