@@ -108,3 +108,8 @@ codex/
 # Compiled helper binaries: build from source with `go run`, never commit them.
 /apidrift
 /tools/promqlcheck/promqlcheck
+
+# A vendored package directory can legitimately be called secret.
+!vendor/**/secret/
+# Likewise for a vendored package directory called key.
+!vendor/**/key/
