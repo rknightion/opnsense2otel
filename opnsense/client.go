@@ -2,6 +2,7 @@ package opnsense
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"context"
 	"crypto/tls"
@@ -813,21 +814,19 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 	}
 }
 
-// httpsToPlainHTTPError is net/http's fixed text for a plain-HTTP reply to a TLS
-// request. It has no exported type to match, and it is the usual symptom of a
-// wrong protocol setting, so it is worth keeping.
-const httpsToPlainHTTPError = "http: server gave HTTP response to HTTPS client"
-
 // transportFailureReason describes a failed round trip without quoting anything
 // the upstream sent. net/http puts received bytes in its error text (a malformed
 // status line or header, HTTP/2 GOAWAY debug data), and a voucher endpoint's
 // reply can hold voucher codes, so the text cannot be filtered for content.
-// Only error types whose text is built locally pass through: anything else gets
-// a fixed reason. The endpoint and status travel separately.
+// Only error types whose text is built locally pass through: DNS and socket
+// errors name the configured host, because redirects are never followed.
+// Certificate errors quote names from the peer's certificate, so they map to a
+// fixed reason by type. Anything else gets a fixed reason too. The endpoint and
+// status travel separately.
 func transportFailureReason(err error) string {
 	var certErr *tls.CertificateVerificationError
 	if errors.As(err, &certErr) {
-		return certErr.Error()
+		return certificateFailureReason(certErr)
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
@@ -847,11 +846,35 @@ func transportFailureReason(err error) string {
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return "upstream closed the connection"
 	}
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) && urlErr.Err != nil && urlErr.Err.Error() == httpsToPlainHTTPError {
-		return httpsToPlainHTTPError
+	if errors.Is(err, http.ErrSchemeMismatch) {
+		return http.ErrSchemeMismatch.Error()
+	}
+	var corruptErr flate.CorruptInputError
+	if errors.Is(err, gzip.ErrHeader) || errors.Is(err, gzip.ErrChecksum) || errors.As(err, &corruptErr) {
+		return "corrupt gzip data"
 	}
 	return "upstream reply was not valid HTTP or the connection failed (detail withheld)"
+}
+
+// certificateFailureReason names what failed verification without the error's
+// text, which can quote subject and SAN names the peer chose.
+func certificateFailureReason(err *tls.CertificateVerificationError) string {
+	var hostnameErr x509.HostnameError
+	if errors.As(err, &hostnameErr) {
+		return "TLS certificate does not match the configured host"
+	}
+	var authorityErr x509.UnknownAuthorityError
+	if errors.As(err, &authorityErr) {
+		return "TLS certificate is signed by an unknown authority"
+	}
+	var invalidErr x509.CertificateInvalidError
+	if errors.As(err, &invalidErr) {
+		if invalidErr.Reason == x509.Expired {
+			return "TLS certificate has expired or is not yet valid"
+		}
+		return "TLS certificate is invalid"
+	}
+	return "TLS certificate verification failed"
 }
 
 // readResponse decompresses, size-limits and unmarshals an API response into

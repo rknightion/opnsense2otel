@@ -67,7 +67,9 @@ func (c *Client) OpenCPUStream(ctx context.Context) (io.ReadCloser, error) {
 	handshake.Stop()
 	if err != nil {
 		cancelDial()
-		return nil, err
+		// internal/cpustream logs this error, and the raw text can quote what the
+		// upstream sent.
+		return nil, fmt.Errorf("cpu usage stream request failed: %s", transportFailureReason(err))
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
