@@ -34,9 +34,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       - name: Run tests
         run: just test
@@ -107,9 +105,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       # This is a deterministic blocking smoke gate. Longer corpus-retaining runs
       # live in fuzz.yml so normal CI neither restores nor publishes mutable corpus.
@@ -139,9 +135,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       - name: Verify generated docs match code (docgen + doclint + registry gate)
         run: just docs-check
@@ -158,9 +152,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       - name: Set up Helm
         uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
@@ -188,9 +180,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: tools/promqlcheck/go.sum
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       # The builders' own unit tests, run first and named separately so a failure
       # here is not read as a staleness failure. Wired into CI 2026-07-25: they had
@@ -214,9 +204,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       # NOTE: no OTEL build-telemetry driver-opts here — the OTEL_EXPORTER_OTLP_ENDPOINT
       # / _HEADERS repo secrets it referenced were never provisioned, so it set
@@ -412,9 +400,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       - name: Generate coverage profile
         run: just test-coverage
@@ -443,9 +429,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       - name: govulncheck
         run: just vuln
@@ -462,9 +446,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        with:
-          just-version: '1.59.0'
+      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
 
       - name: Build a release snapshot
         run: just snapshot
