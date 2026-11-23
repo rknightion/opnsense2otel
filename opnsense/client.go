@@ -2,6 +2,7 @@ package opnsense
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"context"
 	"crypto/tls"
@@ -444,6 +445,8 @@ func (c *Client) MaxConcurrentRequests() int { return cap(c.sem) }
 
 // NewClient creates a new OPNsense API Client
 func NewClient(cfg options.OPNSenseConfig, userAgentVersion string, log *slog.Logger) (Client, error) {
+	installTransportLogGuard()
+
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = defaultClientTimeout
@@ -763,20 +766,25 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 					StatusCode: 0,
 				}
 			}
+			// The raw error can quote what the upstream sent, so only the bounded
+			// reason reaches the log or the returned error.
+			reason := transportFailureReason(err)
 			// Warn without promising a retry: timeout errors and the final attempt stop here.
 			c.log.Warn("failed to send request",
 				"component", "opnsense-client",
+				"endpoint", string(path),
+				"code", 0,
 				"attempt", attempt,
-				"err", err.Error())
+				"err", reason)
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
 				return &APICallError{
 					Endpoint:   string(path),
-					Message:    err.Error(),
+					Message:    reason,
 					StatusCode: 0,
 				}
 			}
-			lastErr = err.Error()
+			lastErr = reason
 			continue
 		}
 
@@ -788,6 +796,7 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 			release()
 			c.log.Warn("retryable server error; will retry",
 				"component", "opnsense-client",
+				"endpoint", string(path),
 				"attempt", attempt,
 				"code", resp.StatusCode)
 			continue
@@ -805,6 +814,92 @@ func (c *Client) doWithContentType(method string, path EndpointPath, body io.Rea
 	}
 }
 
+// transportFailureReason describes a failed round trip without quoting anything
+// the upstream sent. net/http puts received bytes in its error text (a malformed
+// status line or header, HTTP/2 GOAWAY debug data), and a voucher endpoint's
+// reply can hold voucher codes, so the text cannot be filtered for content.
+// Only error types whose text is built locally pass through: DNS and socket
+// errors name the configured host, because redirects are never followed.
+// Certificate errors quote names from the peer's certificate, so they map to a
+// fixed reason by type. Anything else gets a fixed reason too. The endpoint and
+// status travel separately.
+func transportFailureReason(err error) string {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return certificateFailureReason(certErr)
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Error()
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return opErr.Error()
+	}
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		return "timeout waiting for upstream: deadline exceeded"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "request canceled"
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return "upstream closed the connection"
+	}
+	if errors.Is(err, http.ErrSchemeMismatch) {
+		return http.ErrSchemeMismatch.Error()
+	}
+	var corruptErr flate.CorruptInputError
+	if errors.Is(err, gzip.ErrHeader) || errors.Is(err, gzip.ErrChecksum) || errors.As(err, &corruptErr) {
+		return "corrupt gzip data"
+	}
+	return "upstream reply was not valid HTTP or the connection failed (detail withheld)"
+}
+
+// certificateFailureReason names what failed verification without the error's
+// text, which can quote subject and SAN names the peer chose.
+func certificateFailureReason(err *tls.CertificateVerificationError) string {
+	var hostnameErr x509.HostnameError
+	if errors.As(err, &hostnameErr) {
+		return "TLS certificate does not match the configured host"
+	}
+	var authorityErr x509.UnknownAuthorityError
+	if errors.As(err, &authorityErr) {
+		return "TLS certificate is signed by an unknown authority"
+	}
+	var invalidErr x509.CertificateInvalidError
+	if errors.As(err, &invalidErr) {
+		if invalidErr.Reason == x509.Expired {
+			return "TLS certificate has expired or is not yet valid"
+		}
+		return "TLS certificate is invalid"
+	}
+	return "TLS certificate verification failed"
+}
+
+// bodyEndTracker records whether the HTTP body reached its proper end. The gzip
+// reader reports a short stream as EOF whether the exchange finished or the
+// connection was lost, and only the body's own read can tell those apart.
+type bodyEndTracker struct {
+	io.Reader
+	complete bool
+}
+
+func (b *bodyEndTracker) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	if err == io.EOF {
+		b.complete = true
+	}
+	return n, err
+}
+
+func (b *bodyEndTracker) gzipFailureReason(err error) string {
+	if b.complete && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+		return "incomplete gzip data"
+	}
+	return transportFailureReason(err)
+}
+
 // readResponse decompresses, size-limits and unmarshals an API response into
 // responseStruct, closing the response body. Non-2xx responses and unmarshal
 // failures carry a bounded slice of the body in the returned error, which is
@@ -818,12 +913,15 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 	defer resp.Body.Close()
 
 	var reader io.Reader = resp.Body
+	readFailureReason := transportFailureReason
 	if resp.Header.Get("Content-Encoding") == "gzip" {
-		gz, err := gzip.NewReader(resp.Body)
+		body := &bodyEndTracker{Reader: resp.Body}
+		readFailureReason = body.gzipFailureReason
+		gz, err := gzip.NewReader(body)
 		if err != nil {
 			return &APICallError{
 				Endpoint:   string(path),
-				Message:    fmt.Sprintf("failed to decompress gzip response body: %s", err.Error()),
+				Message:    fmt.Sprintf("failed to decompress gzip response body: %s", readFailureReason(err)),
 				StatusCode: resp.StatusCode,
 			}
 		}
@@ -836,7 +934,7 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 	if err != nil {
 		return &APICallError{
 			Endpoint:   string(path),
-			Message:    fmt.Sprintf("failed to read response body: %s", err.Error()),
+			Message:    fmt.Sprintf("failed to read response body: %s", readFailureReason(err)),
 			StatusCode: resp.StatusCode,
 		}
 	}
