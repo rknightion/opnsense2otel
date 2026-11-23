@@ -26,7 +26,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@774210034cb603b840df2d136fd3e8fe33469d27 # v1.31.5
+      - uses: rknightion/.github/.github/actions/setup-just@6a953bba3cb0011920c4eb83ed1853a74cd397b6 # v1.31.7
 
       - name: Join tailnet
         uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
