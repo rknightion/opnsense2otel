@@ -375,7 +375,7 @@ func TestCloudSetupInstallsThePinnedLinter(t *testing.T) {
 		{"top-level value read by the helper", strings.Replace(strings.Replace(strings.Replace(real,
 			"install_golangci_lint() {\n  local version\n", "install_golangci_lint() {\n", 1),
 			"golangci_lint_pin() {\n", "golangci_lint_pin() {\n  if [[ -n \"${version:-}\" ]]; then printf '%s\\n' \"$version\"; return; fi\n", 1),
-			"install_golangci_lint() {", "version=v1.0.0\n\ninstall_golangci_lint() {", 1), false},
+			"\ninstall_golangci_lint\n", "\nversion=v1.0.0\ninstall_golangci_lint\n", 1), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
