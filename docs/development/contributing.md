@@ -17,7 +17,7 @@ links here.
 
 - **Go** - Check `go.mod` for the required version (currently Go 1.27)
 - **just 1.59+** - For build automation
-- **golangci-lint** - Required by `just check` (its `lint` leg); `just setup` does not install it
+- **golangci-lint** - Installed as a pinned repo-local tool by `just setup` and used by `just lint`
 - **Docker** - Optional; for container builds
 
 ## Getting started
@@ -89,7 +89,7 @@ The project uses `golangci-lint` with:
 - `gosec`, `misspell`, and `revive` enabled
 - `unused` disabled
 
-Linting runs in CI. Locally, `just fmt` rewrites formatting and `just lint` only reports findings (the `golangci-lint` step may fail if the tool is not installed, which is expected).
+Linting runs in CI. Locally, `just fmt` rewrites formatting and `just lint` runs the pinned repo-local linter without rewriting source.
 
 ### Commit messages
 

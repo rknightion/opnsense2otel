@@ -20,15 +20,17 @@ kubeconform_version := "v0.8.0"
 govulncheck_version := "v1.10.0"
 # renovate: datasource=go depName=github.com/goreleaser/goreleaser/v2
 goreleaser_version := "v2.20.3"
+# renovate: datasource=github-releases depName=golangci/golangci-lint
+golangci_lint_version := "v2.15.0"
+export GOLANGCI_LINT_PIN := golangci_lint_version
 
 # show the task surface
 default:
     @just --list
 
 # install the repo-local release tooling and warm the module cache (idempotent)
-setup: _tool-go-licenses _tool-syft _tool-kubeconform _tool-govulncheck _tool-goreleaser
+setup: _tool-go-licenses _tool-syft _tool-kubeconform _tool-govulncheck _tool-goreleaser _tool-golangci-lint
     go mod download
-    @command -v golangci-lint >/dev/null 2>&1 || echo "note: golangci-lint is not on PATH — install it (brew install golangci-lint); CI pins its version in .github/workflows/ci.yml"
     @echo "setup: .tools populated, modules downloaded"
 
 # ── check ───────────────────────────────────────────────────────────────────
@@ -49,8 +51,9 @@ fmt-check:
 # run golangci-lint over every package (read-only; use `just fmt` to rewrite)
 [group('check')]
 [no-exit-message]
-lint:
-    golangci-lint run ./...
+lint: _tool-golangci-lint
+    {{ quote(tools_dir / "golangci-lint") }} version
+    {{ quote(tools_dir / "golangci-lint") }} run ./...
 
 # run the full Go suite under the race detector; pass a filter to narrow it
 [group('check')]
@@ -321,6 +324,51 @@ bump-module-major major="":
     scripts/bump-module-major.sh {{ major }}
 
 # ── private helpers ─────────────────────────────────────────────────────────
+
+[private]
+_tool-golangci-lint:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir={{ quote(tools_dir) }}
+    version="$GOLANGCI_LINT_PIN"
+    module=github.com/golangci/golangci-lint/v2
+    package="$module/cmd/golangci-lint"
+    [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+        printf 'Invalid golangci-lint release pin: %s\n' "$version" >&2
+        exit 1
+    }
+    awk -v expected="\"$version\"" '
+        /^[[:space:]]*golangci_lint_version[[:space:]]*:=/ {
+            count++
+            line = $0
+            sub(/^[[:space:]]*golangci_lint_version[[:space:]]*:=[[:space:]]*/, "", line)
+            sub(/[[:space:]]*$/, "", line)
+            if (line == expected) match_pin++
+        }
+        END { exit !(count == 1 && match_pin == 1) }
+    ' {{ quote(justfile_directory() / "justfile") }} || {
+        echo 'Malformed golangci_lint_version declaration' >&2
+        exit 1
+    }
+    go_version="$(go env GOVERSION)"
+    valid() {
+        [[ -x "$dir/golangci-lint" ]] || return 1
+        go version -m "$dir/golangci-lint" 2>/dev/null | awk -v package="$package" -v module="$module" -v version="$version" -v go_version="$go_version" '
+            NR == 1 { header = $0; sub(/^.*: /, "", header); split(header, built, " "); g = (built[1] == go_version) }
+            $1 == "path" && $2 == package { p = 1 }
+            $1 == "mod" && $2 == module && $3 == version { m = 1 }
+            END { exit !(g && p && m) }
+        '
+    }
+    if ! valid; then
+        mkdir -p "$dir"
+        rm -f "$dir/golangci-lint"
+        GOBIN="$dir" GOTOOLCHAIN="$go_version" go install "$package@$version"
+        valid || {
+            printf 'Installed golangci-lint does not match %s@%s\n' "$module" "$version" >&2
+            exit 1
+        }
+    fi
 
 [private]
 _tool-go-licenses:

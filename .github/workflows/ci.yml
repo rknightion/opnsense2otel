@@ -63,15 +63,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: rknightion/.github/.github/actions/setup-just@6a953bba3cb0011920c4eb83ed1853a74cd397b6 # v1.31.7
+
       - name: Run linters
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          # Pin the golangci-lint binary (not `latest`) so lint results are reproducible
-          # across runs of the same commit and a new release can't fail CI with no repo
-          # change (#132). Renovate bumps this via the annotation below.
-          # renovate: datasource=github-releases depName=golangci/golangci-lint
-          version: v2.15.0
-          args: --verbose
+        run: just lint
 
   fuzz-smoke:
     name: Fuzz smoke (${{ matrix.name }})
