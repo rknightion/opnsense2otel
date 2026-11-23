@@ -609,6 +609,23 @@ func startGeoIP(cfg options.GeoIPConfig, logsGeoIPEnabled bool, logger *slog.Log
 	}
 }
 
+// newMetricsServer builds the metrics HTTP server. serverLog must be the
+// stderr-only logger, never the self-log wrapper: exporter-toolkit routes
+// net/http's own server errors (every failed TLS handshake) to http.Server.ErrorLog
+// and, when that is nil, to the application logger at warn level. With
+// --logs.self.enabled that logger feeds the bounded shipping queue, so an
+// unauthenticated peer sending plaintext to a TLS metrics port could evict
+// firewall records. Setting ErrorLog here keeps those errors on stderr, the same
+// class of amplification the syslog listener already refuses.
+func newMetricsServer(handler http.Handler, serverLog *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ErrorLog:          slog.NewLogLogger(serverLog.Handler(), slog.LevelWarn),
+	}
+}
+
 func main() {
 	// The `health` subcommand (#438) is dispatched from argv first, before any
 	// flag parsing or env inspection, so the probe works in a container whose
@@ -2072,11 +2089,7 @@ func main() {
 	// ReadHeaderTimeout protects the metrics port against Slowloris-style
 	// connection exhaustion; IdleTimeout reaps abandoned keep-alive connections.
 	// WriteTimeout stays unset so large scrape responses are never cut short.
-	srv := &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	srv := newMetricsServer(mux, baseLogger)
 	go func() {
 		// srv.Shutdown makes ListenAndServe return http.ErrServerClosed — that's the
 		// normal graceful-exit path, not an error, so don't treat it as a crash.

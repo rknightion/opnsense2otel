@@ -111,3 +111,5 @@ codex/
 
 # A vendored package directory can legitimately be called secret.
 !vendor/**/secret/
+# Likewise for a vendored package directory called key.
+!vendor/**/key/
