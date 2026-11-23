@@ -390,8 +390,7 @@ func (c *Client) FetchKeaPdPools() ([]KeaPdPool, *APICallError) {
 // scrape.
 func (c *Client) pdPoolCapacity(prefixLen, delegatedLen int) float64 {
 	if prefixLen < 0 || prefixLen > 128 || delegatedLen < prefixLen || delegatedLen > 128 {
-		c.log.Warn("kea: invalid pd pool prefix lengths; contributing 0",
-			"prefix_len", prefixLen, "delegated_len", delegatedLen)
+		c.log.Warn("kea: invalid pd pool prefix lengths; contributing 0")
 		return 0
 	}
 	return math.Pow(2, float64(delegatedLen-prefixLen))

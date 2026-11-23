@@ -782,13 +782,13 @@ func rankByKernelIndex(indexes map[string]uint32, count int) ([]string, error) {
 				"one source is missing a device", len(indexes), count)
 	}
 
-	seen := make(map[uint32]string, len(indexes))
+	seen := make(map[uint32]struct{}, len(indexes))
 	devices := make([]string, 0, len(indexes))
 	for device, idx := range indexes {
-		if prev, dup := seen[idx]; dup {
-			return nil, fmt.Errorf("enrich: %q and %q both hold kernel index %d", prev, device, idx)
+		if _, dup := seen[idx]; dup {
+			return nil, errors.New("enrich: two devices hold the same kernel index")
 		}
-		seen[idx] = device
+		seen[idx] = struct{}{}
 		devices = append(devices, device)
 	}
 	sort.Slice(devices, func(i, j int) bool { return indexes[devices[i]] < indexes[devices[j]] })

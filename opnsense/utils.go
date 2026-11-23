@@ -1,6 +1,7 @@
 package opnsense
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -14,12 +15,18 @@ import (
 // SMART raw values — parse correctly on 32-bit architectures too.
 // The endpoint is used to identify the EndpointPath that the caller used.
 // so we can propagate in the *APICallError.
+// The error names the endpoint and a fixed reason, never the value: the value
+// came from the firewall and strconv quotes it in its own error text.
 func parseStringToInt(value string, endpoint EndpointPath) (int64, *APICallError) {
 	intValue, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
+		reason := "invalid syntax"
+		if errors.Is(err, strconv.ErrRange) {
+			reason = "value out of range"
+		}
 		return 0, &APICallError{
 			Endpoint:   string(endpoint),
-			Message:    fmt.Sprintf("error parsing '%s' to int: %s", value, err.Error()),
+			Message:    "error parsing value to int: " + reason,
 			StatusCode: 0,
 		}
 	}
@@ -29,14 +36,15 @@ func parseStringToInt(value string, endpoint EndpointPath) (int64, *APICallError
 // parseStringToFloatWithReplace parses a string value to a float64 value.
 // The replace pattern is used to remove any characters that are not part of the float64 value.
 // The regex is first used to check if the value matches the regex format.
+// A failure logs the value type and a fixed reason, never the value itself.
 func parseStringToFloatWithReplace(value string, regex *regexp.Regexp, replacePattern string, valueTypeName string, logger *slog.Logger) float64 {
 	if regex.MatchString(value) {
 		cleanValue := strings.ReplaceAll(value, replacePattern, "")
 		parsedValue, err := strconv.ParseFloat(cleanValue, 64)
 		if err != nil {
 			logger.Warn(
-				fmt.Sprintf("parsing %s: '%s' to float64 failed", valueTypeName, value),
-				"details", err,
+				fmt.Sprintf("parsing %s to float64 failed", valueTypeName),
+				"reason", "invalid number",
 			)
 			return -1.0
 		}
@@ -44,7 +52,8 @@ func parseStringToFloatWithReplace(value string, regex *regexp.Regexp, replacePa
 	}
 
 	logger.Warn(
-		fmt.Sprintf("parsing %s: '%s' to float64 failed. Pattern matching failed.", valueTypeName, value),
+		fmt.Sprintf("parsing %s to float64 failed", valueTypeName),
+		"reason", "value does not match the expected format",
 	)
 	return -1.0
 }

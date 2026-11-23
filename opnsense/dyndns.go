@@ -102,8 +102,7 @@ func (c *Client) FetchDynDNSAccounts() (DynDNSAccounts, *APICallError) {
 				acct.HasLastUpdate = true
 			} else {
 				c.log.Debug("dyndns: failed to parse current_mtime",
-					"mtime", mtime,
-					"err", err,
+					"reason", "not an RFC 3339 timestamp",
 				)
 			}
 		}

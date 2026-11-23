@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
-	"strconv"
 )
 
 // unboundHistogramBucket is one bucket of unbound's reply-time histogram, in the
@@ -1125,7 +1124,7 @@ func (c *Client) FetchUnboundLocalData() (UnboundLocalData, *APICallError) {
 		}
 		return &APICallError{
 			Endpoint:   string(endpoint),
-			Message:    "unbound diagnostics status " + strconv.Quote(status) + ": unbound-control unreachable",
+			Message:    "unbound diagnostics status is not ok: unbound-control unreachable",
 			StatusCode: http.StatusOK,
 		}
 	}

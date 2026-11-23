@@ -51,7 +51,7 @@ func (c *Client) poolSpecSize(pools string) float64 {
 		if strings.Contains(line, "/") {
 			_, ipnet, err := net.ParseCIDR(line)
 			if err != nil {
-				c.log.Warn("kea: unparseable CIDR pool entry; contributing 0", "entry", line, "err", err)
+				c.log.Warn("kea: unparseable CIDR pool entry; contributing 0")
 				continue
 			}
 			ones, bits := ipnet.Mask.Size()
@@ -60,12 +60,12 @@ func (c *Client) poolSpecSize(pools string) float64 {
 		}
 		parts := strings.SplitN(line, "-", 2)
 		if len(parts) != 2 {
-			c.log.Warn("kea: unparseable pool entry (no range separator); contributing 0", "entry", line)
+			c.log.Warn("kea: unparseable pool entry (no range separator); contributing 0")
 			continue
 		}
 		n, ok := ipRangeSize(parts[0], parts[1])
 		if !ok {
-			c.log.Warn("kea: unparseable or inverted pool range; contributing 0", "entry", line)
+			c.log.Warn("kea: unparseable or inverted pool range; contributing 0")
 			continue
 		}
 		total += n

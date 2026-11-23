@@ -391,7 +391,7 @@ func (c *Client) FetchActivity() (SystemActivity, *APICallError) {
 		if matches := threadsHeaderRegex.FindStringSubmatch(header); matches != nil {
 			total, err := strconv.Atoi(matches[1])
 			if err != nil {
-				c.log.Warn("failed to parse threads total", "value", matches[1], "err", err)
+				c.log.Warn("failed to parse threads total", "reason", "number out of range")
 				continue
 			}
 			data.ThreadsTotal = total
@@ -402,12 +402,12 @@ func (c *Client) FetchActivity() (SystemActivity, *APICallError) {
 			// running/sleeping/waiting parse.
 			states := parseThreadStates(header)
 			if len(states) == 0 {
-				c.log.Warn("threads header present but no thread-state segments parsed", "header", header)
+				c.log.Warn("threads header present but no thread-state segments parsed", "header_bytes", len(header))
 			}
 			for _, s := range states {
 				n, err := strconv.Atoi(s[1])
 				if err != nil {
-					c.log.Warn("failed to parse thread-state count", "state", s[2], "value", s[1], "err", err)
+					c.log.Warn("failed to parse thread-state count", "state", s[2], "reason", "number out of range")
 					continue
 				}
 				switch s[2] {

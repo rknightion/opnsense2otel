@@ -160,7 +160,7 @@ func (c *Client) FetchTailscaleStatus() (TailscaleStatus, *APICallError) {
 			data.SelfKeyExpiry = float64(t.Unix())
 			data.HasSelfKeyExpiry = true
 		} else {
-			c.log.Debug("tailscale: unparseable Self.KeyExpiry", "err", err)
+			c.log.Debug("tailscale: unparseable Self.KeyExpiry", "reason", "not an RFC 3339 timestamp")
 		}
 	}
 
@@ -170,7 +170,7 @@ func (c *Client) FetchTailscaleStatus() (TailscaleStatus, *APICallError) {
 		if seen[name] {
 			// Duplicate labels would make the scrape fail with duplicate
 			// series; MagicDNS names are unique so this is defensive only.
-			c.log.Debug("tailscale: skipping peer with duplicate name", "peer", name)
+			c.log.Debug("tailscale: skipping peer with duplicate name")
 			continue
 		}
 		seen[name] = true
