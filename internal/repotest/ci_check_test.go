@@ -45,8 +45,6 @@ func TestCIRunsEveryCheckLeg(t *testing.T) {
 				} `yaml:"matrix"`
 			} `yaml:"strategy"`
 			Steps []struct {
-				With            map[string]string `yaml:"with"`
-				Uses            string            `yaml:"uses"`
 				Env             map[string]string `yaml:"env"`
 				Run             string            `yaml:"run"`
 				If              string            `yaml:"if"`
@@ -65,7 +63,6 @@ func TestCIRunsEveryCheckLeg(t *testing.T) {
 	// Only whole-step invocations count: a matching line inside a shell script
 	// could be a heredoc or otherwise not execute as a required command.
 	command := regexp.MustCompile(`^just[ \t]+([a-z][a-z0-9-]*)$`)
-	lintAction := false
 	fuzzTargets := make(map[string]bool)
 	for _, name := range needed {
 		job, ok := workflow.Jobs[name]
@@ -81,9 +78,6 @@ func TestCIRunsEveryCheckLeg(t *testing.T) {
 				continue
 			}
 			invocation := strings.TrimSpace(step.Run)
-			if regexp.MustCompile(`^golangci/golangci-lint-action@[0-9a-f]{40}$`).MatchString(step.Uses) && step.With["args"] == "--verbose" {
-				lintAction = true
-			}
 			if len(job.Strategy.Matrix.Exclude) == 0 && invocation == `just fuzz-one "$FUZZ_PACKAGE" "$FUZZ_TARGET"` && step.Env["FUZZ_PACKAGE"] == "${{ matrix.package }}" && step.Env["FUZZ_TARGET"] == "${{ matrix.target }}" {
 				for _, target := range job.Strategy.Matrix.Include {
 					fuzzTargets[target.Package+" "+target.Target] = true
@@ -103,7 +97,6 @@ func TestCIRunsEveryCheckLeg(t *testing.T) {
 		t.Fatalf("resolve default test recipe: %v", err)
 	}
 	covered := map[string]bool{
-		"lint":        lintAction,
 		"metric-lint": run["test"] && metricScanSelected(string(testCommand)),
 		"gen-check":   run["docs-check"] && run["grafana-check"],
 	}

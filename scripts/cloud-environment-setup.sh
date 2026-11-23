@@ -151,8 +151,6 @@ install_python_tools() {
     python3 -m venv "${PYTHON_VENV}"
   fi
   "${PYTHON_VENV}/bin/python" -m pip install --disable-pip-version-check --quiet \
-    -r scripts/requirements-cloud-setup.txt
-  "${PYTHON_VENV}/bin/python" -m pip install --disable-pip-version-check --quiet \
     -r tools/opnsense_api_contract/requirements.txt
 }
 
