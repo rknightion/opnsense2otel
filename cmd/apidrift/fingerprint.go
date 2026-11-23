@@ -41,9 +41,17 @@ func findingsFingerprint(generation string, results []probeResult) string {
 // the run stays quiet - but a required path becoming verified, or a new one
 // going unverified, is real news and must break that quiet.
 func findingsFingerprintWithCoverage(generation string, results []probeResult, required []coverageFinding) string {
-	lines := make([]string, 0, len(results)+len(required))
+	return fingerprintOf(generation, results, required, nil)
+}
+
+// fingerprintOf is the one digest implementation behind both entry points.
+func fingerprintOf(generation string, results []probeResult, required []coverageFinding, stale []staleFinding) string {
+	lines := make([]string, 0, len(results)+len(required)+len(stale))
 	for _, f := range required {
 		lines = append(lines, f.Endpoint+"\x00required-unresolved\x00"+f.Path)
+	}
+	for _, s := range stale {
+		lines = append(lines, s.Endpoint+"\x00stale-known-blocked\x00"+s.Path)
 	}
 	add := func(endpoint, kind, detail string) {
 		lines = append(lines, endpoint+"\x00"+kind+"\x00"+detail)
@@ -90,6 +98,12 @@ func findingsFingerprintWithCoverage(generation string, results []probeResult, r
 		fmt.Fprintf(h, "%d:%s\n", len(l), l)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// findingsFingerprintWithReview is findingsFingerprintWithCoverage plus the
+// run's stale known-blocked ledger entries.
+func findingsFingerprintWithReview(generation string, results []probeResult, required []coverageFinding, stale []staleFinding) string {
+	return fingerprintOf(generation, results, required, stale)
 }
 
 // fingerprintMarkerPrefix is what the workflow greps an existing comment for to

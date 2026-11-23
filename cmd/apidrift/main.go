@@ -154,8 +154,7 @@ func main() {
 	fmt.Print(report)
 	// The marker rides in the written report, not in the stdout copy, because
 	// it exists for the issue comment the workflow posts from this file.
-	fingerprint := findingsFingerprintWithCoverage(generation, results,
-		reviewCoverage(results, loadCoverageIndex()).RequiredUnresolved)
+	fingerprint := reviewedFingerprint(generation, results)
 	if *out != "" {
 		withMarker := report + "\n" + fingerprintMarker(fingerprint) + "\n"
 		if err := os.WriteFile(*out, []byte(withMarker), 0o644); err != nil {

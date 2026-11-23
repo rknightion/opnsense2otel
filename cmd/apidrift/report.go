@@ -33,9 +33,18 @@ func pluginGatedSet() map[string]bool {
 // ledger marks required-and-verifiable warns (#377). State-optional, unledgered
 // and structurally-opaque paths stay informational, because a warning no live
 // run could ever clear is permanent noise, not a signal.
+//
+// A path the lab cannot exercise, and a parameterised endpoint it cannot supply
+// a parameter for, can be recorded in known-blocked.json: they then stay
+// visible in an informational section but stop warning. A ledger entry the run
+// contradicts is itself a warning (see analyzeRun).
 func aggregate(results []probeResult) (drift, warnings bool) {
 	gated := pluginGatedSet()
-	if len(reviewCoverage(results, loadCoverageIndex()).RequiredUnresolved) > 0 {
+	// The known-blocked ledger is applied inside analyzeRun: a ledgered path is
+	// already out of RequiredUnresolved, and a ledger entry the run contradicts
+	// is Stale, which warns so the ledger cannot outlive its facts.
+	run := analyzeRun(results)
+	if len(run.Coverage.RequiredUnresolved) > 0 || len(run.Stale) > 0 {
 		warnings = true
 	}
 	for _, r := range results {
@@ -52,7 +61,7 @@ func aggregate(results []probeResult) (drift, warnings bool) {
 		// same as every other warning class here.
 		if len(r.Res.Missing) > 0 || len(r.Res.UnknownTopKeys) > 0 ||
 			len(r.Res.UnknownPaths) > 0 ||
-			unexpectedAbsent || r.ProbeErr != "" || r.SkippedParam {
+			unexpectedAbsent || r.ProbeErr != "" || (r.SkippedParam && !run.blockedSkip(r.Endpoint)) {
 			warnings = true
 		}
 	}
@@ -96,6 +105,7 @@ func renderReport(results []probeResult, exempt map[string]string) string {
 		b.WriteString("## OPNsense live-box schema canary\n\n")
 	}
 
+	run := analyzeRun(results)
 	var mismatched, missing, unknown, unknownNested, absentUnexpected, absentGated, errored, skipped, unverified, clean int
 	gated := pluginGatedSet()
 	for _, r := range results {
@@ -109,7 +119,7 @@ func renderReport(results []probeResult, exempt map[string]string) string {
 				absentUnexpected++
 			}
 		case r.SkippedParam:
-			skipped++
+			skipped++ // counted whether or not the ledger quietens it, so the headline stays the raw tally
 		case len(r.Res.Mismatches) > 0:
 			mismatched++
 		case len(r.Res.Missing) > 0 || len(r.Res.UnknownTopKeys) > 0 || len(r.Res.UnknownPaths) > 0:
@@ -212,9 +222,19 @@ func renderReport(results []probeResult, exempt map[string]string) string {
 		}
 	})
 
+	section("🟡 Stale known-blocked ledger entries (the run contradicts them - fix `opnsense/testdata/schemas/known-blocked.json`)", func() {
+		for _, s := range run.Stale {
+			if s.Path == "" {
+				fmt.Fprintf(&b, "- `%s` (skipped-endpoint entry): %s\n", s.Endpoint, s.Why)
+			} else {
+				fmt.Fprintf(&b, "- `%s` `%s`: %s\n", s.Endpoint, s.Path, s.Why)
+			}
+		}
+	})
+
 	section("⚪ Skipped (parameterized, no live parameter)", func() {
 		for _, r := range results {
-			if r.SkippedParam {
+			if r.SkippedParam && !run.blockedSkip(r.Endpoint) {
 				fmt.Fprintf(&b, "- `%s` — covered by the e2e smoke instead\n", r.Endpoint)
 			}
 		}
@@ -224,7 +244,7 @@ func renderReport(results []probeResult, exempt map[string]string) string {
 	// by its class in the committed coverage ledger. Paths only — the validator
 	// has already normalized array elements to "[]" and dynamic map identities
 	// to "*", and no value ever enters a ValidationResult.
-	review := reviewCoverage(results, loadCoverageIndex())
+	review := run.Coverage
 
 	section("🟡 Unverified paths that back metrics (required coverage — exercise the testbed)", func() {
 		for _, f := range review.RequiredUnresolved {
@@ -235,6 +255,20 @@ func renderReport(results []probeResult, exempt map[string]string) string {
 			if f.Entry.Exercise != "" {
 				fmt.Fprintf(&b, "  - exercise: %s\n", f.Entry.Exercise)
 			}
+		}
+	})
+
+	section("ℹ️ Known-blocked (ledgered in `opnsense/testdata/schemas/known-blocked.json`: the lab cannot exercise these, so they do not set the warning state)", func() {
+		for _, f := range run.Blocked {
+			if f.Skipped {
+				fmt.Fprintf(&b, "- `%s` (skipped, no live parameter): %s\n", f.Endpoint, f.Reason)
+			} else {
+				fmt.Fprintf(&b, "- `%s` `%s`: %s\n", f.Endpoint, f.Path, f.Reason)
+			}
+			if f.Verified {
+				b.WriteString("  - verified on this run (intermittent state, currently present); the entry stays until it is pruned\n")
+			}
+			fmt.Fprintf(&b, "  - unblocked by: %s\n", f.UnblockedBy)
 		}
 	})
 

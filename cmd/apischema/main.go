@@ -23,52 +23,55 @@ func main() {
 	out := flag.String("out", "opnsense/testdata/schemas", "directory to write golden schema files into")
 	flag.Parse()
 
+	written, removed, err := writeGoldens(*out)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("wrote %d golden schemas to %s (%d orphans removed)\n", written, *out, removed)
+}
+
+// writeGoldens writes every endpoint's golden schema into out and removes
+// orphaned JSON files, keeping the committed hand-maintained ledgers.
+func writeGoldens(out string) (written, removed int, err error) {
 	schemas, err := opnsense.AllEndpointSchemas()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "deriving schemas: %v\n", err)
-		os.Exit(1)
+		return 0, 0, fmt.Errorf("deriving schemas: %w", err)
 	}
-	if err := os.MkdirAll(*out, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "create %s: %v\n", *out, err)
-		os.Exit(1)
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return 0, 0, fmt.Errorf("create %s: %w", out, err)
 	}
 
-	// Committed non-golden files in the same directory: the compat ledger and
-	// the live-coverage ledger (#377). They are hand-maintained, so the orphan
-	// sweep below must never delete them.
-	valid := map[string]bool{"exemptions.json": true, "coverage.json": true}
+	// Committed non-golden files in the same directory: the compat ledger, the
+	// live-coverage ledger (#377) and the known-blocked ledger. They are
+	// hand-maintained, so the orphan sweep below must never delete them.
+	valid := map[string]bool{"exemptions.json": true, "coverage.json": true, "known-blocked.json": true}
 	for _, s := range schemas {
 		name := s.Endpoint + ".json"
 		valid[name] = true
 		raw, err := json.MarshalIndent(s, "", "  ")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "marshal %s: %v\n", s.Endpoint, err)
-			os.Exit(1)
+			return 0, 0, fmt.Errorf("marshal %s: %w", s.Endpoint, err)
 		}
 		raw = append(raw, '\n')
-		if err := os.WriteFile(filepath.Join(*out, name), raw, 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "write %s: %v\n", name, err)
-			os.Exit(1)
+		if err := os.WriteFile(filepath.Join(out, name), raw, 0o644); err != nil {
+			return 0, 0, fmt.Errorf("write %s: %w", name, err)
 		}
 	}
 
 	// Remove orphans from endpoints that no longer exist.
-	entries, err := os.ReadDir(*out)
+	entries, err := os.ReadDir(out)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "read %s: %v\n", *out, err)
-		os.Exit(1)
+		return 0, 0, fmt.Errorf("read %s: %w", out, err)
 	}
-	var removed int
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || valid[e.Name()] {
 			continue
 		}
-		if err := os.Remove(filepath.Join(*out, e.Name())); err != nil {
-			fmt.Fprintf(os.Stderr, "remove orphan %s: %v\n", e.Name(), err)
-			os.Exit(1)
+		if err := os.Remove(filepath.Join(out, e.Name())); err != nil {
+			return 0, 0, fmt.Errorf("remove orphan %s: %w", e.Name(), err)
 		}
 		removed++
 	}
-
-	fmt.Printf("wrote %d golden schemas to %s (%d orphans removed)\n", len(schemas), *out, removed)
+	return len(schemas), removed, nil
 }
