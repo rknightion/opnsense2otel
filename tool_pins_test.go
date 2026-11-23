@@ -128,25 +128,28 @@ func checkWorkflowsLeaveLintToJust(t *testing.T, root string) {
 
 var (
 	linterVersionLike = regexp.MustCompile(`(?i)\bv?[0-9]+\.[0-9]|=["']?v?[0-9]|@["']?v?["']?[0-9]|@["']?latest`)
-	versionExpansion  = regexp.MustCompile(`@["']?\$\{?version\b`)
 	functionHeader    = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(\)`)
 )
 
 const (
-	setupPinRoute      = `version="$(golangci_lint_pin justfile)"`
-	setupInstallFunc   = "install_golangci_lint"
-	setupInstallSuffix = `@${version}"`
+	setupPinRoute    = `version="$(golangci_lint_pin justfile)"`
+	setupInstallFunc = "install_golangci_lint"
+	// setupInstallLine is the one line that may name the linter's module path.
+	setupInstallLine = `GOBIN="${LOCAL_BIN}" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}"`
+	linterModuleHost = "github.com/golangci"
 )
 
 // cloudScriptVersionLines returns the 1-based lines of a cloud script that give
-// golangci-lint a version of its own. A line naming golangci may carry no version
-// literal, and may name a module version only as the go install line that sits
-// directly after the pin route inside install_golangci_lint. A version=
-// assignment elsewhere is another tool's and is left alone, but it cannot reach
-// the linter: any other line installing a module at the shell variable is
-// rejected too.
-func cloudScriptVersionLines(script string) []int {
-	var bad []int
+// golangci-lint a route of its own. Outside a whole-line comment:
+//   - a line naming golangci may carry no version literal or @ suffix;
+//   - a line containing github.com/golangci is a failure, except that when
+//     allowInstall is set the one whole setupInstallLine, compared after trimming
+//     its indentation, may appear once, directly after the pin route inside
+//     install_golangci_lint.
+//
+// Other version= assignments and installs, such as goimports@${version}, are not
+// the linter's and pass. approved counts the install lines accepted.
+func cloudScriptVersionLines(script string, allowInstall bool) (bad []int, approved int) {
 	function, previous := "", ""
 	for i, line := range strings.Split(script, "\n") {
 		text := strings.TrimSpace(line)
@@ -158,18 +161,19 @@ func cloudScriptVersionLines(script string) []int {
 		if text == "" || strings.HasPrefix(text, "#") {
 			continue
 		}
-		approved := function == setupInstallFunc && previous == setupPinRoute &&
-			strings.HasSuffix(text, setupInstallSuffix)
+		install := allowInstall && approved == 0 && function == setupInstallFunc &&
+			previous == setupPinRoute && text == setupInstallLine
 		names := strings.Contains(strings.ToLower(text), "golangci")
 		switch {
-		case approved:
-		case names && (linterVersionLike.MatchString(text) || strings.Contains(text, "@")),
-			versionExpansion.MatchString(text):
+		case install:
+			approved++
+		case strings.Contains(text, linterModuleHost),
+			names && (linterVersionLike.MatchString(text) || strings.Contains(text, "@")):
 			bad = append(bad, i+1)
 		}
 		previous = text
 	}
-	return bad
+	return bad, approved
 }
 
 type requirementRef struct {
@@ -177,11 +181,19 @@ type requirementRef struct {
 	path string
 }
 
-var pipInstall = regexp.MustCompile(`(?:^|\s)pip[0-9.]*\s+install(?:\s|$)`)
+var (
+	pipCommand  = regexp.MustCompile(`^pip[0-9.]*$`)
+	commandJoin = regexp.MustCompile(`&&|\|\||[;|]`)
+	lineComment = regexp.MustCompile(`(^|[ \t])#.*$`)
+)
 
 // cloudScriptRequirements returns the requirements files a cloud script hands to
-// pip install, through -r or --requirement (also in the = and attached forms).
-// A -r flag on any other command, such as read -r, is not one.
+// pip install, through -r or --requirement (also in the = and attached forms). A
+// command is a pip install when a pip word, which may be a quoted path or follow
+// python -m, comes before an install word; each command joined by &&, ||, ; or |
+// is read on its own, so a second install counts and a -r on another command, such
+// as read -r, does not. A path holding a shell expansion cannot be resolved
+// statically and is skipped.
 func cloudScriptRequirements(script string) []requirementRef {
 	var refs []requirementRef
 	var command strings.Builder
@@ -190,9 +202,7 @@ func cloudScriptRequirements(script string) []requirementRef {
 		if command.Len() == 0 {
 			start = i + 1
 		}
-		if strings.HasPrefix(strings.TrimSpace(line), "#") && command.Len() == 0 {
-			continue
-		}
+		line = lineComment.ReplaceAllString(line, "")
 		if joined, more := strings.CutSuffix(strings.TrimRight(line, " \t"), "\\"); more {
 			command.WriteString(joined + " ")
 			continue
@@ -201,30 +211,53 @@ func cloudScriptRequirements(script string) []requirementRef {
 		}
 		text := command.String()
 		command.Reset()
-		loc := pipInstall.FindStringIndex(text)
-		if loc == nil {
-			continue
+		for _, segment := range commandJoin.Split(text, -1) {
+			refs = append(refs, segmentRequirements(start, strings.Fields(segment))...)
 		}
-		args := text[loc[1]:]
-		if end := strings.IndexAny(args, ";&|"); end >= 0 {
-			args = args[:end]
+	}
+	return refs
+}
+
+// segmentRequirements reads the requirement files of one simple command.
+func segmentRequirements(line int, tokens []string) []requirementRef {
+	pip := -1
+	for k, token := range tokens {
+		word := strings.Trim(token, `"'`)
+		if pipCommand.MatchString(word[strings.LastIndex(word, "/")+1:]) {
+			pip = k
+			break
 		}
-		tokens := strings.Fields(args)
-		for k, token := range tokens {
-			path := ""
-			switch {
-			case token == "-r" || token == "--requirement":
-				if k+1 < len(tokens) {
-					path = tokens[k+1]
-				}
-			case strings.HasPrefix(token, "--requirement="):
-				path = strings.TrimPrefix(token, "--requirement=")
-			case strings.HasPrefix(token, "-r") && !strings.HasPrefix(token, "--"):
-				path = strings.TrimPrefix(token, "-r")
+	}
+	if pip < 0 {
+		return nil
+	}
+	install := -1
+	for k := pip + 1; k < len(tokens); k++ {
+		if tokens[k] == "install" {
+			install = k
+			break
+		}
+	}
+	if install < 0 {
+		return nil
+	}
+	var refs []requirementRef
+	args := tokens[install+1:]
+	for k, token := range args {
+		path := ""
+		switch {
+		case token == "-r" || token == "--requirement":
+			if k+1 < len(args) {
+				path = args[k+1]
 			}
-			if path = strings.Trim(path, `"'`); path != "" {
-				refs = append(refs, requirementRef{start, path})
-			}
+		case strings.HasPrefix(token, "--requirement="):
+			path = strings.TrimPrefix(token, "--requirement=")
+		case strings.HasPrefix(token, "-r") && !strings.HasPrefix(token, "--"):
+			path = strings.TrimPrefix(token, "-r")
+		}
+		path = strings.Trim(path, `"'`)
+		if path != "" && !strings.ContainsAny(path, "$`") {
+			refs = append(refs, requirementRef{line, path})
 		}
 	}
 	return refs
@@ -255,7 +288,8 @@ func TestCloudSetupRequirementsFilesExist(t *testing.T) {
 }
 
 // checkCloudScriptPins requires each cloud script's route to the justfile pin and
-// rejects any line that gives golangci-lint a version of its own.
+// rejects any line that gives golangci-lint a route of its own: the setup script's
+// one install line is the only line that may name the module path.
 func checkCloudScriptPins(t *testing.T, root string) {
 	t.Helper()
 	for path, pinRoute := range map[string]string{
@@ -267,7 +301,12 @@ func checkCloudScriptPins(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 		lines := strings.Split(string(data), "\n")
-		for _, n := range cloudScriptVersionLines(string(data)) {
+		setup := path == "scripts/cloud-environment-setup.sh"
+		bad, approved := cloudScriptVersionLines(string(data), setup)
+		if setup && approved != 1 {
+			t.Errorf("%s must hold exactly one golangci-lint install line, found %d", path, approved)
+		}
+		for _, n := range bad {
 			t.Errorf("%s:%d: independent golangci-lint version: %s", path, n, strings.TrimSpace(lines[n-1]))
 		}
 		routed := false
@@ -345,15 +384,25 @@ func TestToolPinRulesOnFixtures(t *testing.T) {
 			script string
 			want   []string
 		}{
-			"short flag on a continuation":     {pip + "    -r tools/a.txt\n", []string{"tools/a.txt"}},
-			"long flag":                        {pip + "    --requirement scripts/b.txt\n", []string{"scripts/b.txt"}},
-			"long flag with equals":            {"pip install --requirement=scripts/b.txt\n", []string{"scripts/b.txt"}},
-			"attached short flag":              {"pip install -rscripts/c.txt\n", []string{"scripts/c.txt"}},
-			"quoted path":                      {"pip3 install -r \"scripts/d.txt\"\n", []string{"scripts/d.txt"}},
-			"read -r is not pip":               {"read -r first_line < justfile\n", nil},
-			"read -r beside a pip install":     {"read -r first_line < justfile\npip install pkg\n", nil},
-			"commented pip install":            {"# pip install -r scripts/e.txt\n", nil},
-			"flag after a separator is no pip": {"pip install pkg && read -r x < justfile\n", nil},
+			"short flag on a continuation":        {pip + "    -r tools/a.txt\n", []string{"tools/a.txt"}},
+			"long flag":                           {pip + "    --requirement scripts/b.txt\n", []string{"scripts/b.txt"}},
+			"long flag with equals":               {"pip install --requirement=scripts/b.txt\n", []string{"scripts/b.txt"}},
+			"quoted long flag with equals":        {"pip install --requirement=\"scripts/b.txt\"\n", []string{"scripts/b.txt"}},
+			"attached short flag":                 {"pip install -rscripts/c.txt\n", []string{"scripts/c.txt"}},
+			"quoted path":                         {"pip3 install -r \"scripts/d.txt\"\n", []string{"scripts/d.txt"}},
+			"python -m pip with flags":            {"python3 -m pip --disable-pip-version-check --quiet install -r scripts/f.txt\n", []string{"scripts/f.txt"}},
+			"quoted pip path":                     {"\"/opt/venv/bin/pip\" install -r \"scripts/g.txt\"\n", []string{"scripts/g.txt"}},
+			"quoted pip path with expansion":      {"\"${VENV}/bin/pip\" install -r scripts/g.txt\n", []string{"scripts/g.txt"}},
+			"second install after &&":             {"pip install pkg && pip install -r scripts/i.txt\n", []string{"scripts/i.txt"}},
+			"second install after a continued &&": {"pip install pkg \\\n  && pip install -r scripts/m.txt\n", []string{"scripts/m.txt"}},
+			"two requirement files":               {"pip install -r scripts/a.txt --requirement scripts/b.txt\n", []string{"scripts/a.txt", "scripts/b.txt"}},
+			"expansions are skipped":              {"pip install -r \"${ROOT}/x.txt\" -r $REQ -r \"$(pwd)/y.txt\" -r scripts/k.txt\n", []string{"scripts/k.txt"}},
+			"read -r is not pip":                  {"read -r first_line < justfile\n", nil},
+			"read -r beside a pip install":        {"read -r first_line < justfile\npip install pkg\n", nil},
+			"read -r before a pip install":        {"read -r first_line; pip install pkg\n", nil},
+			"commented pip install":               {"# pip install -r scripts/e.txt\n", nil},
+			"trailing comment":                    {"pip install pkg # -r scripts/l.txt\n", nil},
+			"flag after a separator is no pip":    {"pip install pkg && read -r x < justfile\n", nil},
 		} {
 			var got []string
 			for _, ref := range cloudScriptRequirements(tc.script) {
@@ -366,27 +415,41 @@ func TestToolPinRulesOnFixtures(t *testing.T) {
 	})
 	t.Run("cloud scripts", func(t *testing.T) {
 		const setupHead = "install_golangci_lint() {\n  local version\n  version=\"$(golangci_lint_pin justfile)\"\n"
-		const setupInstall = "  go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\"\n}\n"
+		const approved = "  GOBIN=\"${LOCAL_BIN}\" go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\""
+		const setupInstall = approved + "\n}\n"
+		const module = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 		for name, tc := range map[string]struct {
-			script string
-			bad    []int
+			script    string
+			bootstrap bool
+			bad       []int
 		}{
-			"real shape": {setupHead + setupInstall, nil},
-			"comment and blank between pin and install":        {setupHead + "\n  # install\n" + setupInstall, nil},
-			"second version through a helper call":             {"set_release() {\n  version=v1.0.0\n}\n" + setupHead + "  set_release\n" + setupInstall, []int{8}},
-			"literal assignment between pin and install":       {setupHead + "  version=v1.0.0\n" + setupInstall, []int{5}},
-			"install outside the linter function":              {strings.Replace(setupHead, "install_golangci_lint", "install_other", 1) + setupInstall, []int{4}},
-			"install through a package variable":               {"version=v1.0.0\npkg=github.com/golangci/golangci-lint/v2/cmd/golangci-lint\ngo install \"$pkg@${version}\"\n", []int{3}},
-			"unrelated assignment in a script of no functions": {"version=1.2.3\njust _tool-govulncheck\njust _tool-golangci-lint\n", nil},
-			"unrelated assignment before go mod download":      {setupHead + setupInstall + "version=3.14.0\ngo mod download\n", nil},
-			"unrelated tool version":                           {"install_helm() {\n  local version\n  version=3.14.0\n}\n" + setupHead + setupInstall, nil},
-			"literal version in the linter function":           {"install_golangci_lint() {\n  version=v1.0.0\n  go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\"\n}\n", []int{3}},
-			"literal version beside a golangci line":           {"version=v1.0.0 golangci-lint version\n", []int{1}},
-			"literal pin in the install line":                  {"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v1.0.0\n", []int{1}},
-			"latest":                                           {"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest\n", []int{1}},
-			"commented assignment":                             {"install_golangci_lint() {\n  # version=v1.0.0\n  golangci-lint version\n}\n", nil},
+			"real shape": {setupHead + setupInstall, false, nil},
+			"comment and blank between pin and install":        {setupHead + "\n  # install\n" + setupInstall, false, nil},
+			"approved line with its indentation changed":       {setupHead + "\t" + strings.TrimSpace(approved) + "\n}\n", false, nil},
+			"unrelated version assignment and installer":       {"install_goimports() {\n  local version=\"${GOIMPORTS_VERSION}\"\n  GOBIN=\"${LOCAL_BIN}\" go install \"golang.org/x/tools/cmd/goimports@${version}\"\n}\n" + setupHead + setupInstall, false, nil},
+			"unrelated assignment in a script of no functions": {"version=1.2.3\njust _tool-govulncheck\njust _tool-golangci-lint\n", true, nil},
+			"unrelated assignment before go mod download":      {setupHead + setupInstall + "version=3.14.0\ngo mod download\n", false, nil},
+			"unrelated tool version":                           {"install_helm() {\n  local version\n  version=3.14.0\n}\n" + setupHead + setupInstall, false, nil},
+			"commented assignment":                             {"install_golangci_lint() {\n  # version=v1.0.0\n  golangci-lint version\n}\n", false, nil},
+			"second version through a helper call":             {"set_release() {\n  version=v1.0.0\n}\n" + setupHead + "  set_release\n" + setupInstall, false, []int{8}},
+			"literal assignment between pin and install":       {setupHead + "  version=v1.0.0\n" + setupInstall, false, []int{5}},
+			"install outside the linter function":              {strings.Replace(setupHead, "install_golangci_lint", "install_other", 1) + setupInstall, false, []int{4}},
+			"install through a package variable":               {"version=v1.0.0\npkg=" + module + "\ngo install \"$pkg@${version}\"\n", false, []int{2}},
+			"package variable in the bootstrap script":         {"pkg=" + module + "\n", true, []int{1}},
+			"literal version in the linter function":           {"install_golangci_lint() {\n  version=v1.0.0\n  go install \"" + module + "@${version}\"\n}\n", false, []int{3}},
+			"literal version beside a golangci line":           {"version=v1.0.0 golangci-lint version\n", false, []int{1}},
+			"literal pin in the install line":                  {"go install " + module + "@v1.0.0\n", false, []int{1}},
+			"latest":                                           {"go install " + module + "@latest\n", false, []int{1}},
+			"assignment chained before the install":            {"version=v1.0.0; GOBIN=\"${LOCAL_BIN}\" go install \"" + module + "@${version}\"\n", false, []int{1}},
+			"assignment chained before the install in place":   {setupHead + "  version=v1.0.0; " + strings.TrimSpace(approved) + "\n}\n", false, []int{4}},
+			"expansion suffix after the install":               {setupHead + approved + "; : \"@${version}\"\n}\n", false, []int{4}},
+			"comment suffix after a latest install":            {setupHead + "  GOBIN=\"${LOCAL_BIN}\" go install \"" + module + "@latest\" # \"@${version}\"\n}\n", false, []int{4}},
+			"second install chained with &&":                   {setupHead + approved + " && GOBIN=\"${LOCAL_BIN}\" go install \"" + module + "@${version}\"\n}\n", false, []int{4}},
+			"second install chained with && and a literal":     {setupHead + approved + " && go install \"" + module + "@v1.0.0\"\n}\n", false, []int{4}},
+			"approved line repeated":                           {setupHead + approved + "\n" + approved + "\n}\n", false, []int{5}},
+			"approved line in the bootstrap script":            {setupHead + setupInstall, true, []int{4}},
 		} {
-			got := cloudScriptVersionLines(tc.script)
+			got, _ := cloudScriptVersionLines(tc.script, !tc.bootstrap)
 			if fmt.Sprint(got) != fmt.Sprint(tc.bad) {
 				t.Errorf("%s: lines %v, want %v", name, got, tc.bad)
 			}
