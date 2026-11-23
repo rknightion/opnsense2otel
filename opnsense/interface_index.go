@@ -338,7 +338,7 @@ func (c *Client) FetchInterfaceIndexes() (map[string]uint32, *APICallError) {
 		if prev, dup := indexes[row.Name]; dup && prev != idx {
 			return nil, &APICallError{
 				Endpoint:   string(url),
-				Message:    fmt.Sprintf("device %q reported with two kernel indexes (%d and %d)", row.Name, prev, idx),
+				Message:    "a device was reported with two different kernel indexes",
 				StatusCode: 0,
 			}
 		}

@@ -211,7 +211,7 @@ func (c *gatewaysCollector) emitThreshold(ch chan<- prometheus.Metric, desc *pro
 	if err != nil {
 		c.thresholdParseErrorCount.Add(1)
 		c.log.Warn("skipping gateway threshold metric: unparseable value",
-			"gateway", name, "field", field, "value", raw, "error", err)
+			"gateway", name, "field", field, "reason", "not a number")
 		return
 	}
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, f64, name, monitor, c.instance)
@@ -294,7 +294,7 @@ func (c *gatewaysCollector) Update(ctx context.Context, client *opnsense.Client,
 			priorityFloat, err := strconv.ParseFloat(v.Priority, 64)
 			if err != nil {
 				c.log.Debug("skipping gateway priority metric: unparseable value",
-					"gateway", v.Name, "priority", v.Priority, "error", err)
+					"gateway", v.Name, "field", "priority", "reason", "not a number")
 			} else {
 				ch <- prometheus.MustNewConstMetric(
 					c.priority,

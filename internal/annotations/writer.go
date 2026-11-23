@@ -3,9 +3,12 @@ package annotations
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -71,7 +74,9 @@ type existingAnnotation struct {
 }
 
 // httpError is a non-2xx answer from Grafana, carrying the status and any
-// Retry-After the server stated. Collapsing every rejection into a bare
+// Retry-After the server stated. It carries no part of the response body: Grafana
+// can echo the annotation text, a dashboard name or the token's role there, and
+// this error reaches the logs. Collapsing every rejection into a bare
 // fmt.Errorf is what left the watcher unable to tell "you are sending too many
 // requests" (back off) from "this body will never be accepted" (stop sending it)
 // from "Grafana is restarting" (retry unchanged) — so it answered all three the
@@ -84,11 +89,10 @@ type httpError struct {
 	// "no header" would substitute a 30s exponential wait the server never asked
 	// for.
 	RetryAfter time.Duration
-	Body       string
 }
 
 func (e *httpError) Error() string {
-	return fmt.Sprintf("grafana returned %d: %s", e.StatusCode, e.Body)
+	return fmt.Sprintf("grafana returned %d (response body withheld)", e.StatusCode)
 }
 
 // permanent reports whether re-sending the identical body could ever succeed. A
@@ -177,6 +181,41 @@ func newClient(cfg Config) *client {
 	}
 }
 
+// transportError is a request that produced no usable HTTP answer: a refused or
+// timed-out connection, a reply that is not HTTP, a broken body. It is not an
+// httpError, so the watcher keeps retrying it unchanged.
+//
+// The text of net/http's own error can quote what the server sent (a malformed
+// status line, a header with no colon) and names the request URL, so it is never
+// kept. Only a fixed reason is reported. The one thing a caller can still ask of
+// the cause is whether it was a cancellation or a deadline, which Unwrap keeps
+// answerable with errors.Is.
+type transportError struct {
+	reason string
+	ctxErr error
+}
+
+func (e *transportError) Error() string { return "grafana request failed: " + e.reason }
+
+func (e *transportError) Unwrap() error { return e.ctxErr }
+
+func newTransportError(err error) *transportError {
+	var certErr *tls.CertificateVerificationError
+	var netErr net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		return &transportError{reason: "request canceled", ctxErr: context.Canceled}
+	case errors.Is(err, context.DeadlineExceeded):
+		return &transportError{reason: "request timed out", ctxErr: context.DeadlineExceeded}
+	case errors.As(err, &certErr):
+		return &transportError{reason: "TLS certificate verification failed"}
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return &transportError{reason: "request timed out"}
+	default:
+		return &transportError{reason: "connection or protocol failure"}
+	}
+}
+
 func (c *client) endpoint(path string) string {
 	return strings.TrimSuffix(c.cfg.URL, "/") + path
 }
@@ -194,7 +233,7 @@ func (c *client) do(ctx context.Context, method, target string, body io.Reader) 
 
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(err)
 	}
 	defer response.Body.Close()
 
@@ -202,13 +241,12 @@ func (c *client) do(ctx context.Context, method, target string, body io.Reader) 
 	// should not stream an unbounded body into the exporter.
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return nil, err
+		return nil, newTransportError(err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, &httpError{
 			StatusCode: response.StatusCode,
 			RetryAfter: parseRetryAfter(response.Header.Get("Retry-After"), c.now()),
-			Body:       strings.TrimSpace(string(payload)),
 		}
 	}
 	return payload, nil
@@ -256,7 +294,18 @@ func (c *client) existing(ctx context.Context, now time.Time) ([]existingAnnotat
 	}
 	var found []existingAnnotation
 	if err := json.Unmarshal(payload, &found); err != nil {
-		return nil, fmt.Errorf("decode annotation list: %w", err)
+		// encoding/json quotes the number or character it rejected, so only the
+		// class of failure is reported.
+		reason := "response could not be decoded"
+		var syntaxErr *json.SyntaxError
+		var typeErr *json.UnmarshalTypeError
+		switch {
+		case errors.As(err, &typeErr):
+			reason = "response did not match the expected schema"
+		case errors.As(err, &syntaxErr):
+			reason = "response is not valid JSON"
+		}
+		return nil, fmt.Errorf("decode annotation list: %s", reason)
 	}
 	return found, nil
 }

@@ -994,3 +994,20 @@ func TestRankByKernelIndexRefusesAnEmptyInput(t *testing.T) {
 		t.Fatal("accepted an empty index map; want an error")
 	}
 }
+
+// The ranking error names no device: the names come from the firewall.
+func TestRankByKernelIndexErrorWithholdsDeviceNames(t *testing.T) {
+	const a, b = "SYNTHETIC-DEVICE-NAME-A", "SYNTHETIC-DEVICE-NAME-B"
+	_, err := rankByKernelIndex(map[string]uint32{a: 4242, b: 4242}, 2)
+	if err == nil {
+		t.Fatal("accepted two devices holding one kernel index; want an error")
+	}
+	for _, withheld := range []string{a, b, "4242"} {
+		if strings.Contains(err.Error(), withheld) {
+			t.Errorf("error holds the upstream value %q: %s", withheld, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "enrich:") {
+		t.Errorf("error lost its prefix: %s", err)
+	}
+}
