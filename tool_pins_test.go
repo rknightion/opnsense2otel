@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -129,14 +130,17 @@ func checkWorkflowsLeaveLintToJust(t *testing.T, root string) {
 var (
 	linterVersionLike = regexp.MustCompile(`(?i)\bv?[0-9]+\.[0-9]|=["']?v?[0-9]|@["']?v?["']?[0-9]|@["']?latest`)
 	functionHeader    = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(\)`)
+	pinVersionLiteral = regexp.MustCompile(`(?i)\bversion\s*=\s*["']?v?[0-9]`)
 )
 
 const (
 	setupPinRoute    = `version="$(golangci_lint_pin justfile)"`
 	setupInstallFunc = "install_golangci_lint"
+	setupPinFunc     = "golangci_lint_pin"
 	// setupInstallLine is the one line that may name the linter's module path.
 	setupInstallLine = `GOBIN="${LOCAL_BIN}" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}"`
 	linterModuleHost = "github.com/golangci"
+	linterRepoPath   = "golangci/golangci-lint"
 )
 
 // cloudScriptVersionLines returns the 1-based lines of a cloud script that give
@@ -145,7 +149,9 @@ const (
 //   - a line containing github.com/golangci is a failure, except that when
 //     allowInstall is set the one whole setupInstallLine, compared after trimming
 //     its indentation, may appear once, directly after the pin route inside
-//     install_golangci_lint.
+//     install_golangci_lint;
+//   - a line inside install_golangci_lint or golangci_lint_pin may not assign a
+//     literal version, because that value reaches the approved install line.
 //
 // Other version= assignments and installs, such as goimports@${version}, are not
 // the linter's and pass. approved counts the install lines accepted.
@@ -168,6 +174,8 @@ func cloudScriptVersionLines(script string, allowInstall bool) (bad []int, appro
 		case install:
 			approved++
 		case strings.Contains(text, linterModuleHost),
+			strings.Contains(text, linterRepoPath),
+			(function == setupInstallFunc || function == setupPinFunc) && pinVersionLiteral.MatchString(text),
 			names && (linterVersionLike.MatchString(text) || strings.Contains(text, "@")):
 			bad = append(bad, i+1)
 		}
@@ -320,6 +328,30 @@ func checkCloudScriptPins(t *testing.T, root string) {
 	}
 }
 
+// A version written inside the two functions that resolve the pin reaches the
+// approved install line without naming the linter on its own line.
+func TestToolPinRulesRejectVersionInPinFunctions(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+		want   []int
+	}{
+		{"local literal in the pin helper", "golangci_lint_pin() {\n  local version=v1.0.0\n  printf '%s\\n' \"$version\"\n}\n", []int{2}},
+		{"literal in the helper's python", "golangci_lint_pin() {\n  python3 - <<'PY'\nversion=\"v1.0.0\"\nprint(version)\nPY\n}\n", []int{3}},
+		{"literal in the install function", "install_golangci_lint() {\n  version=v1.0.0\n}\n", []int{2}},
+		{"upstream install script", "curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh\n", []int{1}},
+		{"another tool's version", "install_helm() {\n  version=3.14.0\n}\n", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := cloudScriptVersionLines(tt.script, true)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("bad lines = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToolPinRulesOnFixtures(t *testing.T) {
 	root, err := repotest.Root()
 	if err != nil {
@@ -432,11 +464,11 @@ func TestToolPinRulesOnFixtures(t *testing.T) {
 			"unrelated tool version":                           {"install_helm() {\n  local version\n  version=3.14.0\n}\n" + setupHead + setupInstall, false, nil},
 			"commented assignment":                             {"install_golangci_lint() {\n  # version=v1.0.0\n  golangci-lint version\n}\n", false, nil},
 			"second version through a helper call":             {"set_release() {\n  version=v1.0.0\n}\n" + setupHead + "  set_release\n" + setupInstall, false, []int{8}},
-			"literal assignment between pin and install":       {setupHead + "  version=v1.0.0\n" + setupInstall, false, []int{5}},
+			"literal assignment between pin and install":       {setupHead + "  version=v1.0.0\n" + setupInstall, false, []int{4, 5}},
 			"install outside the linter function":              {strings.Replace(setupHead, "install_golangci_lint", "install_other", 1) + setupInstall, false, []int{4}},
 			"install through a package variable":               {"version=v1.0.0\npkg=" + module + "\ngo install \"$pkg@${version}\"\n", false, []int{2}},
 			"package variable in the bootstrap script":         {"pkg=" + module + "\n", true, []int{1}},
-			"literal version in the linter function":           {"install_golangci_lint() {\n  version=v1.0.0\n  go install \"" + module + "@${version}\"\n}\n", false, []int{3}},
+			"literal version in the linter function":           {"install_golangci_lint() {\n  version=v1.0.0\n  go install \"" + module + "@${version}\"\n}\n", false, []int{2, 3}},
 			"literal version beside a golangci line":           {"version=v1.0.0 golangci-lint version\n", false, []int{1}},
 			"literal pin in the install line":                  {"go install " + module + "@v1.0.0\n", false, []int{1}},
 			"latest":                                           {"go install " + module + "@latest\n", false, []int{1}},
