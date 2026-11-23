@@ -1,10 +1,16 @@
 package opnsense
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -328,6 +334,22 @@ func TestFetchCaptivePortalVouchers_UsernameNeverDecoded(t *testing.T) {
 			t.Fatalf("captivePortalVoucherRow must never decode the username field; found tag %q", tag)
 		}
 	}
+	projection := reflect.TypeOf(voucherRowFields{})
+	tags := make(map[string]bool)
+	for i := 0; i < projection.NumField(); i++ {
+		tags[projection.Field(i).Tag.Get("json")] = true
+	}
+	if !reflect.DeepEqual(tags, map[string]bool{"state": true, "expirytime": true}) {
+		t.Fatalf("voucher decoder projection exposes extra fields: %v", tags)
+	}
+	var row voucherDecodedRow
+	if err := json.Unmarshal([]byte(`{"username":"secret-voucher","other":"secret-field","state":"unused","expirytime":123}`), &row); err != nil {
+		t.Fatal(err)
+	}
+	if !row.validState || !row.validExpiry || row.row.State.String() != "unused" || row.row.Expirytime.Int() != 123 {
+		t.Fatalf("decoded row = %+v", row)
+	}
+
 }
 
 func TestFetchCaptivePortalVouchers_ProviderGroupFailureSkipped(t *testing.T) {
@@ -382,5 +404,325 @@ func TestFetchCaptivePortalSessions_SessionsFormRequest(t *testing.T) {
 	_, _ = client.FetchCaptivePortalSessions()
 	if capturedForm.Get("rowCount") != "-1" {
 		t.Errorf("expected rowCount=-1, got %q", capturedForm.Get("rowCount"))
+	}
+}
+
+// TestVoucherExpiryExactBoundaries pins one exact parse for the value that is
+// both aggregated and used for cache admission. Every integer form is decided
+// on its decimal digits: a float64 cannot tell these neighbours apart.
+func TestVoucherExpiryExactBoundaries(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("boundary literals are for a 64-bit int; release targets are amd64 and arm64")
+	}
+	const minInt, maxInt = -9223372036854775808, 9223372036854775807
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{
+		{"-9223372036854775808", minInt},
+		{`"-9223372036854775808"`, minInt},
+		{"-9223372036854775808.0", minInt},
+		{`"-9223372036854775808.9"`, minInt},
+		{"-922337203685477580.8e1", minInt},
+		{"9223372036854775807", maxInt},
+		{`"9223372036854775807"`, maxInt},
+		{`"9223372036854775807.9"`, maxInt},
+		{"922337203685477580.7e1", maxInt},
+		{"9007199254740993", 9007199254740993},
+		{`"9007199254740993.0"`, 9007199254740993},
+		{"9007199254740993e0", 9007199254740993},
+		{"1900000000.75", 1900000000},
+		{`"1.9e9"`, 1900000000},
+		{`"123.5"`, 123},
+		{`"007"`, 7},
+		{`"+5"`, 5},
+		{`"5."`, 5},
+		{`".5"`, 0},
+		{"-0.5", 0},
+		{`"-0"`, 0},
+		{"1e-400", 0},
+		{"0e999999999", 0},
+		{"0", 0},
+		{"null", 0},
+		{"[]", 0},
+		{"[ ]", 0},
+		{`""`, 0},
+	} {
+		t.Run("in range/"+tc.raw, func(t *testing.T) {
+			row := decodeVoucherExpiryRow(t, tc.raw)
+			if !row.validExpiry || row.row.Expirytime.Int() != tc.want {
+				t.Fatalf("expiry %s: valid=%v value=%d, want valid value %d", tc.raw, row.validExpiry, row.row.Expirytime.Int(), tc.want)
+			}
+		})
+	}
+	for _, raw := range []string{
+		"-9223372036854775809",
+		`"-9223372036854775809"`,
+		"-9223372036854775809.0",
+		`"-9223372036854775809.0"`,
+		"-9223372036854775809e0",
+		"-922337203685477580.9e1",
+		"9223372036854775808",
+		`"9223372036854775808"`,
+		"9223372036854775808.0",
+		"1e19",
+		"1e25",
+		"-1e400",
+		"1e999999999999",
+		`"\u0035"`,
+		`"1\u0032"`,
+		`"NaN"`, `"Inf"`, `"0x1p4"`, `"1_000"`, `"."`, `"e5"`, `"1e"`, `"1e+"`, `"--1"`, `" 1"`,
+		"true", "[1]", "{}",
+	} {
+		t.Run("rejected/"+raw, func(t *testing.T) {
+			row := decodeVoucherExpiryRow(t, raw)
+			if row.validExpiry || row.row.Expirytime.Int() != 0 {
+				t.Fatalf("expiry %s: valid=%v value=%d, want rejected with no value", raw, row.validExpiry, row.row.Expirytime.Int())
+			}
+			if !row.validState {
+				t.Fatalf("expiry %s: the row's state must still count", raw)
+			}
+		})
+	}
+}
+
+func decodeVoucherExpiryRow(t *testing.T, raw string) voucherDecodedRow {
+	t.Helper()
+	var row voucherDecodedRow
+	if err := json.Unmarshal([]byte(`{"state":"unused","expirytime":`+raw+`}`), &row); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	return row
+}
+
+// TestVoucherMalformedShapesMatchBase pins the owner-reviewed rule for malformed
+// provider, group, row and state shapes: what is emitted and whether an error is
+// returned stay exactly as they were before memoisation (each want was captured
+// from the unmemoised fetch), and the only new effect is Complete=false.
+func TestVoucherMalformedShapesMatchBase(t *testing.T) {
+	for _, tc := range []struct {
+		name, providers, groups, rows string
+		want                          string
+		wantErr                       bool
+	}{
+		{`providers null`, `null`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`providers [null]`, `[null]`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=true;|group|unused=1|true", false},
+		{`providers ["provider",null]`, `["provider",null]`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=true;|group|unused=1|true;provider|group|unused=1|true", false},
+		{`providers [""]`, `[""]`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=true;|group|unused=1|true", false},
+		{`providers [5]`, `[5]`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=false", true},
+		{`providers ["provider",5]`, `["provider",5]`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=false", true},
+		{`providers {}`, `{}`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=false", true},
+		{`providers "x"`, `"x"`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=false", true},
+		{`providers true`, `true`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=false", true},
+		{`providers not json`, `not json`, `["group"]`, `[{"state":"unused","expirytime":5}]`, "present=false", true},
+		{`groups null`, `["provider"]`, `null`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`groups [null]`, `["provider"]`, `[null]`, `[{"state":"unused","expirytime":5}]`, "present=true;provider||unused=1|true", false},
+		{`groups ["group",null]`, `["provider"]`, `["group",null]`, `[{"state":"unused","expirytime":5}]`, "present=true;provider||unused=1|true;provider|group|unused=1|true", false},
+		{`groups [""]`, `["provider"]`, `[""]`, `[{"state":"unused","expirytime":5}]`, "present=true;provider||unused=1|true", false},
+		{`groups [5]`, `["provider"]`, `[5]`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`groups ["group",5]`, `["provider"]`, `["group",5]`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`groups {}`, `["provider"]`, `{}`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`groups "x"`, `["provider"]`, `"x"`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`groups not json`, `["provider"]`, `not json`, `[{"state":"unused","expirytime":5}]`, "present=true", false},
+		{`rows null`, `["provider"]`, `["group"]`, `null`, "present=true;provider|group||false", false},
+		{`rows [null]`, `["provider"]`, `["group"]`, `[null]`, "present=true;provider|group|=1|false", false},
+		{`rows [{"state":"unused"},null]`, `["provider"]`, `["group"]`, `[{"state":"unused"},null]`, "present=true;provider|group|=1,unused=1|false", false},
+		{`rows [5]`, `["provider"]`, `["group"]`, `[5]`, "present=true", false},
+		{`rows [{"state":"unused"},5]`, `["provider"]`, `["group"]`, `[{"state":"unused"},5]`, "present=true", false},
+		{`rows ["x"]`, `["provider"]`, `["group"]`, `["x"]`, "present=true", false},
+		{`rows [[]]`, `["provider"]`, `["group"]`, `[[]]`, "present=true", false},
+		{`rows {}`, `["provider"]`, `["group"]`, `{}`, "present=true", false},
+		{`rows "x"`, `["provider"]`, `["group"]`, `"x"`, "present=true", false},
+		{`rows not json`, `["provider"]`, `["group"]`, `not json`, "present=true", false},
+		{`state []`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":[]}]`, "present=true;provider|group|=1,unused=1|false", false},
+		{`state ["x"]`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":["x"]}]`, "present=true;provider|group|=1,unused=1|false", false},
+		{`state true`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":true}]`, "present=true;provider|group|true=1,unused=1|false", false},
+		{`state 5`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":5}]`, "present=true;provider|group|5=1,unused=1|false", false},
+		{`state ""`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":""}]`, "present=true;provider|group|=1,unused=1|false", false},
+		{`state null`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":null}]`, "present=true;provider|group|=1,unused=1|false", false},
+		{`state {"a":1}`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"state":{"a":1}}]`, "present=true;provider|group|unused=1,{\"a\":1}=1|false", false},
+		{`state absent`, `["provider"]`, `["group"]`, `[{"state":"unused"},{"expirytime":0}]`, "present=true;provider|group|=1,unused=1|false", false},
+		{`rows escaped expiry 5`, `["provider"]`, `["group"]`, `[{"state":"unused","expirytime":"\u0035"}]`, "present=true;provider|group|unused=1|false", false},
+		{`rows escaped expiry 12`, `["provider"]`, `["group"]`, `[{"state":"unused","expirytime":"1\u0032"}]`, "present=true;provider|group|unused=1|false", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, mux, client := newTestClientWithMux(t)
+			defer server.Close()
+			client.log = slog.New(slog.NewTextHandler(io.Discard, nil))
+			serveVoucherShape(mux, tc.providers, tc.groups, tc.rows)
+			data, err := client.FetchCaptivePortalVouchersFresh()
+			if got := voucherShapeSignature(data); got != tc.want {
+				t.Errorf("emitted %q, want %q", got, tc.want)
+			}
+			if (err != nil) != tc.wantErr {
+				t.Errorf("error=%v, want error=%v", err, tc.wantErr)
+			}
+			if data.Complete {
+				t.Error("a malformed inventory must be incomplete")
+			}
+		})
+	}
+	t.Run("well-formed control is complete", func(t *testing.T) {
+		server, mux, client := newTestClientWithMux(t)
+		defer server.Close()
+		serveVoucherShape(mux, `["provider"]`, `["group"]`, `[{"state":"unused","expirytime":5}]`)
+		data, err := client.FetchCaptivePortalVouchersFresh()
+		if err != nil || !data.Complete || voucherShapeSignature(data) != "present=true;provider|group|unused=1|true" {
+			t.Fatalf("control: err=%v complete=%v emitted %q", err, data.Complete, voucherShapeSignature(data))
+		}
+	})
+}
+
+func voucherShapeSignature(data CaptivePortalVouchers) string {
+	parts := []string{fmt.Sprintf("present=%v", data.Present)}
+	for _, g := range data.Groups {
+		counts := make([]string, 0, len(g.Counts))
+		for state, count := range g.Counts {
+			counts = append(counts, fmt.Sprintf("%s=%v", state, count))
+		}
+		sort.Strings(counts)
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%v", g.Provider, g.Group, strings.Join(counts, ","), g.HasNextExpiryTimestamp))
+	}
+	return strings.Join(parts, ";")
+}
+
+func serveVoucherShape(mux *http.ServeMux, providers, groups, rows string) {
+	mux.HandleFunc("/api/captiveportal/voucher/list_providers", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(providers)) })
+	mux.HandleFunc("/api/captiveportal/voucher/list_voucher_groups/", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(groups)) })
+	mux.HandleFunc("/api/captiveportal/voucher/list_vouchers/", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(rows)) })
+}
+
+// TestVoucherFailureLogsOmitResponseBody proves a failed voucher read cannot put
+// a voucher code from the response body into a debug log or a returned error.
+func TestVoucherFailureLogsOmitResponseBody(t *testing.T) {
+	const code = "SENTINEL-VOUCHER-CODE"
+	bodies := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"object", http.StatusOK, `{"username":"` + code + `"}`},
+		{"mixed rows", http.StatusOK, `[{"username":"` + code + `","state":"unused"},5]`},
+		{"invalid json", http.StatusOK, code + " not json"},
+		{"http error", http.StatusBadRequest, `{"username":"` + code + `"}`},
+	}
+	branches := []struct{ name, logLine string }{
+		{"list_vouchers", "list_vouchers call failed"},
+		{"list_voucher_groups", "voucher groups call failed"},
+		{"list_providers", ""},
+	}
+	for _, branch := range branches {
+		for _, body := range bodies {
+			t.Run(branch.name+"/"+body.name, func(t *testing.T) {
+				server, mux, client := newTestClientWithMux(t)
+				defer server.Close()
+				var logs bytes.Buffer
+				client.log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+				respond := func(name, good string) http.HandlerFunc {
+					return func(w http.ResponseWriter, _ *http.Request) {
+						if name != branch.name {
+							w.Write([]byte(good))
+							return
+						}
+						w.WriteHeader(body.status)
+						w.Write([]byte(body.body))
+					}
+				}
+				mux.HandleFunc("/api/captiveportal/voucher/list_providers", respond("list_providers", `["provider"]`))
+				mux.HandleFunc("/api/captiveportal/voucher/list_voucher_groups/", respond("list_voucher_groups", `["group"]`))
+				mux.HandleFunc("/api/captiveportal/voucher/list_vouchers/", respond("list_vouchers", `[{"state":"unused"}]`))
+
+				data, err := client.FetchCaptivePortalVouchersFresh()
+				captured := logs.String()
+				if err != nil {
+					captured += err.Error() + fmt.Sprint(err.LogValue())
+				}
+				if strings.Contains(captured, code) {
+					t.Fatalf("voucher code reached a log or error: %s", captured)
+				}
+				if data.Complete {
+					t.Fatal("a failed read must leave the inventory incomplete")
+				}
+				status := fmt.Sprintf("failed status code: %d", body.status)
+				if branch.logLine == "" {
+					if err == nil || !strings.Contains(err.Error(), status) {
+						t.Fatalf("provider error %v must keep endpoint and status", err)
+					}
+					return
+				}
+				if !strings.Contains(captured, branch.logLine) || !strings.Contains(captured, status) {
+					t.Fatalf("debug log lost the failure or status: %s", captured)
+				}
+			})
+		}
+	}
+}
+
+// TestVoucherNonHTTPUpstreamOmitsReceivedBytes answers one voucher request with
+// bytes that are not HTTP on a real loopback socket. Go's malformed-response
+// error quotes them, so the error carries them with status 0. Only the voucher
+// path's own records are asserted here, not the transport client's warning.
+func TestVoucherNonHTTPUpstreamOmitsReceivedBytes(t *testing.T) {
+	const code = "SENTINEL-VOUCHER-CODE"
+	for _, branch := range []struct{ name, logLine, endpoint string }{
+		{"list_vouchers", "list_vouchers call failed", "list_vouchers/provider/group"},
+		{"list_voucher_groups", "voucher groups call failed", "list_voucher_groups/provider"},
+		{"list_providers", "", "list_providers"},
+	} {
+		t.Run(branch.name, func(t *testing.T) {
+			server, mux, client := newTestClientWithMux(t)
+			defer server.Close()
+			client.maxRetries = 1
+			var logs bytes.Buffer
+			client.log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			respond := func(name, good string) http.HandlerFunc {
+				return func(w http.ResponseWriter, _ *http.Request) {
+					if name != branch.name {
+						w.Write([]byte(good))
+						return
+					}
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Errorf("hijack: %v", err)
+						return
+					}
+					defer conn.Close()
+					conn.Write([]byte(code + "\r\n\r\n"))
+				}
+			}
+			mux.HandleFunc("/api/captiveportal/voucher/list_providers", respond("list_providers", `["provider"]`))
+			mux.HandleFunc("/api/captiveportal/voucher/list_voucher_groups/", respond("list_voucher_groups", `["group"]`))
+			mux.HandleFunc("/api/captiveportal/voucher/list_vouchers/", respond("list_vouchers", `[{"state":"unused"}]`))
+
+			data, err := client.FetchCaptivePortalVouchersFresh()
+			if data.Complete {
+				t.Fatal("a failed read must leave the inventory incomplete")
+			}
+			var evidence string
+			if branch.logLine == "" {
+				if err == nil {
+					t.Fatal("a failed provider read must return an error")
+				}
+				evidence = err.Error() + fmt.Sprint(err.LogValue())
+			} else {
+				if err != nil {
+					t.Fatalf("a failed %s read is skipped, got error %v", branch.name, err)
+				}
+				for _, line := range strings.Split(logs.String(), "\n") {
+					if strings.Contains(line, branch.logLine) {
+						evidence += line
+					}
+				}
+				if evidence == "" {
+					t.Fatalf("no %q record in: %s", branch.logLine, logs.String())
+				}
+			}
+			if strings.Contains(evidence, code) {
+				t.Fatalf("received bytes reached the voucher record: %s", evidence)
+			}
+			if !strings.Contains(evidence, branch.endpoint) || !strings.Contains(evidence, "failed status code: 0") {
+				t.Fatalf("record lost its endpoint or status: %s", evidence)
+			}
+		})
 	}
 }

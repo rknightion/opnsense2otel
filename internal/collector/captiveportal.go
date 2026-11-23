@@ -3,6 +3,8 @@ package collector
 import (
 	"context"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
@@ -17,7 +19,12 @@ import (
 var captivePortalVoucherStates = []string{"valid", "unused", "expired"}
 
 type captivePortalCollector struct {
-	log *slog.Logger
+	log            *slog.Logger
+	voucherMu      sync.Mutex
+	voucherClient  *opnsense.Client
+	voucherCached  opnsense.CaptivePortalVouchers
+	voucherFetched time.Time
+	now            func() time.Time
 
 	serviceRunning    *prometheus.Desc
 	zonesTotal        *prometheus.Desc
@@ -111,7 +118,7 @@ func (c *captivePortalCollector) Update(_ context.Context, client *opnsense.Clie
 			running, c.instance)
 	}
 
-	vouchers, vErr := client.FetchCaptivePortalVouchers()
+	vouchers, vErr := c.fetchVouchers(client)
 	if vErr != nil {
 		c.log.Warn("failed to fetch captive portal vouchers", "err", vErr)
 	} else if vouchers.Present {
@@ -141,4 +148,26 @@ func (c *captivePortalCollector) Update(_ context.Context, client *opnsense.Clie
 	}
 
 	return nil
+}
+
+func (c *captivePortalCollector) fetchVouchers(client *opnsense.Client) (opnsense.CaptivePortalVouchers, *opnsense.APICallError) {
+	c.voucherMu.Lock()
+	defer c.voucherMu.Unlock()
+	now := time.Now()
+	if c.now != nil {
+		now = c.now()
+	}
+	ttl := min(client.CaptivePortalVoucherCacheTTL(), 5*time.Minute)
+	if ttl > 0 && client.SameCaptivePortalSource(c.voucherClient) && !c.voucherFetched.IsZero() && now.Sub(c.voucherFetched) >= 0 && now.Sub(c.voucherFetched) < ttl {
+		return c.voucherCached, nil
+	}
+	// Discard an expired or differently bound result even if the next fetch is partial.
+	c.voucherFetched = time.Time{}
+	data, err := client.FetchCaptivePortalVouchersFresh()
+	if ttl > 0 && err == nil && data.Present && data.Complete {
+		c.voucherClient = client
+		c.voucherCached = data
+		c.voucherFetched = now
+	}
+	return data, err
 }
