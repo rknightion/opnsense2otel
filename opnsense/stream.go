@@ -2,6 +2,7 @@ package opnsense
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,6 +89,45 @@ type streamBody struct {
 	cancel context.CancelFunc
 	once   sync.Once
 }
+
+// Read withholds the text of a failed read: internal/cpustream logs it, and
+// net/http quotes received bytes in it (a malformed chunk trailer, HTTP/2 GOAWAY
+// debug data). Anything that is io.EOF comes back as bare io.EOF, because the
+// stream loop treats that as a clean end.
+func (b *streamBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	switch {
+	case err == nil:
+		return n, nil
+	case errors.Is(err, io.EOF):
+		return n, io.EOF
+	}
+	return n, newStreamReadError(err)
+}
+
+// streamReadError carries a bounded reason. It unwraps only to the sentinel that
+// classifies the failure, never to the original error and its text.
+type streamReadError struct {
+	reason string
+	class  error
+}
+
+func newStreamReadError(err error) *streamReadError {
+	readErr := &streamReadError{reason: transportFailureReason(err)}
+	for _, class := range []error{context.Canceled, context.DeadlineExceeded, io.ErrUnexpectedEOF} {
+		if errors.Is(err, class) {
+			readErr.class = class
+			break
+		}
+	}
+	return readErr
+}
+
+func (e *streamReadError) Error() string {
+	return "cpu usage stream read failed: " + e.reason
+}
+
+func (e *streamReadError) Unwrap() error { return e.class }
 
 func (b *streamBody) Close() error {
 	err := b.ReadCloser.Close()

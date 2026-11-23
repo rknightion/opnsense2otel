@@ -877,6 +877,29 @@ func certificateFailureReason(err *tls.CertificateVerificationError) string {
 	return "TLS certificate verification failed"
 }
 
+// bodyEndTracker records whether the HTTP body reached its proper end. The gzip
+// reader reports a short stream as EOF whether the exchange finished or the
+// connection was lost, and only the body's own read can tell those apart.
+type bodyEndTracker struct {
+	io.Reader
+	complete bool
+}
+
+func (b *bodyEndTracker) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	if err == io.EOF {
+		b.complete = true
+	}
+	return n, err
+}
+
+func (b *bodyEndTracker) gzipFailureReason(err error) string {
+	if b.complete && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+		return "incomplete gzip data"
+	}
+	return transportFailureReason(err)
+}
+
 // readResponse decompresses, size-limits and unmarshals an API response into
 // responseStruct, closing the response body. Non-2xx responses and unmarshal
 // failures carry a bounded slice of the body in the returned error, which is
@@ -890,12 +913,15 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 	defer resp.Body.Close()
 
 	var reader io.Reader = resp.Body
+	readFailureReason := transportFailureReason
 	if resp.Header.Get("Content-Encoding") == "gzip" {
-		gz, err := gzip.NewReader(resp.Body)
+		body := &bodyEndTracker{Reader: resp.Body}
+		readFailureReason = body.gzipFailureReason
+		gz, err := gzip.NewReader(body)
 		if err != nil {
 			return &APICallError{
 				Endpoint:   string(path),
-				Message:    fmt.Sprintf("failed to decompress gzip response body: %s", transportFailureReason(err)),
+				Message:    fmt.Sprintf("failed to decompress gzip response body: %s", readFailureReason(err)),
 				StatusCode: resp.StatusCode,
 			}
 		}
@@ -908,7 +934,7 @@ func (c *Client) readResponse(method string, path EndpointPath, resp *http.Respo
 	if err != nil {
 		return &APICallError{
 			Endpoint:   string(path),
-			Message:    fmt.Sprintf("failed to read response body: %s", transportFailureReason(err)),
+			Message:    fmt.Sprintf("failed to read response body: %s", readFailureReason(err)),
 			StatusCode: resp.StatusCode,
 		}
 	}
