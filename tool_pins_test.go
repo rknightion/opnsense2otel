@@ -138,6 +138,8 @@ const (
 	setupPinRoute    = `version="$(golangci_lint_pin justfile)"`
 	setupInstallFunc = "install_golangci_lint"
 	setupPinFunc     = "golangci_lint_pin"
+	// setupMainSequence is the first line of the script's main sequence.
+	setupMainSequence = "require_bootstrap_tools"
 	// setupInstallLine is the one line that may name the linter's module path.
 	setupInstallLine = `GOBIN="${LOCAL_BIN}" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}"`
 	linterModuleHost = "github.com/golangci"
@@ -345,7 +347,8 @@ func TestCloudSetupInstallsThePinnedLinter(t *testing.T) {
 	if pin == nil {
 		t.Fatal("justfile has no golangci_lint_version pin")
 	}
-	want := "install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@" + string(pin[1])
+	const linterInstallArgs = "install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@"
+	want := linterInstallArgs + string(pin[1])
 	data, err := os.ReadFile(filepath.Join(root, "scripts", "cloud-environment-setup.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -367,21 +370,43 @@ func TestCloudSetupInstallsThePinnedLinter(t *testing.T) {
 		{"function keyword form with a literal", replaceHelper("function golangci_lint_pin() {\n  local version=v1.0.0\n  printf '%s\\n' \"$version\"\n}\n"), false},
 		{"literal set through a called helper", replaceHelper("set_release() {\n  version=v1.0.0\n}\ngolangci_lint_pin() {\n  set_release\n  printf '%s\\n' \"$version\"\n}\n"), false},
 		{"helper printing a literal", replaceHelper("golangci_lint_pin() {\n  printf 'v1.0.0\\n'\n}\n"), false},
+		{"later redefinition of the helper", strings.Replace(real, "install_golangci_lint() {", "function golangci_lint_pin {\n  local version=v1.0.0\n  printf '%s\\n' \"$version\"\n}\n\ninstall_golangci_lint() {", 1), false},
+		{"top-level value read by the helper", strings.Replace(strings.Replace(strings.Replace(real,
+			"install_golangci_lint() {\n  local version\n", "install_golangci_lint() {\n", 1),
+			"golangci_lint_pin() {\n", "golangci_lint_pin() {\n  if [[ -n \"${version:-}\" ]]; then printf '%s\\n' \"$version\"; return; fi\n", 1),
+			"install_golangci_lint() {", "version=v1.0.0\n\ninstall_golangci_lint() {", 1), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, runErr := runLinterInstall(t, root, tt.script)
-			if pinned := runErr == nil && got == want; pinned != tt.pinned {
-				t.Errorf("installed %q (err %v), want pinned=%v for %q", got, runErr, tt.pinned, want)
+			if runErr != nil {
+				t.Fatalf("install did not run: %v", runErr)
+			}
+			// Each mutation must really reach the install with its literal, so a
+			// script that merely broke cannot stand in for a detected second version.
+			expected := want
+			if !tt.pinned {
+				expected = linterInstallArgs + "v1.0.0"
+			}
+			if got != expected {
+				t.Errorf("stub go received %q, want %q", got, expected)
+			}
+			if pinned := got == want; pinned != tt.pinned {
+				t.Errorf("resolved the justfile pin = %v, want %v", pinned, tt.pinned)
 			}
 		})
 	}
 }
 
-// runLinterInstall runs install_golangci_lint from script with a stub go on PATH
-// and returns the arguments the stub received.
+// runLinterInstall loads everything script defines before its main sequence, so
+// a redefinition or top-level value counts, then runs install_golangci_lint with
+// a stub go on PATH and returns the arguments the stub received. HOME is a temp
+// directory because the script's top level writes to it.
 func runLinterInstall(t *testing.T, root, script string) (string, error) {
 	t.Helper()
+	if n := strings.Count("\n"+script, "\n"+setupMainSequence+"\n"); n != 1 {
+		t.Fatalf("setup script has %d %q lines, want 1: the test must not run its main sequence", n, setupMainSequence)
+	}
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "setup.sh")
 	argsPath := filepath.Join(dir, "go-args")
@@ -392,12 +417,12 @@ func runLinterInstall(t *testing.T, root, script string) (string, error) {
 	if err := os.WriteFile(filepath.Join(dir, "go"), []byte(stub), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	const run = `set -euo pipefail
-eval "$(sed -n -e '/^golangci_lint_pin() {/,/^}/p' -e '/^install_golangci_lint() {/,/^}/p' "$1")"
+	run := `set -euo pipefail
+eval "$(sed '/^` + setupMainSequence + `$/,$d' "$1")"
 install_golangci_lint`
 	cmd := exec.Command("bash", "-c", run, "bash", scriptPath)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "GO_ARGS="+argsPath, "LOCAL_BIN="+dir)
+	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "GO_ARGS="+argsPath, "HOME="+dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("%w: %s", err, out)
 	}
