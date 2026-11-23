@@ -77,7 +77,7 @@ jobs:
         with:
           ref: refs/tags/${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
-      - uses: rknightion/.github/.github/actions/setup-just@b8a49e837c591099a98530180ab1050e89b29b23 # v1.31.8
+      - uses: rknightion/.github/.github/actions/setup-just@3f83f4c8cf2a4fed80faf085c3c7bd1328d72f79 # v1.31.9
       - name: Resolve release tool pins
         id: pin
         run: |
@@ -102,7 +102,7 @@ jobs:
       id-token: write
       packages: write
       attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
-    uses: rknightion/.github/.github/workflows/binaries.yml@b8a49e837c591099a98530180ab1050e89b29b23 # v1.31.8
+    uses: rknightion/.github/.github/workflows/binaries.yml@3f83f4c8cf2a4fed80faf085c3c7bd1328d72f79 # v1.31.9
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       qualify-release-tag: true

@@ -28,7 +28,7 @@ jobs:
         with:
           ref: ${{ inputs.release_tag || github.ref }}
           persist-credentials: false
-      - uses: rknightion/.github/.github/actions/setup-just@b8a49e837c591099a98530180ab1050e89b29b23 # v1.31.8
+      - uses: rknightion/.github/.github/actions/setup-just@3f83f4c8cf2a4fed80faf085c3c7bd1328d72f79 # v1.31.9
       - name: Resolve pinned go-licenses version + module
         id: pin
         run: |
@@ -92,7 +92,7 @@ jobs:
       id-token: write
       attestations: write
       security-events: write
-    uses: rknightion/.github/.github/workflows/container-publish.yml@b8a49e837c591099a98530180ab1050e89b29b23 # v1.31.8 # zizmor: ignore[unpinned-uses]
+    uses: rknightion/.github/.github/workflows/container-publish.yml@3f83f4c8cf2a4fed80faf085c3c7bd1328d72f79 # v1.31.9 # zizmor: ignore[unpinned-uses]
     with:
       release-tag: ${{ inputs.release_tag }}
       publish-branch-tags-on-prerelease: false
@@ -125,7 +125,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: rknightion/.github/.github/actions/setup-just@b8a49e837c591099a98530180ab1050e89b29b23 # v1.31.8
+      - uses: rknightion/.github/.github/actions/setup-just@3f83f4c8cf2a4fed80faf085c3c7bd1328d72f79 # v1.31.9
       # Only go-licenses notices here; the shared reusable already generates +
       # attaches the image SPDX+CycloneDX SBOMs (same filenames — don't double-upload).
       - name: Generate + attach third-party notices
