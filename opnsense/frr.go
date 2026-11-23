@@ -2,6 +2,7 @@ package opnsense
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -394,11 +395,15 @@ func (m *frrOSPFAreaMap) UnmarshalJSON(data []byte) error {
 
 	areas := make(map[string]frrOSPFAreaData)
 	if err := json.Unmarshal(data, &areas); err != nil {
-		return fmt.Errorf("ospf areas: %w", err)
+		return fmt.Errorf("%w: %w", errOSPFAreasDecode, err)
 	}
 	*m = areas
 	return nil
 }
+
+// errOSPFAreasDecode marks a failure inside the areas map, so the overview error
+// can name the field without quoting the decoder's text.
+var errOSPFAreasDecode = errors.New("ospf areas")
 
 // frrOSPFOverviewBody holds the parsed ospfoverview `response` object.
 //
@@ -503,9 +508,13 @@ func (c *Client) FetchFRROSPF() (FRROSPF, *APICallError) {
 			// genuine corruption or upstream drift, so surface it instead of
 			// reporting partial success: Present stays false, no OSPF series are
 			// emitted, and the collector records the failed poll (#378).
+			scope := "response"
+			if errors.Is(jsonErr, errOSPFAreasDecode) {
+				scope = "areas"
+			}
 			return data, &APICallError{
 				Endpoint:   "quaggaOspfOverview",
-				Message:    "failed to decode ospf overview response: " + jsonErr.Error(),
+				Message:    "failed to decode ospf overview " + scope + ": " + decodeFailureReason(jsonErr),
 				StatusCode: 0,
 			}
 		}

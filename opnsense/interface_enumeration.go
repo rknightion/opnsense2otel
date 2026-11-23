@@ -117,7 +117,7 @@ func (c *Client) FetchInterfaceEnumeration() ([]string, *APICallError) {
 	if perr != nil {
 		return nil, &APICallError{
 			Endpoint:   string(url),
-			Message:    perr.Error(),
+			Message:    "failed to parse interface config: " + decodeFailureReason(perr),
 			StatusCode: 0,
 		}
 	}

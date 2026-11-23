@@ -1223,11 +1223,11 @@ func TestDo_InvalidJSONRedactsSecrets(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
-	if strings.Contains(err.Message, "hunter2") {
-		t.Errorf("expected password value to be redacted from error message, got: %s", err.Message)
+	if strings.Contains(err.Message, "hunter2") || strings.Contains(err.Message, "password") {
+		t.Errorf("expected the body to be withheld from the error message, got: %s", err.Message)
 	}
-	if !strings.Contains(err.Message, "[REDACTED]") {
-		t.Errorf("expected [REDACTED] marker in error message, got: %s", err.Message)
+	if !strings.Contains(err.Message, "withheld") {
+		t.Errorf("expected the message to say the content was withheld, got: %s", err.Message)
 	}
 }
 
@@ -1257,8 +1257,8 @@ func TestDo_InvalidJSONRedactsSharedSensitiveConfigKeys(t *testing.T) {
 			if got := err.Error(); strings.Contains(got, tc.secret) {
 				t.Errorf("APICallError.Error leaked %q: %s", tc.secret, got)
 			}
-			if got := err.Error(); !strings.Contains(got, `"`+tc.key+`":"[REDACTED]"`) {
-				t.Errorf("APICallError.Error did not preserve redacted %q field: %s", tc.key, got)
+			if got := err.Error(); strings.Contains(got, tc.key) {
+				t.Errorf("APICallError.Error kept the body's %q field: %s", tc.key, got)
 			}
 		})
 	}
@@ -1276,14 +1276,16 @@ func TestDo_NonSuccessStatusRedactsSecrets(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-success status")
 	}
-	if strings.Contains(err.Message, "hunter2") {
-		t.Errorf("expected api_key value to be redacted from error message, got: %s", err.Message)
+	for _, body := range []string{"hunter2", "api_key", "auth failed"} {
+		if strings.Contains(err.Message, body) {
+			t.Errorf("expected the body to be withheld, found %q in: %s", body, err.Message)
+		}
 	}
-	if !strings.Contains(err.Message, "[REDACTED]") {
-		t.Errorf("expected [REDACTED] marker in error message, got: %s", err.Message)
+	if !strings.Contains(err.Message, "HTTP 500") {
+		t.Errorf("expected the status in the error message, got: %s", err.Message)
 	}
-	if !strings.Contains(err.Message, "auth failed") {
-		t.Errorf("expected benign message field to be untouched, got: %s", err.Message)
+	if err.Endpoint != "api/core/service/search" || !strings.Contains(err.Error(), "api/core/service/search") {
+		t.Errorf("expected the endpoint in the field and Error(), got %q: %s", err.Endpoint, err.Error())
 	}
 }
 

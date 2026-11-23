@@ -201,8 +201,7 @@ func TestFetchFirewallGeoIPStatus_ErrorPathRedactsLicenseKey(t *testing.T) {
 		{
 			name:   "malformed json body",
 			status: http.StatusOK,
-			// Unterminated JSON: forces the unmarshalBody error path, which
-			// dumps the body into the error message.
+			// Unterminated JSON: forces the unmarshalBody error path.
 			body: `{"alias":{"geoip":{"url":"` + geoipURL + `","usages":`,
 		},
 	} {
@@ -220,8 +219,8 @@ func TestFetchFirewallGeoIPStatus_ErrorPathRedactsLicenseKey(t *testing.T) {
 			if strings.Contains(err.Error(), licenseKey) || strings.Contains(err.Message, licenseKey) {
 				t.Fatalf("MaxMind license key leaked into the error: %s", err.Error())
 			}
-			if !strings.Contains(err.Message, "REDACTED") {
-				t.Errorf("expected a REDACTED marker in the error message, got: %s", err.Message)
+			if strings.Contains(err.Message, "download.maxmind.com") || !strings.Contains(err.Message, "withheld") {
+				t.Errorf("expected the body to be withheld from the error message, got: %s", err.Message)
 			}
 		})
 	}
