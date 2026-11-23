@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 
@@ -129,44 +128,106 @@ func checkWorkflowsLeaveLintToJust(t *testing.T, root string) {
 
 var (
 	linterVersionLike = regexp.MustCompile(`(?i)\bv?[0-9]+\.[0-9]|=["']?v?[0-9]|@["']?v?["']?[0-9]|@["']?latest`)
-	versionAssignment = regexp.MustCompile(`(?i)(^|[\s;])version=["']?v?[0-9]`)
-	functionBoundary  = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)|\})`)
+	versionExpansion  = regexp.MustCompile(`@["']?\$\{?version\b`)
+	functionHeader    = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(\)`)
+)
+
+const (
+	setupPinRoute      = `version="$(golangci_lint_pin justfile)"`
+	setupInstallFunc   = "install_golangci_lint"
+	setupInstallSuffix = `@${version}"`
 )
 
 // cloudScriptVersionLines returns the 1-based lines of a cloud script that give
-// golangci-lint a version of its own. A literal version= assignment counts only
-// in a function or top-level block that also names golangci, so another tool's
-// version in the same script is left alone.
+// golangci-lint a version of its own. A line naming golangci may carry no version
+// literal, and may name a module version only as the go install line that sits
+// directly after the pin route inside install_golangci_lint. A version=
+// assignment elsewhere is another tool's and is left alone, but it cannot reach
+// the linter: any other line installing a module at the shell variable is
+// rejected too.
 func cloudScriptVersionLines(script string) []int {
 	var bad []int
-	var assignments []int
-	blockNamesLinter := false
-	flush := func() {
-		if blockNamesLinter {
-			bad = append(bad, assignments...)
-		}
-		assignments, blockNamesLinter = nil, false
-	}
+	function, previous := "", ""
 	for i, line := range strings.Split(script, "\n") {
 		text := strings.TrimSpace(line)
-		if functionBoundary.MatchString(line) {
-			flush()
+		if match := functionHeader.FindStringSubmatch(line); match != nil {
+			function = match[1]
+		} else if strings.HasPrefix(line, "}") {
+			function = ""
 		}
-		if strings.HasPrefix(text, "#") {
+		if text == "" || strings.HasPrefix(text, "#") {
 			continue
 		}
+		approved := function == setupInstallFunc && previous == setupPinRoute &&
+			strings.HasSuffix(text, setupInstallSuffix)
 		names := strings.Contains(strings.ToLower(text), "golangci")
-		blockNamesLinter = blockNamesLinter || names
-		if names && (linterVersionLike.MatchString(text) ||
-			(strings.Contains(text, "@") && !strings.HasSuffix(text, `@${version}"`))) {
+		switch {
+		case approved:
+		case names && (linterVersionLike.MatchString(text) || strings.Contains(text, "@")),
+			versionExpansion.MatchString(text):
 			bad = append(bad, i+1)
-		} else if versionAssignment.MatchString(text) {
-			assignments = append(assignments, i+1)
+		}
+		previous = text
+	}
+	return bad
+}
+
+type requirementRef struct {
+	line int
+	path string
+}
+
+var pipInstall = regexp.MustCompile(`(?:^|\s)pip[0-9.]*\s+install(?:\s|$)`)
+
+// cloudScriptRequirements returns the requirements files a cloud script hands to
+// pip install, through -r or --requirement (also in the = and attached forms).
+// A -r flag on any other command, such as read -r, is not one.
+func cloudScriptRequirements(script string) []requirementRef {
+	var refs []requirementRef
+	var command strings.Builder
+	start := 0
+	for i, line := range strings.Split(script, "\n") {
+		if command.Len() == 0 {
+			start = i + 1
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "#") && command.Len() == 0 {
+			continue
+		}
+		if joined, more := strings.CutSuffix(strings.TrimRight(line, " \t"), "\\"); more {
+			command.WriteString(joined + " ")
+			continue
+		} else {
+			command.WriteString(joined)
+		}
+		text := command.String()
+		command.Reset()
+		loc := pipInstall.FindStringIndex(text)
+		if loc == nil {
+			continue
+		}
+		args := text[loc[1]:]
+		if end := strings.IndexAny(args, ";&|"); end >= 0 {
+			args = args[:end]
+		}
+		tokens := strings.Fields(args)
+		for k, token := range tokens {
+			path := ""
+			switch {
+			case token == "-r" || token == "--requirement":
+				if k+1 < len(tokens) {
+					path = tokens[k+1]
+				}
+			case strings.HasPrefix(token, "--requirement="):
+				path = strings.TrimPrefix(token, "--requirement=")
+			case strings.HasPrefix(token, "-r") && !strings.HasPrefix(token, "--"):
+				path = strings.TrimPrefix(token, "-r")
+			}
+			if path = strings.Trim(path, `"'`); path != "" {
+				refs = append(refs, requirementRef{start, path})
+			}
 		}
 	}
-	flush()
-	sort.Ints(bad)
-	return bad
+	return refs
 }
 
 // TestCloudSetupRequirementsFilesExist keeps the cloud setup script from installing
@@ -181,17 +242,11 @@ func TestCloudSetupRequirementsFilesExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirement := regexp.MustCompile(`(?:^|\s)-r\s+(\S+)`)
 	found := 0
-	for i, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		for _, match := range requirement.FindAllStringSubmatch(line, -1) {
-			found++
-			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(match[1]))); err != nil {
-				t.Errorf("scripts/cloud-environment-setup.sh:%d: pip requirements file %s: %v", i+1, match[1], err)
-			}
+	for _, ref := range cloudScriptRequirements(string(data)) {
+		found++
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(ref.path))); err != nil {
+			t.Errorf("scripts/cloud-environment-setup.sh:%d: pip requirements file %s: %v", ref.line, ref.path, err)
 		}
 	}
 	if found == 0 {
@@ -284,17 +339,52 @@ func TestToolPinRulesOnFixtures(t *testing.T) {
 			}
 		}
 	})
+	t.Run("pip requirements", func(t *testing.T) {
+		const pip = "  python -m pip install --quiet \\\n"
+		for name, tc := range map[string]struct {
+			script string
+			want   []string
+		}{
+			"short flag on a continuation":     {pip + "    -r tools/a.txt\n", []string{"tools/a.txt"}},
+			"long flag":                        {pip + "    --requirement scripts/b.txt\n", []string{"scripts/b.txt"}},
+			"long flag with equals":            {"pip install --requirement=scripts/b.txt\n", []string{"scripts/b.txt"}},
+			"attached short flag":              {"pip install -rscripts/c.txt\n", []string{"scripts/c.txt"}},
+			"quoted path":                      {"pip3 install -r \"scripts/d.txt\"\n", []string{"scripts/d.txt"}},
+			"read -r is not pip":               {"read -r first_line < justfile\n", nil},
+			"read -r beside a pip install":     {"read -r first_line < justfile\npip install pkg\n", nil},
+			"commented pip install":            {"# pip install -r scripts/e.txt\n", nil},
+			"flag after a separator is no pip": {"pip install pkg && read -r x < justfile\n", nil},
+		} {
+			var got []string
+			for _, ref := range cloudScriptRequirements(tc.script) {
+				got = append(got, ref.path)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Errorf("%s: files %v, want %v", name, got, tc.want)
+			}
+		}
+	})
 	t.Run("cloud scripts", func(t *testing.T) {
+		const setupHead = "install_golangci_lint() {\n  local version\n  version=\"$(golangci_lint_pin justfile)\"\n"
+		const setupInstall = "  go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\"\n}\n"
 		for name, tc := range map[string]struct {
 			script string
 			bad    []int
 		}{
-			"unrelated tool version":                 {"install_helm() {\n  local version\n  version=3.14.0\n}\ninstall_golangci_lint() {\n  version=\"$(golangci_lint_pin justfile)\"\n  go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\"\n}\n", nil},
-			"literal version in the linter function": {"install_golangci_lint() {\n  version=v1.0.0\n  go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\"\n}\n", []int{2}},
-			"literal version beside a golangci line": {"version=v1.0.0 golangci-lint version\n", []int{1}},
-			"literal pin in the install line":        {"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v1.0.0\n", []int{1}},
-			"latest":                                 {"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest\n", []int{1}},
-			"commented assignment":                   {"install_golangci_lint() {\n  # version=v1.0.0\n  golangci-lint version\n}\n", nil},
+			"real shape": {setupHead + setupInstall, nil},
+			"comment and blank between pin and install":        {setupHead + "\n  # install\n" + setupInstall, nil},
+			"second version through a helper call":             {"set_release() {\n  version=v1.0.0\n}\n" + setupHead + "  set_release\n" + setupInstall, []int{8}},
+			"literal assignment between pin and install":       {setupHead + "  version=v1.0.0\n" + setupInstall, []int{5}},
+			"install outside the linter function":              {strings.Replace(setupHead, "install_golangci_lint", "install_other", 1) + setupInstall, []int{4}},
+			"install through a package variable":               {"version=v1.0.0\npkg=github.com/golangci/golangci-lint/v2/cmd/golangci-lint\ngo install \"$pkg@${version}\"\n", []int{3}},
+			"unrelated assignment in a script of no functions": {"version=1.2.3\njust _tool-govulncheck\njust _tool-golangci-lint\n", nil},
+			"unrelated assignment before go mod download":      {setupHead + setupInstall + "version=3.14.0\ngo mod download\n", nil},
+			"unrelated tool version":                           {"install_helm() {\n  local version\n  version=3.14.0\n}\n" + setupHead + setupInstall, nil},
+			"literal version in the linter function":           {"install_golangci_lint() {\n  version=v1.0.0\n  go install \"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}\"\n}\n", []int{3}},
+			"literal version beside a golangci line":           {"version=v1.0.0 golangci-lint version\n", []int{1}},
+			"literal pin in the install line":                  {"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v1.0.0\n", []int{1}},
+			"latest":                                           {"go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest\n", []int{1}},
+			"commented assignment":                             {"install_golangci_lint() {\n  # version=v1.0.0\n  golangci-lint version\n}\n", nil},
 		} {
 			got := cloudScriptVersionLines(tc.script)
 			if fmt.Sprint(got) != fmt.Sprint(tc.bad) {
