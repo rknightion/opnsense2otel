@@ -9,12 +9,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"go/ast"
+	"log"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,7 +111,14 @@ func TestMetricsServerTLSHandshakeFailureStaysOutOfShippingQueue(t *testing.T) {
 	// The application logger exactly as main wires it under --logs.self.enabled.
 	appLogger := slog.New(selfLog)
 
-	srv := newMetricsServer(http.NotFoundHandler(), baseLogger)
+	// net/http's server errors belong on the standard logger, which has no level
+	// filter: a handler panic must stay visible at --log.level=error.
+	serverErrors := &lockedBuffer{}
+	previous := log.Writer()
+	log.SetOutput(serverErrors)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	srv := newMetricsServer(http.NotFoundHandler())
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -140,13 +149,15 @@ func TestMetricsServerTLSHandshakeFailureStaysOutOfShippingQueue(t *testing.T) {
 	}
 
 	// The handshake error is logged after the peer closes; wait for it to land
-	// on stderr, which proves the error path ran before asserting on the queue.
+	// on the standard logger, which proves the error path ran before asserting
+	// on the queue.
+	const handshakeError = "TLS handshake error"
 	deadline := time.Now().Add(5 * time.Second)
-	for stderr.String() == "" && time.Now().Before(deadline) {
+	for !strings.Contains(serverErrors.String(), handshakeError) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if stderr.String() == "" {
-		t.Fatal("the failed handshakes were not logged to stderr at all; the test is not exercising the server error path")
+	if !strings.Contains(serverErrors.String(), handshakeError) {
+		t.Fatalf("no %q on the standard logger; got %q", handshakeError, serverErrors.String())
 	}
 	time.Sleep(100 * time.Millisecond) // let any straggling record settle
 
@@ -157,11 +168,9 @@ func TestMetricsServerTLSHandshakeFailureStaysOutOfShippingQueue(t *testing.T) {
 	}
 }
 
-// TestMainBuildsMetricsServerFromBaseLogger guards the wiring that the seam test
-// cannot reach, because main() calls os.Exit: the metrics server must be built
-// with baseLogger (stderr only), never logger (which is the self-log wrapper when
-// --logs.self.enabled is set).
-func TestMainBuildsMetricsServerFromBaseLogger(t *testing.T) {
+// TestMainBuildsMetricsServerThroughSeam guards the wiring the seam test cannot
+// reach, because main() calls os.Exit.
+func TestMainBuildsMetricsServerThroughSeam(t *testing.T) {
 	found := false
 	ast.Inspect(mainFuncBody(t), func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -172,13 +181,6 @@ func TestMainBuildsMetricsServerFromBaseLogger(t *testing.T) {
 			return true
 		}
 		found = true
-		if len(call.Args) != 2 {
-			t.Errorf("newMetricsServer called with %d args, want 2", len(call.Args))
-			return true
-		}
-		if id, ok := call.Args[1].(*ast.Ident); !ok || id.Name != "baseLogger" {
-			t.Errorf("newMetricsServer must be given baseLogger (stderr only), not %T %v", call.Args[1], call.Args[1])
-		}
 		return true
 	})
 	if !found {
