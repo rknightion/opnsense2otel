@@ -371,6 +371,7 @@ func TestCloudSetupInstallsThePinnedLinter(t *testing.T) {
 		{"literal set through a called helper", replaceHelper("set_release() {\n  version=v1.0.0\n}\ngolangci_lint_pin() {\n  set_release\n  printf '%s\\n' \"$version\"\n}\n"), false},
 		{"helper printing a literal", replaceHelper("golangci_lint_pin() {\n  printf 'v1.0.0\\n'\n}\n"), false},
 		{"later redefinition of the helper", strings.Replace(real, "install_golangci_lint() {", "function golangci_lint_pin {\n  local version=v1.0.0\n  printf '%s\\n' \"$version\"\n}\n\ninstall_golangci_lint() {", 1), false},
+		{"redefinition inside the main sequence", strings.Replace(real, "\ninstall_golangci_lint\n", "\nfunction golangci_lint_pin {\n  local version=v1.0.0\n  printf '%s\\n' \"$version\"\n}\ninstall_golangci_lint\n", 1), false},
 		{"top-level value read by the helper", strings.Replace(strings.Replace(strings.Replace(real,
 			"install_golangci_lint() {\n  local version\n", "install_golangci_lint() {\n", 1),
 			"golangci_lint_pin() {\n", "golangci_lint_pin() {\n  if [[ -n \"${version:-}\" ]]; then printf '%s\\n' \"$version\"; return; fi\n", 1),
@@ -398,14 +399,16 @@ func TestCloudSetupInstallsThePinnedLinter(t *testing.T) {
 	}
 }
 
-// runLinterInstall loads everything script defines before its main sequence, so
-// a redefinition or top-level value counts, then runs install_golangci_lint with
-// a stub go on PATH and returns the arguments the stub received. HOME is a temp
-// directory because the script's top level writes to it.
+// runLinterInstall runs script from its top through its one real
+// install_golangci_lint call, skipping only the two bootstrap steps that need the
+// network, so anything the script does before that call counts. go is a stub on
+// PATH, and HOME is a temp directory because the script's top level writes to it.
 func runLinterInstall(t *testing.T, root, script string) (string, error) {
 	t.Helper()
-	if n := strings.Count("\n"+script, "\n"+setupMainSequence+"\n"); n != 1 {
-		t.Fatalf("setup script has %d %q lines, want 1: the test must not run its main sequence", n, setupMainSequence)
+	for _, step := range []string{setupMainSequence, "install_go", setupInstallFunc} {
+		if n := len(regexp.MustCompile(`(?m)^`+step+`$`).FindAllString(script, -1)); n != 1 {
+			t.Fatalf("setup script calls %s %d times at top level, want 1", step, n)
+		}
 	}
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "setup.sh")
@@ -418,8 +421,8 @@ func runLinterInstall(t *testing.T, root, script string) (string, error) {
 		t.Fatal(err)
 	}
 	run := `set -euo pipefail
-eval "$(sed '/^` + setupMainSequence + `$/,$d' "$1")"
-install_golangci_lint`
+eval "$(sed -e '/^` + setupMainSequence + `$/d' -e '/^install_go$/d' -e '/^` + setupInstallFunc + `$/q' "$1")"
+`
 	cmd := exec.Command("bash", "-c", run, "bash", scriptPath)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "GO_ARGS="+argsPath, "HOME="+dir)
