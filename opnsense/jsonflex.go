@@ -2,7 +2,9 @@ package opnsense
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 )
@@ -89,17 +91,33 @@ func (f *flexBool) UnmarshalJSON(data []byte) error {
 // integer (observed on Kea lease "expire" across OPNsense versions — upstream #105).
 type flexInt int
 
-// intRangeFloat is the magnitude of the smallest int, the first float64 past
-// the top of the int range.
-const intRangeFloat = float64(1 << (strconv.IntSize - 1))
-
-// isHexFloat reports whether s, after an optional sign, has a hex prefix.
-func isHexFloat(s string) bool {
-	if s != "" && (s[0] == '+' || s[0] == '-') {
-		s = s[1:]
+// parseExactFlexInt truncates any number strconv.ParseFloat accepts toward zero
+// without passing through a float64. ParseFloat decides the grammar, so
+// underscored and hex forms stay accepted; a range error only means the value
+// does not fit a float64, which the exact parse below decides for itself.
+func parseExactFlexInt(s string) (int, bool) {
+	if _, err := strconv.ParseFloat(s, 64); err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, false
 	}
-	return len(s) > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')
+	unsigned := strings.TrimLeft(s, "+-")
+	if !strings.HasPrefix(unsigned, "0x") && !strings.HasPrefix(unsigned, "0X") {
+		return parseExactDecimalInt(strings.ReplaceAll(s, "_", ""))
+	}
+	// A hex mantissa converts to binary exactly, and rounding toward zero cannot
+	// carry a fraction into the integer part.
+	value, _, err := big.ParseFloat(s, 0, hexFlexIntPrecision, big.ToZero)
+	if err != nil || value.IsInf() || value.MantExp(nil) > strconv.IntSize {
+		return 0, false
+	}
+	integer, _ := value.Int(nil)
+	if !integer.IsInt64() || int64(int(integer.Int64())) != integer.Int64() {
+		return 0, false
+	}
+	return int(integer.Int64()), true
 }
+
+// hexFlexIntPrecision holds every bit of an int with room to spare.
+const hexFlexIntPrecision = 128
 
 // Int returns the underlying int value.
 func (f flexInt) Int() int { return int(f) }
@@ -116,20 +134,11 @@ func (f *flexInt) UnmarshalJSON(data []byte) error {
 		*f = flexInt(n)
 		return nil
 	}
-	// One exact decision for every other numeric form, shared with the voucher
-	// expiry parser. It reports false outside the int range or for text that is
-	// not a decimal number, and both decode to 0.
-	if n, ok := parseExactDecimalInt(s); ok {
+	// One exact decision for every other numeric form. It reports false outside
+	// the int range or for text that is not a number, and both decode to 0.
+	if n, ok := parseExactFlexInt(s); ok {
 		*f = flexInt(n)
 		return nil
-	}
-	// A hex float is the one other form ParseFloat accepts. Its range check runs
-	// on the float because the decimal parser above cannot read it.
-	if isHexFloat(s) {
-		if fl, err := strconv.ParseFloat(s, 64); err == nil && fl >= -intRangeFloat && fl < intRangeFloat {
-			*f = flexInt(int(fl))
-			return nil
-		}
 	}
 	*f = 0
 	return nil
