@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -326,6 +327,85 @@ func checkCloudScriptPins(t *testing.T, root string) {
 			t.Errorf("%s must take the golangci-lint version through %s", path, pinRoute)
 		}
 	}
+}
+
+// TestCloudSetupInstallsThePinnedLinter runs the real install function against a
+// stub go, so any route that resolves a version other than the justfile pin fails
+// however it is written.
+func TestCloudSetupInstallsThePinnedLinter(t *testing.T) {
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	justfile, err := os.ReadFile(filepath.Join(root, "justfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := regexp.MustCompile(`(?m)^golangci_lint_version\s*:=\s*"(v[^"]+)"`).FindSubmatch(justfile)
+	if pin == nil {
+		t.Fatal("justfile has no golangci_lint_version pin")
+	}
+	want := "install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@" + string(pin[1])
+	data, err := os.ReadFile(filepath.Join(root, "scripts", "cloud-environment-setup.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := string(data)
+	helper := regexp.MustCompile(`(?s)golangci_lint_pin\(\) \{.*?\n\}\n`)
+	if !helper.MatchString(real) {
+		t.Fatal("setup script has no golangci_lint_pin function")
+	}
+	replaceHelper := func(body string) string {
+		return helper.ReplaceAllLiteralString(real, body)
+	}
+	tests := []struct {
+		name   string
+		script string
+		pinned bool
+	}{
+		{"the real script", real, true},
+		{"function keyword form with a literal", replaceHelper("function golangci_lint_pin() {\n  local version=v1.0.0\n  printf '%s\\n' \"$version\"\n}\n"), false},
+		{"literal set through a called helper", replaceHelper("set_release() {\n  version=v1.0.0\n}\ngolangci_lint_pin() {\n  set_release\n  printf '%s\\n' \"$version\"\n}\n"), false},
+		{"helper printing a literal", replaceHelper("golangci_lint_pin() {\n  printf 'v1.0.0\\n'\n}\n"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, runErr := runLinterInstall(t, root, tt.script)
+			if pinned := runErr == nil && got == want; pinned != tt.pinned {
+				t.Errorf("installed %q (err %v), want pinned=%v for %q", got, runErr, tt.pinned, want)
+			}
+		})
+	}
+}
+
+// runLinterInstall runs install_golangci_lint from script with a stub go on PATH
+// and returns the arguments the stub received.
+func runLinterInstall(t *testing.T, root, script string) (string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "setup.sh")
+	argsPath := filepath.Join(dir, "go-args")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stub := "#!/bin/sh\nprintf '%s' \"$*\" > \"$GO_ARGS\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "go"), []byte(stub), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const run = `set -euo pipefail
+eval "$(sed -n -e '/^golangci_lint_pin() {/,/^}/p' -e '/^install_golangci_lint() {/,/^}/p' "$1")"
+install_golangci_lint`
+	cmd := exec.Command("bash", "-c", run, "bash", scriptPath)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "GO_ARGS="+argsPath, "LOCAL_BIN="+dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("%w: %s", err, out)
+	}
+	got, err := os.ReadFile(argsPath)
+	if err != nil {
+		return "", err
+	}
+	return string(got), nil
 }
 
 // A version written inside the two functions that resolve the pin reaches the
