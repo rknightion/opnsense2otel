@@ -7,7 +7,6 @@
 set -euo pipefail
 
 GO_VERSION="1.27.4"
-GOLANGCI_LINT_VERSION="2.13.1"
 HELM_VERSION="3.19.0"
 
 LOCAL_BIN="${HOME}/.local/bin"
@@ -101,13 +100,26 @@ PY
   rm -f "${download}"
 }
 
+golangci_lint_pin() {
+  python3 - "$1" <<'PYCODE'
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    lines = [line.rstrip("\n") for line in source if re.match(r"^\s*golangci_lint_version\s*:=", line)]
+if len(lines) != 1:
+    raise SystemExit("expected exactly one golangci_lint_version pin")
+match = re.fullmatch(r'\s*golangci_lint_version\s*:=\s*"(v[0-9]+\.[0-9]+\.[0-9]+)"\s*', lines[0])
+if not match:
+    raise SystemExit("malformed golangci_lint_version pin")
+print(match.group(1))
+PYCODE
+}
+
 install_golangci_lint() {
-  if command -v golangci-lint >/dev/null 2>&1 && \
-    golangci-lint version 2>/dev/null | grep -Fq "version ${GOLANGCI_LINT_VERSION}"; then
-    return
-  fi
-  GOBIN="${LOCAL_BIN}" go install \
-    "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}"
+  local version
+  version="$(golangci_lint_pin justfile)"
+  GOBIN="${LOCAL_BIN}" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${version}"
 }
 
 install_helm() {
