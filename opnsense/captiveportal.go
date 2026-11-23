@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // captivePortalZoneMap decodes the api/captiveportal/session/zones response.
@@ -201,6 +203,153 @@ type captivePortalVoucherRow struct {
 	State      flexString `json:"state"`
 }
 
+type voucherDecodedRow struct {
+	row         captivePortalVoucherRow
+	validState  bool
+	validExpiry bool
+}
+
+// voucherRowFields limits decoding to fields needed for aggregation. In particular,
+// voucher usernames and all other per-voucher fields are ignored by the decoder.
+type voucherRowFields struct {
+	State  json.RawMessage `json:"state"`
+	Expiry json.RawMessage `json:"expirytime"`
+}
+
+// UnmarshalJSON keeps the row decoder's historical tolerance: a null row and
+// any state shape still count, and a non-object row still fails its group. A
+// shape OPNsense does not produce only clears validState or validExpiry, which
+// keeps that inventory out of the cache.
+func (row *voucherDecodedRow) UnmarshalJSON(data []byte) error {
+	var fields voucherRowFields
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if len(fields.State) > 0 {
+		if err := json.Unmarshal(fields.State, &row.row.State); err != nil {
+			return err
+		}
+		row.validState = fields.State[0] == '"' && row.row.State != ""
+	}
+	expiry, ok := parseVoucherExpiry(fields.Expiry)
+	row.row.Expirytime = flexInt(expiry)
+	row.validExpiry = ok
+	return nil
+}
+
+// parseVoucherExpiry is the single decision on a voucher's expiry: its value is
+// what the group aggregates and its ok is what admits the inventory to the
+// cache. The forms OPNsense variants emit for "no expiry" (null, "", []) are
+// valid zero values.
+func parseVoucherExpiry(raw json.RawMessage) (int, bool) {
+	value := string(bytes.TrimSpace(raw))
+	switch {
+	case value == "":
+		return 0, true
+	case value[0] == '"':
+		// The historical decoder read the raw text, so an escaped digit was never
+		// a number: it stays no expiry, and the odd form leaves the inventory
+		// incomplete.
+		if bytes.IndexByte(raw, '\\') >= 0 || json.Unmarshal(raw, &value) != nil {
+			return 0, false
+		}
+	case value[0] == '[':
+		var items []json.RawMessage
+		if json.Unmarshal(raw, &items) != nil || len(items) != 0 {
+			return 0, false
+		}
+		return 0, true
+	}
+	if value == "" || value == "null" || value == "[]" {
+		return 0, true
+	}
+	return parseExactDecimalInt(value)
+}
+
+// parseExactDecimalInt truncates a decimal literal (optional sign, fraction and
+// exponent) toward zero and reports whether the result fits an int. It works on
+// the digits because a float64 rounds neighbouring integers together, which
+// would carry a value just outside the int range back inside it.
+func parseExactDecimalInt(s string) (int, bool) {
+	negative := false
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		negative = s[0] == '-'
+		s = s[1:]
+	}
+	mantissa, exponent := s, 0
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		var ok bool
+		if exponent, ok = parseDecimalExponent(s[i+1:]); !ok {
+			return 0, false
+		}
+		mantissa = s[:i]
+	}
+	whole, fraction, _ := strings.Cut(mantissa, ".")
+	if whole+fraction == "" || !isDecimalDigits(whole) || !isDecimalDigits(fraction) {
+		return 0, false
+	}
+
+	// point is where the decimal point falls in digits once leading zeros go.
+	digits := strings.TrimLeft(whole+fraction, "0")
+	point := len(whole) + exponent - (len(whole) + len(fraction) - len(digits))
+	if digits == "" || point <= 0 {
+		return 0, true // zero, or a magnitude below one
+	}
+	if point > maxDecimalIntDigits {
+		return 0, false
+	}
+	var integer string
+	if point <= len(digits) {
+		integer = digits[:point]
+	} else {
+		integer = digits + strings.Repeat("0", point-len(digits))
+	}
+	if negative {
+		integer = "-" + integer
+	}
+	n, err := strconv.ParseInt(integer, 10, 0)
+	if err != nil {
+		return 0, false
+	}
+	return int(n), true
+}
+
+// maxDecimalIntDigits exceeds the digit count of any int, so a longer integer
+// part is out of range without building it.
+const maxDecimalIntDigits = 20
+
+// decimalExponentLimit saturates an exponent. It is far beyond any integer part
+// that can fit, and small enough that adding a body length cannot overflow.
+const decimalExponentLimit = 1 << 30
+
+func parseDecimalExponent(s string) (int, bool) {
+	negative := false
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		negative = s[0] == '-'
+		s = s[1:]
+	}
+	if !isDecimalDigits(s) || s == "" {
+		return 0, false
+	}
+	exponent := 0
+	for _, digit := range []byte(s) {
+		exponent = min(exponent*10+int(digit-'0'), decimalExponentLimit)
+	}
+	if negative {
+		exponent = -exponent
+	}
+	return exponent, true
+}
+
+func isDecimalDigits(s string) bool {
+	for _, char := range []byte(s) {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // CaptivePortalVoucherGroup is the aggregated, per-(provider,group) voucher
 // inventory: a count per state plus the group's earliest hard expiry deadline
 // (if any voucher in the group has one).
@@ -232,6 +381,9 @@ type CaptivePortalVouchers struct {
 	// module entirely, mirroring FetchCaptivePortalSessions's own zones gate).
 	Present bool
 
+	// Complete reports whether every provider and group was read successfully.
+	Complete bool
+
 	// Groups is empty on any box with no voucher-type auth server configured,
 	// or one with providers but no generated voucher groups yet — both are
 	// normal, common states, not errors (issue #207).
@@ -249,6 +401,57 @@ type CaptivePortalVouchers struct {
 // top-level 404 gate) is skipped, logged at debug level, and does not abort
 // the rest of the fetch — mirroring FetchSMARTDevices's per-device tolerance.
 func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallError) {
+	return c.fetchCaptivePortalVouchers(false)
+}
+
+// FetchCaptivePortalVouchersFresh reads inventory without the response body cache.
+// It is intended for the collector's separately bounded aggregate cache.
+func (c *Client) FetchCaptivePortalVouchersFresh() (CaptivePortalVouchers, *APICallError) {
+	return c.fetchCaptivePortalVouchers(true)
+}
+
+// CaptivePortalVoucherCacheTTL returns the configured inventory cache limit.
+func (c *Client) CaptivePortalVoucherCacheTTL() time.Duration {
+	if c.cache == nil {
+		return 0
+	}
+	c.cache.mu.Lock()
+	defer c.cache.mu.Unlock()
+	return c.cache.ttls[c.endpoints["captivePortalVoucherProviders"]]
+}
+
+// voucherNames flattens a decoded provider or group list as a plain []string
+// decode would (a null element becomes ""), and reports whether every name was
+// a real one. A null list or element, or an empty name, is an incomplete list.
+func voucherNames(values []*string) ([]string, bool) {
+	complete := values != nil
+	names := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == nil || *value == "" {
+			complete = false
+			names = append(names, "")
+			continue
+		}
+		names = append(names, *value)
+	}
+	return names, complete
+}
+
+// withoutVoucherResponseBody drops the message from an API error, keeping its
+// endpoint and status. A voucher row's username is a bearer credential (#227),
+// and the message can hold bytes the upstream sent: a failed response carries a
+// bounded slice of its body, and with status 0 Go's malformed-response transport
+// error quotes what it received. So no voucher error keeps its message.
+func withoutVoucherResponseBody(err *APICallError) *APICallError {
+	if err == nil {
+		return nil
+	}
+	safe := *err
+	safe.Message = "upstream response detail withheld"
+	return &safe
+}
+
+func (c *Client) fetchCaptivePortalVouchers(fresh bool) (CaptivePortalVouchers, *APICallError) {
 	var data CaptivePortalVouchers
 
 	providersURL, ok := c.endpoints["captivePortalVoucherProviders"]
@@ -276,14 +479,20 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 		}
 	}
 
-	var providers []string
-	if err := c.do("GET", providersURL, nil, &providers); err != nil {
+	var providers []*string
+	providerClient := c
+	if fresh {
+		providerClient = c.WithoutCache()
+	}
+	if err := providerClient.do("GET", providersURL, nil, &providers); err != nil {
 		if err.StatusCode == http.StatusNotFound {
 			return data, nil // feature absent
 		}
-		return data, err
+		return data, withoutVoucherResponseBody(err)
 	}
+	providerNames, providersComplete := voucherNames(providers)
 	data.Present = true
+	data.Complete = providersComplete
 
 	groupsClient, vouchersClient := *c, *c
 	if c.observer != nil {
@@ -291,27 +500,37 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 		vouchersClient.observer = requestObserverAtPath{observer: c.observer, path: string(vouchersBase)}
 	}
 
-	for _, provider := range providers {
+	for _, provider := range providerNames {
 		groupsPath := EndpointPath(string(groupsBase) + "/" + url.PathEscape(provider))
-		var groups []string
+		var groups []*string
 		if err := groupsClient.do("GET", groupsPath, nil, &groups); err != nil {
+			data.Complete = false
 			c.log.Debug("captiveportal voucher groups call failed for provider; skipping",
 				"component", "opnsense-client",
 				"provider", provider,
-				"err", err.Error())
+				"err", withoutVoucherResponseBody(err).Error())
 			continue
 		}
 
-		for _, group := range groups {
+		groupNames, groupsComplete := voucherNames(groups)
+		if !groupsComplete {
+			data.Complete = false
+		}
+		for _, group := range groupNames {
 			vouchersPath := EndpointPath(string(vouchersBase) + "/" + url.PathEscape(provider) + "/" + url.PathEscape(group))
-			var rows []captivePortalVoucherRow
+			var rows []voucherDecodedRow
 			if err := vouchersClient.do("GET", vouchersPath, nil, &rows); err != nil {
+				data.Complete = false
 				c.log.Debug("captiveportal list_vouchers call failed for group; skipping",
 					"component", "opnsense-client",
 					"provider", provider,
 					"group", group,
-					"err", err.Error())
+					"err", withoutVoucherResponseBody(err).Error())
 				continue
+			}
+
+			if rows == nil {
+				data.Complete = false
 			}
 
 			vg := CaptivePortalVoucherGroup{
@@ -320,11 +539,14 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 				Counts:   make(map[string]float64),
 			}
 			for _, row := range rows {
-				state := row.State.String()
+				if !row.validState || !row.validExpiry {
+					data.Complete = false
+				}
+				state := row.row.State.String()
 				vg.Counts[state]++
 
-				if (state == "unused" || state == "valid") && row.Expirytime.Int() > 0 {
-					expiry := float64(row.Expirytime.Int())
+				if (state == "unused" || state == "valid") && row.row.Expirytime.Int() > 0 {
+					expiry := float64(row.row.Expirytime.Int())
 					if !vg.HasNextExpiryTimestamp || expiry < vg.NextExpiryTimestamp {
 						vg.NextExpiryTimestamp = expiry
 						vg.HasNextExpiryTimestamp = true
@@ -345,4 +567,10 @@ func (c *Client) FetchCaptivePortalVouchers() (CaptivePortalVouchers, *APICallEr
 	})
 
 	return data, nil
+}
+
+// SameCaptivePortalSource reports whether two clients share the same underlying connection.
+// Context-bound copies share it; independently constructed clients do not.
+func (c *Client) SameCaptivePortalSource(other *Client) bool {
+	return other != nil && c.httpClient == other.httpClient
 }
