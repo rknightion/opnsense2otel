@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rknightion/opnsense2otel/v5/internal/options"
+	"github.com/rknightion/opnsense2otel/v5/internal/redact"
 	"github.com/rknightion/opnsense2otel/v5/opnsense"
 )
 
@@ -552,6 +553,7 @@ func marshalRoutingChangeEvent(event routingChangeEventBody) (string, error) {
 func redactRoutingChangeValue(value any) {
 	switch value := value.(type) {
 	case map[string]any:
+		redact.ConfigPropertyValue(value)
 		for key, child := range value {
 			if opnsense.SensitiveConfigKey(key) {
 				delete(value, key)

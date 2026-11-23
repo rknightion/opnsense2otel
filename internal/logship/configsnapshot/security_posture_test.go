@@ -150,3 +150,12 @@ func TestSecurityPostureProvider_HeartbeatIsSevenDays(t *testing.T) {
 		t.Errorf("Heartbeat() = %s, want 7d", got)
 	}
 }
+
+func TestSecurityPostureRedactionHandlesPropertyValuePairs(t *testing.T) {
+	config := map[string]any{"nested": []any{map[string]any{"property": "oinkcode", "value": "synthetic"}}}
+	redactSecurityPostureConfig(config)
+	pair := config["nested"].([]any)[0].(map[string]any)
+	if _, ok := pair["value"]; ok {
+		t.Fatalf("value of a sensitive property survived: %v", pair)
+	}
+}

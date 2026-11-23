@@ -115,6 +115,7 @@ func configSnapshotRows(kind string, rows []json.RawMessage) ([]ConfigSnapshotEn
 func redactConfigSnapshotFields(value any) {
 	switch value := value.(type) {
 	case map[string]any:
+		redact.ConfigPropertyValue(value)
 		for key, child := range value {
 			if SensitiveConfigKey(key) {
 				delete(value, key)
