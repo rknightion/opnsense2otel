@@ -34,7 +34,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: Run tests
         run: just test
@@ -63,7 +63,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: Run linters
         run: just lint
@@ -100,7 +100,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       # This is a deterministic blocking smoke gate. Longer corpus-retaining runs
       # live in fuzz.yml so normal CI neither restores nor publishes mutable corpus.
@@ -130,7 +130,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: Verify generated docs match code (docgen + doclint + registry gate)
         run: just docs-check
@@ -147,7 +147,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: Set up Helm
         uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
@@ -175,7 +175,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: tools/promqlcheck/go.sum
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       # The builders' own unit tests, run first and named separately so a failure
       # here is not read as a staleness failure. Wired into CI 2026-07-25: they had
@@ -199,7 +199,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       # NOTE: no OTEL build-telemetry driver-opts here — the OTEL_EXPORTER_OTLP_ENDPOINT
       # / _HEADERS repo secrets it referenced were never provisioned, so it set
@@ -395,7 +395,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: Generate coverage profile
         run: just test-coverage
@@ -424,7 +424,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: govulncheck
         run: just vuln
@@ -441,7 +441,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+      - uses: rknightion/.github/.github/actions/setup-just@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
       - name: Build a release snapshot
         run: just snapshot
@@ -459,7 +459,7 @@ jobs:
   helm-validate:
     permissions:
       contents: read
-    uses: rknightion/.github/.github/workflows/helm-validate.yml@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+    uses: rknightion/.github/.github/workflows/helm-validate.yml@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
     with:
       chart-path: charts/opnsense2otel
       release-name: contract
@@ -477,7 +477,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-    uses: rknightion/.github/.github/workflows/ac-evidence.yml@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+    uses: rknightion/.github/.github/workflows/ac-evidence.yml@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
   # The lines a pull request adds carry no identifier, email address, public address or credential
   # shape. Pull requests only, like ac-evidence. Check run: `privacy-sweep / Privacy sweep`.
@@ -485,7 +485,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-    uses: rknightion/.github/.github/workflows/privacy-sweep.yml@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+    uses: rknightion/.github/.github/workflows/privacy-sweep.yml@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
 
   # The Backlog.md board is retired: issues are the queue. A pull request may delete files under
   # backlog/ or move them out, never add or change one there. Reads the file list from the API, so
@@ -531,7 +531,7 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    uses: rknightion/.github/.github/workflows/zizmor.yml@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
+    uses: rknightion/.github/.github/workflows/zizmor.yml@8ea95233ce0b1b2880124f745238e8d194524365 # v1.32.1
     with:
       enforce: true
 
