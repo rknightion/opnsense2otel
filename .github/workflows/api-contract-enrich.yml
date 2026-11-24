@@ -62,7 +62,7 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-      - uses: rknightion/.github/.github/actions/setup-just@9030a1b7d1d6652c0447b4a8e4181923105a0371 # v1.31.11
+      - uses: rknightion/.github/.github/actions/setup-just@55296cba29f55339f74b048e186011e866ea6275 # v1.32.0
       - uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
