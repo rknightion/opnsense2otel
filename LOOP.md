@@ -59,7 +59,7 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
 - auto-rc classifies only the head commit of a push; every merge to `main` is one squash commit.
 - A major release needs the module path moved first: `just bump-module-major major=<N>`.
 - Review the exact candidate independently against its base locally. A landing pull request that
-  needs a hosted review gets Codex, with Cursor Bugbot as fallback and second reviewer, under the
+  needs a hosted review gets Codex, under the
   maintainer's review rule. A missing or incomplete review is no verdict, never a pass.
 - Loki cannot show a record stamped older than 3h until its ingester chunk flushes, up to two
   hours: a proof asserting its own historical record within the run never passes. Report

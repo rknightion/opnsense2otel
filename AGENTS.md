@@ -214,11 +214,10 @@ including new and generated paths. A missing or incomplete review is no verdict,
 Critical and major findings block landing until fixed or resolved with evidence under the
 maintainer review rule.
 
-Then Cursor Bugbot reviews the exact landing pull request head, guided by `.cursor/BUGBOT.md`.
-Before merging, read its `Cursor Bugbot` check on that head. `success` clears the head. `neutral`
-means findings: fix each one the code shows to be a real defect, answer the rest on their threads
-with the code evidence, and resolve every thread. A missing, cancelled, errored or oversized review
-is no verdict, never clean. Maintainers' agents take rounds and waits from their centrally managed
+Then Codex (`@codex review`) reviews the exact landing pull request head. Before merging, read its
+verdict on that head: fix each finding the code shows to be a real defect, answer the rest on their
+threads with the code evidence, and resolve every thread. A missing, cancelled, errored or
+oversized review is no verdict, never clean. Maintainers' agents take rounds and waits from their centrally managed
 review rule.
 
 Public contributors need no maintainer configuration or review account; normal contribution and
