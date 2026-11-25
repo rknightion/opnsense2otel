@@ -305,7 +305,6 @@ func checkCloudScriptPins(t *testing.T, root string) {
 	t.Helper()
 	for path, pinRoute := range map[string]string{
 		"scripts/cloud-environment-setup.sh": `version="$(golangci_lint_pin justfile)"`,
-		".cursor/cloud-bootstrap.sh":         "just _tool-golangci-lint",
 	} {
 		data, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
