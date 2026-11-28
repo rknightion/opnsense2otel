@@ -3,6 +3,15 @@ name: Release Please
 on:
   push:
     branches: [main]
+    # Fleet CI review (release-skip-deps): a push that only moves CI config (hub pins, Renovate
+    # config) has nothing to release. A release commit always changes CHANGELOG.md, so it is never filtered.
+    paths-ignore:
+      - ".github/**"
+      - "renovate.json"
+      - "renovate.json5"
+      - ".renovaterc"
+      - ".renovaterc.json"
+      - ".renovaterc.json5"
 
 # One shared group for the whole repo, and NEVER cancel: this workflow derives the
 # next version from git tags plus commits and reconciles a single release PR, so two
