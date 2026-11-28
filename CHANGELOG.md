@@ -1,5 +1,54 @@
 # Changelog
 
+## [5.4.1](https://github.com/rknightion/opnsense2otel/compare/v5.4.0...v5.4.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* harden config change redaction ([#1254](https://github.com/rknightion/opnsense2otel/issues/1254)) ([405c4f3](https://github.com/rknightion/opnsense2otel/commit/405c4f3f66b0b760aa3ed09e4a2b0ea2b0bbad73))
+* withhold upstream values from parse errors ([#1255](https://github.com/rknightion/opnsense2otel/issues/1255)) ([1391f96](https://github.com/rknightion/opnsense2otel/commit/1391f96704dbdd9639dedf8e55469ac7794a8a9b))
+
+
+### Miscellaneous
+
+* **deps:** update anthropics/claude-code-action action to v1.0.287 ([#1258](https://github.com/rknightion/opnsense2otel/issues/1258)) ([ff1f17d](https://github.com/rknightion/opnsense2otel/commit/ff1f17d7da955823fd24ab7e237bafcaeb7a50f5))
+* **deps:** update anthropics/claude-code-action action to v1.0.288 ([#1259](https://github.com/rknightion/opnsense2otel/issues/1259)) ([3c7d2f3](https://github.com/rknightion/opnsense2otel/commit/3c7d2f3cff9ec0234a0df04cdd1acd768d03072a))
+* **deps:** update anthropics/claude-code-action action to v1.0.289 ([#1261](https://github.com/rknightion/opnsense2otel/issues/1261)) ([1f699c9](https://github.com/rknightion/opnsense2otel/commit/1f699c9ee901557d2acaf1e78193fb8f0315a597))
+* **deps:** update anthropics/claude-code-action action to v1.0.290 ([#1270](https://github.com/rknightion/opnsense2otel/issues/1270)) ([41d18fa](https://github.com/rknightion/opnsense2otel/commit/41d18fa3214441098dd5846e8c20d49955d50c35))
+* **deps:** update opnsense-docs digest to 1edbfc7 ([#1275](https://github.com/rknightion/opnsense2otel/issues/1275)) ([a75a411](https://github.com/rknightion/opnsense2otel/commit/a75a411aaa369d92eb6905b6b535130080f057ac))
+* **deps:** update opnsense-docs digest to 3a3d790 ([#1265](https://github.com/rknightion/opnsense2otel/issues/1265)) ([54e6260](https://github.com/rknightion/opnsense2otel/commit/54e62605d84453c6b8af340920b33575986bd060))
+* **deps:** update opnsense-docs digest to bf5be04 ([#1271](https://github.com/rknightion/opnsense2otel/issues/1271)) ([0d4f184](https://github.com/rknightion/opnsense2otel/commit/0d4f184c32d93b7dcd3b6dd054252e4683d33d19))
+* **deps:** update opnsense-docs digest to c288dca ([#1264](https://github.com/rknightion/opnsense2otel/issues/1264)) ([39faf3f](https://github.com/rknightion/opnsense2otel/commit/39faf3febef6768147661ca5fe50c240c0c52ed9))
+* **deps:** update opnsense-docs digest to cc197dd ([#1277](https://github.com/rknightion/opnsense2otel/issues/1277)) ([6c7fe2a](https://github.com/rknightion/opnsense2otel/commit/6c7fe2a70901f4ce8e427ba6ac83a4a5021e6ac7))
+* **deps:** update rknightion/.github action to v1.31.11 ([#1257](https://github.com/rknightion/opnsense2otel/issues/1257)) ([3dfee54](https://github.com/rknightion/opnsense2otel/commit/3dfee54056ac13c58fcc4a212549f4f8f33bed71))
+* **deps:** update rknightion/.github action to v1.32.0 ([#1260](https://github.com/rknightion/opnsense2otel/issues/1260)) ([e1dcb90](https://github.com/rknightion/opnsense2otel/commit/e1dcb900eaf1f72c5f35c471195d7ea2ed6f456d))
+* **deps:** update rknightion/.github action to v1.32.1 ([#1262](https://github.com/rknightion/opnsense2otel/issues/1262)) ([5a1301d](https://github.com/rknightion/opnsense2otel/commit/5a1301dc873a5bdd8d0640fb8288ed2b5335afe1))
+* **deps:** update rknightion/.github action to v1.32.2 ([#1263](https://github.com/rknightion/opnsense2otel/issues/1263)) ([b327f80](https://github.com/rknightion/opnsense2otel/commit/b327f801b7b8741e41f900195b16301b9051728f))
+* **deps:** update rknightion/.github action to v1.32.3 ([#1266](https://github.com/rknightion/opnsense2otel/issues/1266)) ([d72da70](https://github.com/rknightion/opnsense2otel/commit/d72da70734d19cddaacd10e608a43aefe39ae289))
+* **deps:** update rknightion/.github action to v1.32.4 ([#1268](https://github.com/rknightion/opnsense2otel/issues/1268)) ([0772956](https://github.com/rknightion/opnsense2otel/commit/077295675b9483d6fbbe3a2a7cc27f5e9cb6e0bb))
+* **deps:** update rknightion/.github action to v1.32.5 ([#1269](https://github.com/rknightion/opnsense2otel/issues/1269)) ([29fa498](https://github.com/rknightion/opnsense2otel/commit/29fa4980693cd439e2422ceab6c325a7e293a932))
+* **deps:** update rknightion/.github action to v1.32.7 ([#1274](https://github.com/rknightion/opnsense2otel/issues/1274)) ([b0ab209](https://github.com/rknightion/opnsense2otel/commit/b0ab209ae03637c052e5195033a547fdd950a8e2))
+* **deps:** update rknightion/.github action to v1.32.9 ([#1278](https://github.com/rknightion/opnsense2otel/issues/1278)) ([27cc198](https://github.com/rknightion/opnsense2otel/commit/27cc198c061173bfc535b07cd970a6d64ebc4f85))
+* **deps:** update rknightion/.github action to v1.33.0 ([#1279](https://github.com/rknightion/opnsense2otel/issues/1279)) ([ab2b057](https://github.com/rknightion/opnsense2otel/commit/ab2b057c38ff9cea5a1caab59b75ef5c87de8d0c))
+* **deps:** update rknightion/.github action to v1.34.0 ([#1280](https://github.com/rknightion/opnsense2otel/issues/1280)) ([88cf1f2](https://github.com/rknightion/opnsense2otel/commit/88cf1f286cb5c53ae39d37eb0d5a84e74ce8da9b))
+* **deps:** update rknightion/.github action to v1.34.1 ([#1282](https://github.com/rknightion/opnsense2otel/issues/1282)) ([5cf49c1](https://github.com/rknightion/opnsense2otel/commit/5cf49c1415992db4e0739807e202e41d37a520b1))
+* **deps:** update rknightion/.github action to v1.35.0 ([#1283](https://github.com/rknightion/opnsense2otel/issues/1283)) ([f296063](https://github.com/rknightion/opnsense2otel/commit/f29606371452ca686b738988b6c2bf651b48fc13))
+* remove Bugbot references ([#1272](https://github.com/rknightion/opnsense2otel/issues/1272)) ([aaa3acd](https://github.com/rknightion/opnsense2otel/commit/aaa3acd1d8b667d821126383d867dcd1de98103b))
+* remove the .cursor folder ([#1273](https://github.com/rknightion/opnsense2otel/issues/1273)) ([10e161f](https://github.com/rknightion/opnsense2otel/commit/10e161f4611c44670b43753d4434722829be80f5))
+* **vended:** sync from rknightion/.github main ([#1249](https://github.com/rknightion/opnsense2otel/issues/1249)) ([43b6518](https://github.com/rknightion/opnsense2otel/commit/43b651837ef6e51893de79c3f78e3f11681afc1a))
+* **vended:** sync from rknightion/.github main ([#1256](https://github.com/rknightion/opnsense2otel/issues/1256)) ([0e8df14](https://github.com/rknightion/opnsense2otel/commit/0e8df144462791bcb5190148dfef19780ba2bd0e))
+* **vended:** sync from rknightion/.github main ([#1276](https://github.com/rknightion/opnsense2otel/issues/1276)) ([ce0d1b4](https://github.com/rknightion/opnsense2otel/commit/ce0d1b4e96d334e00ce0b7708783138001bc5116))
+* **vended:** sync from rknightion/.github main ([#1281](https://github.com/rknightion/opnsense2otel/issues/1281)) ([c6edfc2](https://github.com/rknightion/opnsense2otel/commit/c6edfc2c84ccac14bf57c01f9bdc195aa6dc596f))
+* **vended:** sync from rknightion/.github main ([#1284](https://github.com/rknightion/opnsense2otel/issues/1284)) ([c855c8e](https://github.com/rknightion/opnsense2otel/commit/c855c8edab803efb20d8a39122e2cb9d253a648a))
+* **vended:** sync from rknightion/.github main ([#1286](https://github.com/rknightion/opnsense2otel/issues/1286)) ([86b9a3e](https://github.com/rknightion/opnsense2otel/commit/86b9a3e6ab0042bba14acee6b6470216f4b53ca4))
+
+
+### CI/CD
+
+* run PR metadata checks in their own workflow so body edits do not restart CI ([#1267](https://github.com/rknightion/opnsense2otel/issues/1267)) ([4c509e9](https://github.com/rknightion/opnsense2otel/commit/4c509e905dfd922b4f769a664d0c18e76965b4c0))
+* skip application suites on hub-pin, release and vend-sync pull requests ([#1287](https://github.com/rknightion/opnsense2otel/issues/1287)) ([db3c19a](https://github.com/rknightion/opnsense2otel/commit/db3c19ac67e5ce810de1dfe1cb59c5817e7a539b))
+* trim repeated CI work (fleet CI review) ([#1285](https://github.com/rknightion/opnsense2otel/issues/1285)) ([7c1b362](https://github.com/rknightion/opnsense2otel/commit/7c1b3620c433cecdbce7502c86495029418a011e))
+
 ## [5.4.0](https://github.com/rknightion/opnsense2otel/compare/v5.3.5...v5.4.0) (2026-11-23)
 
 
