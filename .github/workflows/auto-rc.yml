@@ -44,13 +44,10 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     outputs:
       shipped: ${{ steps.paths.outputs.shipped }}
     steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
-        with:
-          egress-policy: audit
 
       - name: Checkout the commit CI tested
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,11 +72,8 @@ jobs:
     needs: shipped-change
     if: needs.shipped-change.outputs.shipped == 'true'
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
-        with:
-          egress-policy: audit
       - name: Checkout the commit CI tested
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -135,14 +129,11 @@ jobs:
     needs: rc
     if: needs.rc.outputs.tag != ''
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     outputs:
       syft: ${{ steps.pin.outputs.syft }}
       goreleaser: ${{ steps.pin.outputs.goreleaser }}
     steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
-        with:
-          egress-policy: audit
       - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

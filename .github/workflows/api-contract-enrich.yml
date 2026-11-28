@@ -18,6 +18,7 @@ concurrency:
 jobs:
   enrich:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       # contents: write is required for the mechanical-fix PR: claude-code-action pushes
       # its change to a branch in this repo, which needs write to refs/contents. It cannot
