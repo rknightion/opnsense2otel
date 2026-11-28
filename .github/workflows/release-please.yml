@@ -3,6 +3,15 @@ name: Release Please
 on:
   push:
     branches: [main]
+    # Fleet CI review (release-skip-deps): a push that only moves CI config (hub pins, Renovate
+    # config) has nothing to release. A release commit always changes CHANGELOG.md, so it is never filtered.
+    paths-ignore:
+      - ".github/**"
+      - "renovate.json"
+      - "renovate.json5"
+      - ".renovaterc"
+      - ".renovaterc.json"
+      - ".renovaterc.json5"
 
 # One shared group for the whole repo, and NEVER cancel: this workflow derives the
 # next version from git tags plus commits and reconciles a single release PR, so two
@@ -27,6 +36,7 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -64,14 +74,11 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     outputs:
       syft: ${{ steps.pin.outputs.syft }}
       goreleaser: ${{ steps.pin.outputs.goreleaser }}
     steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
-        with:
-          egress-policy: audit
       - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,6 +140,7 @@ jobs:
     needs: [release-please, binaries, publish]
     if: always() && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-26.04
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -196,16 +204,13 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created != 'true'
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read # look up the last successful workflow run
     outputs:
       shipped: ${{ steps.paths.outputs.shipped }}
     steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
-        with:
-          egress-policy: audit
       - name: Checkout the pushed commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -259,6 +259,11 @@ image tag="opnsense2otel:dev":
 snapshot: _tool-goreleaser _tool-syft
     PATH="{{ tools_dir }}:$PATH" {{ tools_dir }}/goreleaser release --snapshot --clean --skip=sign
 
+# build the linux/amd64 binary only (no archives or SBOMs); CI uses it on pull requests
+[group('build')]
+snapshot-one: _tool-goreleaser
+    GOOS=linux GOARCH=amd64 {{ tools_dir }}/goreleaser build --snapshot --clean --single-target
+
 # remove build output, the coverage profile and the .tools/ toolchain (all reproducible)
 [group('build')]
 clean:

@@ -61,6 +61,7 @@ jobs:
   dashboards:
     name: publish dashboards to GitSync
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write # exchanged for a tailnet identity and an OpenBao token
@@ -165,6 +166,7 @@ jobs:
   rules:
     name: publish alert and recording rules
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GRAFANA_SERVER: ${{ vars.GRAFANA_SERVER }}
       GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
