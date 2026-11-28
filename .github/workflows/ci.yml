@@ -19,11 +19,40 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Fast paths (rknightion/.github docs/changes/README.md): a Renovate pull request that only moves
+  # hub reusable workflow pins, a release-please pull request or a vend-sync pull request skips the
+  # application suites gated on `needs.changes.outputs.app` below. Lint, security checks and
+  # ci-success always run. No `if:`: on any event but a pull request it answers app 'true'.
+  changes:
+    permissions:
+      contents: read
+    uses: rknightion/.github/.github/workflows/changes.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
+    with:
+      version-files: |
+        # release-please's extra-files, x-release-please-version marker lines. The simple strategy also
+        # rewrites version.txt whole, which the classifier reads as more than a marker line, so a release
+        # pull request here still runs everything until the classifier can read a whole-file version.
+        deploy/k8s/deployment.yaml
+        docs/deployment/kubernetes.md
+        version.txt
+      vended-paths: |
+        # The vended files, less AGENTS.md and CONTRIBUTING.md: docs-check lints both and the docgen
+        # tests that `just test` runs read AGENTS.md, so a change to either runs the suites.
+        .agents/skills/**
+        .claude/skills/**
+        .github/pull_request_template.md
+        .github/privacy/sweep
+        .github/privacy/identifier-patterns.txt
+        .grafana/Dockerfile
+        .vended.json
+
   repo-meta:
     uses: ./.github/workflows/repo-meta.yml
 
   build-test:
     name: Build & test
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -35,7 +64,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       - name: Run tests
         run: just test
@@ -65,13 +94,15 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       - name: Run linters
         run: just lint
 
   fuzz-smoke:
     name: Fuzz smoke (${{ matrix.name }})
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     strategy:
@@ -102,7 +133,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       # This is a deterministic blocking smoke gate. Longer corpus-retaining runs
       # live in fuzz.yml so normal CI neither restores nor publishes mutable corpus.
@@ -122,6 +153,8 @@ jobs:
 
   docs:
     name: Generated docs up-to-date
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -133,13 +166,15 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       - name: Verify generated docs match code (docgen + doclint + registry gate)
         run: just docs-check
 
   deployment-contracts:
     name: Executable deployment contracts
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -151,7 +186,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       - name: Set up Helm
         uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
@@ -168,6 +203,8 @@ jobs:
 
   grafana:
     name: Grafana artifacts up-to-date
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -180,7 +217,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: tools/promqlcheck/go.sum
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       # The builders' own unit tests, run first and named separately so a failure
       # here is not read as a staleness failure. Wired into CI 2026-07-25: they had
@@ -198,6 +235,8 @@ jobs:
         run: just grafana-check
 
   docker-build:
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -205,7 +244,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       # NOTE: no OTEL build-telemetry driver-opts here — the OTEL_EXPORTER_OTLP_ENDPOINT
       # / _HEADERS repo secrets it referenced were never provisioned, so it set
@@ -390,7 +429,10 @@ jobs:
     name: Coverage to Codacy
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: [changes]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'pull_request')
+      && needs.changes.outputs.app == 'true'
     env:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
@@ -402,7 +444,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       - name: Generate coverage profile
         run: just test-coverage
@@ -431,13 +473,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       - name: govulncheck
         run: just vuln
 
   goreleaser-snapshot:
     name: GoReleaser snapshot
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -449,7 +493,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
       # Pull requests build one target (linux/amd64) to prove the tree compiles and the config is
       # valid; the full matrix, archives and SBOMs run on push to main and on the release PR (head
@@ -473,9 +517,13 @@ jobs:
   # currently proves it renders without credentials, and this port is not the
   # place to find out.
   helm-validate:
+    needs: [changes]
+    if: >-
+      needs.changes.outputs.app == 'true'
+      || contains(needs.changes.outputs.hub_workflows, '"helm-validate.yml"')
     permissions:
       contents: read
-    uses: rknightion/.github/.github/workflows/helm-validate.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+    uses: rknightion/.github/.github/workflows/helm-validate.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
     with:
       chart-path: charts/opnsense2otel
       release-name: contract
@@ -489,7 +537,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-    uses: rknightion/.github/.github/workflows/privacy-sweep.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+    uses: rknightion/.github/.github/workflows/privacy-sweep.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
 
   # zizmor fails a pull request on any finding (enforce); push runs upload SARIF instead.
   zizmor:
@@ -497,7 +545,7 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    uses: rknightion/.github/.github/workflows/zizmor.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+    uses: rknightion/.github/.github/workflows/zizmor.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
     with:
       enforce: true
 
@@ -513,7 +561,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # backlog freeze step reads the pull request file list
-    needs: [repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate, privacy-sweep, zizmor]
+    needs: [changes, repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate, privacy-sweep, zizmor]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
@@ -522,6 +570,24 @@ jobs:
         run: |
           echo "A required job failed or was cancelled: ${RESULTS}"
           exit 1
+      # A skipped job reports success. It counts as a pass only when changes succeeded and said the
+      # application suites need not run (rknightion/.github docs/changes/README.md).
+      - name: Fail if an application suite was skipped without a verdict
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          APP: ${{ needs.changes.outputs.app }}
+          SUITES: ${{ needs.build-test.result }} ${{ needs.fuzz-smoke.result }} ${{ needs.docs.result }} ${{ needs.deployment-contracts.result }} ${{ needs.grafana.result }} ${{ needs.docker-build.result }} ${{ needs.goreleaser-snapshot.result }} ${{ needs.helm-validate.result }}
+        run: |
+          if [[ "$CHANGES" != success || ( "$APP" != true && "$APP" != false ) ]]; then
+            echo "::error::changes gave no verdict (result $CHANGES, app '$APP')"
+            exit 1
+          fi
+          for result in $SUITES; do
+            if [[ "$APP" == true && "$result" != success ]]; then
+              echo "::error::the application suites had to run, and one ended $result"
+              exit 1
+            fi
+          done
       # A skipped job reports success, so on a pull request the pull request checks must have
       # actually run and passed. Off a pull request they are skipped by design.
       - name: Fail if a pull request check did not run

@@ -59,7 +59,7 @@ jobs:
       # failure here is infrastructure, not the commit.
       - name: Mint a scoped release token
         id: bao
-        uses: rknightion/.github/.github/actions/broker-token@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+        uses: rknightion/.github/.github/actions/broker-token@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
         with:
           permission-set: release-please-opnsense2otel
           tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}
@@ -84,7 +84,7 @@ jobs:
         with:
           ref: refs/tags/${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
-      - uses: rknightion/.github/.github/actions/setup-just@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+      - uses: rknightion/.github/.github/actions/setup-just@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
       - name: Resolve release tool pins
         id: pin
         run: |
@@ -109,7 +109,7 @@ jobs:
       id-token: write
       packages: write
       attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
-    uses: rknightion/.github/.github/workflows/binaries.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+    uses: rknightion/.github/.github/workflows/binaries.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       qualify-release-tag: true

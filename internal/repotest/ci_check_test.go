@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/rknightion/opnsense2otel/v5/internal/repotest"
-	"go.yaml.in/yaml/v2"
 )
 
 func TestCIRunsEveryCheckLeg(t *testing.T) {
@@ -26,36 +25,14 @@ func TestCIRunsEveryCheckLeg(t *testing.T) {
 	if len(check) != 2 || len(strings.Fields(check[1])) == 0 {
 		t.Fatal("cannot find check dependencies in justfile")
 	}
-	data, err := os.ReadFile(filepath.Join(root, ".github/workflows/ci.yml"))
+	jobs := readCI(t, root)
+	// A gated suite counts only when the verdict step holds it to its result; without
+	// a valid verdict step no gated job counts.
+	suites, err := verdictSuites(jobs)
 	if err != nil {
-		t.Fatal(err)
+		suites = nil
 	}
-	var workflow struct {
-		Jobs map[string]struct {
-			Needs           []string `yaml:"needs"`
-			If              string   `yaml:"if"`
-			ContinueOnError string   `yaml:"continue-on-error"`
-			Strategy        struct {
-				Matrix struct {
-					Exclude []any `yaml:"exclude"`
-					Include []struct {
-						Package string `yaml:"package"`
-						Target  string `yaml:"target"`
-					} `yaml:"include"`
-				} `yaml:"matrix"`
-			} `yaml:"strategy"`
-			Steps []struct {
-				Env             map[string]string `yaml:"env"`
-				Run             string            `yaml:"run"`
-				If              string            `yaml:"if"`
-				ContinueOnError string            `yaml:"continue-on-error"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(data, &workflow); err != nil {
-		t.Fatal(err)
-	}
-	needed := workflow.Jobs["ci-success"].Needs
+	needed := jobs["ci-success"].Needs
 	if len(needed) == 0 {
 		t.Fatal("ci-success has no needs")
 	}
@@ -65,12 +42,13 @@ func TestCIRunsEveryCheckLeg(t *testing.T) {
 	command := regexp.MustCompile(`^just[ \t]+([a-z][a-z0-9-]*)$`)
 	fuzzTargets := make(map[string]bool)
 	for _, name := range needed {
-		job, ok := workflow.Jobs[name]
+		job, ok := jobs[name]
 		if !ok {
 			t.Errorf("ci-success needs missing job %s", name)
 			continue
 		}
-		if job.If != "" || (job.ContinueOnError != "" && job.ContinueOnError != "false") {
+		gated := job.If == appGate && contains(job.Needs, "changes") && suites[name]
+		if (job.If != "" && !gated) || (job.ContinueOnError != "" && job.ContinueOnError != "false") {
 			continue
 		}
 		for _, step := range job.Steps {
