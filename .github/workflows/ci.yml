@@ -19,11 +19,40 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Fast paths (rknightion/.github docs/changes/README.md): a Renovate pull request that only moves
+  # hub reusable workflow pins, a release-please pull request or a vend-sync pull request skips the
+  # application suites gated on `needs.changes.outputs.app` below. Lint, security checks and
+  # ci-success always run. No `if:`: on any event but a pull request it answers app 'true'.
+  changes:
+    permissions:
+      contents: read
+    uses: rknightion/.github/.github/workflows/changes.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
+    with:
+      version-files: |
+        # release-please's extra-files, x-release-please-version marker lines. The simple strategy also
+        # rewrites version.txt whole, which the classifier reads as more than a marker line, so a release
+        # pull request here still runs everything until the classifier can read a whole-file version.
+        deploy/k8s/deployment.yaml
+        docs/deployment/kubernetes.md
+        version.txt
+      vended-paths: |
+        # The vended files, less AGENTS.md and CONTRIBUTING.md: docs-check lints both and the docgen
+        # tests that `just test` runs read AGENTS.md, so a change to either runs the suites.
+        .agents/skills/**
+        .claude/skills/**
+        .github/pull_request_template.md
+        .github/privacy/sweep
+        .github/privacy/identifier-patterns.txt
+        .grafana/Dockerfile
+        .vended.json
+
   repo-meta:
     uses: ./.github/workflows/repo-meta.yml
 
   build-test:
     name: Build & test
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -72,6 +101,8 @@ jobs:
 
   fuzz-smoke:
     name: Fuzz smoke (${{ matrix.name }})
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     strategy:
@@ -122,6 +153,8 @@ jobs:
 
   docs:
     name: Generated docs up-to-date
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -140,6 +173,8 @@ jobs:
 
   deployment-contracts:
     name: Executable deployment contracts
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -168,6 +203,8 @@ jobs:
 
   grafana:
     name: Grafana artifacts up-to-date
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -198,6 +235,8 @@ jobs:
         run: just grafana-check
 
   docker-build:
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -390,7 +429,10 @@ jobs:
     name: Coverage to Codacy
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: [changes]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'pull_request')
+      && needs.changes.outputs.app == 'true'
     env:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
@@ -438,6 +480,8 @@ jobs:
 
   goreleaser-snapshot:
     name: GoReleaser snapshot
+    needs: [changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -473,6 +517,10 @@ jobs:
   # currently proves it renders without credentials, and this port is not the
   # place to find out.
   helm-validate:
+    needs: [changes]
+    if: >-
+      needs.changes.outputs.app == 'true'
+      || contains(needs.changes.outputs.hub_workflows, '"helm-validate.yml"')
     permissions:
       contents: read
     uses: rknightion/.github/.github/workflows/helm-validate.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
@@ -513,7 +561,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # backlog freeze step reads the pull request file list
-    needs: [repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate, privacy-sweep, zizmor]
+    needs: [changes, repo-meta, build-test, lint, fuzz-smoke, docs, deployment-contracts, grafana, govulncheck, goreleaser-snapshot, docker-build, helm-validate, privacy-sweep, zizmor]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
@@ -522,6 +570,24 @@ jobs:
         run: |
           echo "A required job failed or was cancelled: ${RESULTS}"
           exit 1
+      # A skipped job reports success. It counts as a pass only when changes succeeded and said the
+      # application suites need not run (rknightion/.github docs/changes/README.md).
+      - name: Fail if an application suite was skipped without a verdict
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          APP: ${{ needs.changes.outputs.app }}
+          SUITES: ${{ needs.build-test.result }} ${{ needs.fuzz-smoke.result }} ${{ needs.docs.result }} ${{ needs.deployment-contracts.result }} ${{ needs.grafana.result }} ${{ needs.docker-build.result }} ${{ needs.goreleaser-snapshot.result }} ${{ needs.helm-validate.result }}
+        run: |
+          if [[ "$CHANGES" != success || ( "$APP" != true && "$APP" != false ) ]]; then
+            echo "::error::changes gave no verdict (result $CHANGES, app '$APP')"
+            exit 1
+          fi
+          for result in $SUITES; do
+            if [[ "$APP" == true && "$result" != success ]]; then
+              echo "::error::the application suites had to run, and one ended $result"
+              exit 1
+            fi
+          done
       # A skipped job reports success, so on a pull request the pull request checks must have
       # actually run and passed. Off a pull request they are skipped by design.
       - name: Fail if a pull request check did not run
